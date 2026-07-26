@@ -1,0 +1,22 @@
+# Normalise to LF in the repo. core.autocrlf=true on Windows would otherwise
+# rewrite the macOS/Linux launchers with CRLF, which breaks their `#!/bin/sh`
+# shebang ("bad interpreter") on the very platforms they exist for.
+* text=auto eol=lf
+
+# Windows batch files genuinely want CRLF.
+*.bat text eol=crlf
+
+# Keep the POSIX launchers executable-friendly and LF, always.
+*.sh text eol=lf
+*.command text eol=lf
+
+# Vendored + generated: don't diff or language-classify these.
+public/vendor/*.js linguist-vendored -diff
+public/bestiary/*.json linguist-generated -diff
+
+# Binary assets.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.pdf binary
+*.zip binary
