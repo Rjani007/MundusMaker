@@ -1,26 +1,45 @@
 // Export view: one-click player-safe (or GM) PDF of the whole world.
 
-import { el, toast, slugify, downloadBlob } from '../util.js';
-import { state, types } from '../state.js';
-import { buildPdf } from '../pdf.js';
+import { el, toast, slugify, downloadBlob, helpTip } from '../util.js';
+import { state } from '../state.js';
+import { buildPdf, typeGroups } from '../pdf.js';
 import { api } from '../api.js';
 
 export function render(container) {
+  const all = [...state.entities.values()];
+  if (!all.length) {
+    container.append(el('div', { class: 'page' },
+      el('h1', {}, 'Export'),
+      el('div', { class: 'notice' },
+        'Export turns this world into a PDF — a player-safe edition with every secret stripped, or a GM edition with them highlighted. There is nothing in it yet.'),
+      el('p', { style: 'margin-top:14px' }, el('a', { href: '#/' }, 'Create your first entry →'))));
+    return;
+  }
+  // same grouping the PDF uses, so entries with an unknown type still get a
+  // checkbox here instead of disappearing from the export unannounced
+  const groups = typeGroups(all);
+
   const opts = {
     gm: false,
     includeMaps: true,
     mapScale: 2, // print-quality by default; 1 keeps the file small
     includeTimeline: true,
     includeRelations: true,
-    typeKeys: new Set(Object.keys(types())),
+    typeKeys: new Set(groups.map(([key]) => key)),
   };
 
-  // what would be stripped from a player export — shown so the GM trusts the redaction
-  const all = [...state.entities.values()];
-  const nGmOnly = all.filter((e) => e.gmOnly).length;
-  const nSecretBlocks = all.reduce((n, e) => n + (e.blocks || []).filter((b) => b.secret && b.text?.trim()).length, 0);
-  const nSecretRels = all.reduce((n, e) => n + (e.relations || []).filter((r) => r.secret).length, 0);
-  const nSecretMarkers = all.reduce((n, e) => n + (e.map?.markers || []).filter((m) => m.secret).length, 0);
+  // What a player export actually drops, so the GM can trust the redaction.
+  // GM-only entries go wholesale — counting the secrets inside them again would
+  // inflate every other number — and maps hide secret stamps and paths as well
+  // as markers.
+  const kept = all.filter((e) => !e.gmOnly);
+  const nGmOnly = all.length - kept.length;
+  const nSecretBlocks = kept.reduce((n, e) => n + (e.blocks || []).filter(
+    (b) => b.secret && (b.kind === 'statblock' || b.kind === 'encounter' || b.text?.trim())).length, 0);
+  const nSecretRels = kept.reduce((n, e) => n + (e.relations || []).filter((r) => r.secret).length, 0);
+  const nSecretMap = kept.reduce((n, e) => n + [
+    ...(e.map?.markers || []), ...(e.map?.stamps || []), ...(e.map?.paths || []),
+  ].filter((o) => o.secret).length, 0);
 
   const playerCard = el('div', { class: 'edition-card sel' },
     el('h4', {}, '🛡 Player-safe edition'),
@@ -41,7 +60,7 @@ export function render(container) {
     el('div', {}, el('div', {}, label), el('div', { class: 'desc' }, desc)));
 
   const typeChecks = el('div', { class: 'row' },
-    Object.entries(types()).map(([key, t]) =>
+    groups.map(([key, t]) =>
       el('label', { class: 'row small', style: 'gap:5px;cursor:pointer' },
         el('input', {
           type: 'checkbox', checked: true,
@@ -86,9 +105,11 @@ export function render(container) {
       el('h3', {}, 'Edition'),
       el('div', { class: 'edition-cards' }, playerCard, gmCard),
       el('div', { class: 'notice', style: 'margin-top:8px' },
-        `A player-safe export of this world would remove: ${nGmOnly} GM-only ${nGmOnly === 1 ? 'entry' : 'entries'}, `
-        + `${nSecretBlocks} secret ${nSecretBlocks === 1 ? 'block' : 'blocks'}, ${nSecretRels} secret ${nSecretRels === 1 ? 'relation' : 'relations'} `
-        + `and ${nSecretMarkers} secret map ${nSecretMarkers === 1 ? 'marker' : 'markers'}.`)),
+        `A player-safe export drops ${nGmOnly} GM-only ${nGmOnly === 1 ? 'entry' : 'entries'} whole. `
+        + `From the entries players do see, it also strips ${nSecretBlocks} secret ${nSecretBlocks === 1 ? 'block' : 'blocks'}, `
+        + `${nSecretRels} secret ${nSecretRels === 1 ? 'relation' : 'relations'} and `
+        + `${nSecretMap} secret map ${nSecretMap === 1 ? 'item' : 'items'} (pins, stamps and drawings).`,
+        helpTip('GM-only: an entry marked 🔒 GM-only never reaches players at all — not in lists, the graph, the timeline, search, or this PDF.'))),
     el('div', { class: 'card export-opts' },
       el('h3', {}, 'Contents'),
       check('Maps', 'Embed each entry’s map, rendered in the chosen edition (secret markers stripped from player maps).', 'includeMaps'),

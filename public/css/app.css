@@ -227,6 +227,12 @@ code { background: var(--bg3); padding: 1px 5px; border-radius: 4px; font-size: 
 .tl-body { flex: 1; min-width: 0; }
 .tl-body .snippet { color: var(--muted); font-size: 14px; margin-top: 2px; }
 .tl-range { display: block; font-size: 12px; color: var(--muted); }
+/* the "Every year" band that holds recurring dates (holidays, festivals) */
+.tl-section { font-size: 17px; margin: 26px 0 6px; }
+
+/* ---------- the date editor on an entry ---------- */
+.date-edit { flex-wrap: wrap; gap: 6px 8px; margin-top: 6px; }
+.date-hint { margin-top: 4px; }
 
 /* ---------- maps ---------- */
 .map-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
@@ -446,3 +452,187 @@ a.dice:hover { color: #ffd97a; text-decoration: none; }
   box-shadow: 0 4px 24px rgba(0,0,0,0.5); max-width: 80vw;
 }
 #toast.show { display: block; }
+
+/* ---------- 0.9.0: type landing pages, navigable groups, empty states ---------- */
+
+/* Dashboard stat cards are links now — they always looked like buttons. */
+a.stat-card { display: block; color: inherit; }
+a.stat-card:hover { text-decoration: none; }
+
+/* Sidebar group head: the NAME opens the type page, the COUNT collapses. The
+   row itself is no longer clickable, so it must stop looking like it is. */
+.side-group-head { cursor: default; }
+.side-group-head:hover { background: transparent; }
+.side-group-link {
+  display: flex; align-items: center; gap: 6px; color: inherit;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  border-radius: 6px; padding: 1px 5px;
+}
+.side-group-link:hover { background: var(--bg3); color: var(--text); text-decoration: none; }
+.side-group-toggle {
+  background: none; border: none; border-radius: 6px; padding: 1px 5px;
+  color: inherit; font: inherit; letter-spacing: inherit; cursor: pointer;
+}
+.side-group-toggle:hover { background: var(--bg3); border-color: transparent; color: var(--text); }
+
+/* Type badges navigate to the type page (the hover-preview badge stays inert). */
+a.type-badge:hover { text-decoration: none; border-color: var(--accent); color: var(--text); }
+
+/* Per-type landing table */
+.type-table-wrap {
+  overflow-x: auto; background: var(--panel);
+  border: 1px solid var(--line); border-radius: var(--radius);
+}
+.type-table { border-collapse: collapse; width: 100%; font-size: 14px; }
+.type-table th, .type-table td {
+  text-align: left; padding: 8px 14px; border-bottom: 1px solid var(--line); vertical-align: top;
+}
+.type-table tbody tr:last-child td { border-bottom: none; }
+.type-table thead th {
+  background: var(--bg3); color: var(--muted); font-family: inherit; font-weight: 600;
+  font-size: 12px; text-transform: uppercase; letter-spacing: 1px; white-space: nowrap;
+}
+.type-table .th-sort {
+  background: none; border: none; padding: 0; color: inherit; font: inherit;
+  text-transform: inherit; letter-spacing: inherit;
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.type-table .th-sort:hover { border-color: transparent; color: var(--text); }
+.type-table th.sorted .th-sort { color: var(--text); }
+.type-table .arrow { font-size: 9px; opacity: 0.8; }
+.type-table tbody tr:hover { background: var(--bg3); }
+.type-table td.fld { color: var(--muted); }
+.type-table td.flags { white-space: nowrap; font-size: 12px; opacity: 0.85; }
+.type-table td.flags span { margin-right: 4px; }
+
+/* Graph empty state — in the DOM, not painted on the canvas, so it can link. */
+.graph-empty {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  padding: 24px; pointer-events: none;
+}
+.graph-empty .notice {
+  pointer-events: auto; max-width: 430px; text-align: center;
+  background: var(--panel); border: 1px solid var(--line);
+}
+
+/* Toast action button (Undo) + its dismiss ✕. Plain toasts render one text
+   node exactly as before, so #toast stays display:block and these sit inline. */
+#toast .toast-action, #toast .toast-close {
+  margin-left: 12px; padding: 3px 10px; vertical-align: baseline;
+}
+#toast .toast-action { border-color: var(--accent); color: var(--text); font-weight: 600; }
+#toast .toast-action:hover { background: var(--accent); color: #1a1224; }
+#toast .toast-close {
+  background: transparent; border-color: transparent; color: var(--muted);
+  margin-left: 4px; padding: 3px 7px;
+}
+#toast .toast-close:hover { color: var(--text); border-color: var(--line); }
+
+/* ---------- 0.9.0: legible block editing ---------- */
+
+/* A block never looked editable — clicking one silently swapped it for a
+   textarea, which is an Obsidian/Notion habit, not a discoverable UI. The
+   content box now outlines itself under the pointer, empty blocks outline
+   themselves permanently, and an open editor gets an accent ring so the mode
+   change is visible. All of it is gated on .editable: in player preview
+   nothing here is clickable and the page must not pretend otherwise. */
+.blocks.editable .block-content { border-radius: 6px; padding: 2px 6px; margin: 0 -6px; }
+.blocks:not(.editable) .block-content { cursor: default; } /* nothing to click */
+.blocks.editable .block:not(.editing) > .block-content:hover {
+  background: rgba(255,255,255,0.05); box-shadow: inset 0 0 0 1px var(--line);
+}
+.blocks.editable .block.empty:not(.editing) > .block-content {
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.block-content .ph { color: #6f6885; } /* same grey as ::placeholder */
+.block.editing { box-shadow: 0 0 0 1px var(--accent); }
+/* A secret block keeps its purple while you type into it — that tint is the
+   only thing on screen saying "players will never read this". */
+.block.editing:not(.secret) { background: var(--bg2); }
+
+/* The toolbar spells its buttons out now. It must NOT be display:none when
+   idle: a hidden button can never be tabbed to, which left the whole block
+   mouse-only. opacity keeps the buttons focusable, and :focus-within then
+   reveals them for keyboard users. */
+.block .bctrl {
+  display: flex; opacity: 0; pointer-events: none;
+  align-items: center; flex-wrap: nowrap; transition: opacity 0.12s;
+}
+.block:hover .bctrl,
+.block:focus-within .bctrl,
+.block.editing .bctrl { opacity: 1; pointer-events: auto; }
+/* While the editor is open, "Edit" is the one button with nothing left to do. */
+.block.editing .bc-edit { display: none; }
+.block .bctrl button { white-space: nowrap; }
+.block .bctrl button.bc-icon { padding: 2px 5px; }
+.block .bctrl button.bc-del:hover { color: var(--danger); }
+
+/* Style picker: all three named and visible, the current one marked. */
+.block .bctrl .bc-style {
+  display: inline-flex; border: 1px solid var(--line); border-radius: 5px;
+  overflow: hidden; margin: 0 4px;
+}
+.block .bctrl .bc-style button { padding: 1px 7px; border-radius: 0; }
+.block .bctrl .bc-style button:hover { background: rgba(255,255,255,0.08); }
+.block .bctrl .bc-style button.sel { background: var(--bg3); color: var(--text); }
+
+/* Formatting help where the typing happens. Each chip inserts what it shows. */
+.edit-hint {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  margin-top: 6px; font-size: 12px; color: var(--muted);
+}
+.edit-hint .fmt-chip {
+  font-family: ui-monospace, Consolas, monospace; font-size: 11.5px;
+  padding: 1px 7px; background: var(--bg3); border-color: var(--line); color: var(--muted);
+}
+.edit-hint .fmt-chip:hover { color: var(--text); border-color: var(--accent); }
+.edit-hint .fmt-more { font-size: 12px; }
+.edit-hint .fmt-done {
+  font-size: 12px; padding: 2px 14px; border-color: var(--accent);
+  color: var(--text); font-weight: 600;
+}
+.edit-hint .fmt-done:hover { background: var(--accent); color: #1a1224; }
+
+/* ---------- 0.9.0: calendar page ---------- */
+
+.cal-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.cal-row .cal-num { width: 26px; flex: none; text-align: right; color: var(--muted); font-size: 12px; }
+.cal-row input.cal-name { flex: 1; min-width: 0; }
+.cal-row select.cal-after { flex: 1; min-width: 0; }
+.cal-row input.cal-days { width: 78px; flex: none; }
+.cal-row input.cal-year { width: 96px; flex: none; }
+.cal-row .cal-unit { color: var(--muted); font-size: 12px; white-space: nowrap; }
+/* keeps the name/length columns lined up on rows without a ✕ (months that
+   cannot be removed — only the last one can be) */
+.cal-row .cal-nodel { width: 30px; flex: none; }
+.cal-add { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.cal-add input.cal-year { width: 96px; flex: none; }
+.cal-preview { font-family: Georgia, serif; color: var(--accent); }
+
+/* ---------- 0.9.0: timeline age bands ---------- */
+
+/* Only rendered when the world declares ages; worlds without them keep the flat
+   list they have always had. */
+.tl-band {
+  display: flex; align-items: baseline; gap: 10px;
+  padding-bottom: 4px; border-bottom: 1px solid var(--line);
+}
+.tl-band:first-child { margin-top: 4px; }
+.tl-band-from { font-family: inherit; font-size: 12px; color: var(--muted); }
+
+/* ---------- 0.9.0: small screens (13" laptop, tablet) ---------- */
+
+@media (max-width: 900px) {
+  /* the top bar grew to 7 links in 0.9 — let it wrap instead of overflowing */
+  #topbar { flex-wrap: wrap; height: auto; gap: 8px 14px; padding: 8px 12px; }
+  #mainnav { flex-wrap: wrap; }
+  .topbar-right { flex-wrap: wrap; gap: 8px; }
+  #sidebar { width: 210px; padding: 10px 8px; }
+  .page { padding: 20px 16px 60px; }
+  /* the date stops being a right-aligned gutter and sits above its entry */
+  .tl-item { flex-direction: column; gap: 2px; }
+  .tl-date { width: auto; text-align: left; }
+  /* calendar rows are name + length + ✕; stacking beats squeezing */
+  .cal-row { flex-wrap: wrap; }
+  .cal-row input.cal-name, .cal-row select.cal-after { flex: 1 1 160px; }
+}

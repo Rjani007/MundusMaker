@@ -8,6 +8,7 @@
 
 import { esc } from './util.js';
 import { state, findByName, visibleEntities } from './state.js';
+import { formatDate } from './calendar.js';
 
 const WIKILINK = /\[\[([^\][|]+)(?:\|([^\][]+))?\]\]/g;
 const DICE = /\b(\d{1,3}d\d{1,4}(?:\s*[+-]\s*\d{1,3})?)\b/g;
@@ -114,22 +115,17 @@ export function backlinksFor(id) {
 }
 
 /**
- * Format an in-world date. Uses the world's custom month names when defined
- * (world.calendar.months), otherwise numeric "1021.09.14". Era suffix included.
+ * Format an in-world date against the ACTIVE world — the state-bound convenience
+ * wrapper around calendar.js formatDate, which is now the single implementation.
+ * Callers get intercalary days, ages and annually recurring dates for free.
+ *
+ * Byte-identical to the old local implementation for every shape that exists in
+ * 0.8 data: same "no finite year -> empty string" gate, same named-month test
+ * (the raw calendar.months entry must be truthy), same "1021.09.14" numeric
+ * fallback, and the same era suffix whenever the world declares no ages.
  */
 export function formatWorldDate(d) {
-  if (!d || !Number.isFinite(d.year)) return '';
-  const era = state.world?.era ? ` ${state.world.era}` : '';
-  const months = state.world?.calendar?.months;
-  let s;
-  if (d.month && Array.isArray(months) && months[d.month - 1]) {
-    s = `${d.day ? d.day + ' ' : ''}${months[d.month - 1]} ${d.year}`;
-  } else {
-    s = String(d.year);
-    if (d.month) s += `.${String(d.month).padStart(2, '0')}`;
-    if (d.day) s += `.${String(d.day).padStart(2, '0')}`;
-  }
-  return s + era;
+  return formatDate(d, state.world?.calendar, state.world?.era);
 }
 
 /** First visible text block, truncated — used in lists and timeline. */

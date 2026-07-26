@@ -245,7 +245,11 @@ export function newEntity(name, type) {
     tags: [],
     gmOnly: false,
     fields: {},
-    date: null, // { year, month?, day?, endYear? } — puts the entity on the timeline
+    // { year?, month?, day?, special?, endYear?, recurs? } — puts the entity on
+    // the timeline. `month` is a 1-based position in calendar.months; `special`
+    // names an intercalary day instead (the two are mutually exclusive);
+    // `recurs: 'annual'` repeats every year and therefore carries no year.
+    date: null,
     blocks,
     relations: [], // { to, label, secret }
     map: null,

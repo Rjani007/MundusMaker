@@ -473,6 +473,11 @@ export function render(container, id) {
   const listsWrap = el('div', {});
   function refreshLists() {
     listsWrap.innerHTML = '';
+    // Player preview must hide secret overlay items here too, not just on the
+    // canvas. drawOverlay and hitOverlay already filter on `secret`; these lists
+    // did not, so the panel printed secret marker labels directly underneath its
+    // own "secret markers hidden" notice. Same convention as hitOverlay.
+    const shown = (list) => (list || []).filter((o) => state.gm || !o.secret);
     const linkables = visibleEntities()
       .filter((x) => x.id !== e.id)
       .sort((a, b) => a.name.localeCompare(b.name));
@@ -500,10 +505,10 @@ export function render(container, id) {
       },
     }, '✕');
 
-    if (map.markers?.length) {
+    if (shown(map.markers).length) {
       listsWrap.append(el('h3', {}, 'Markers'));
       const ml = el('div', { class: 'marker-list' });
-      for (const mk of map.markers) {
+      for (const mk of shown(map.markers)) {
         ml.append(el('div', { class: 'mk-row', style: selected === mk.id ? 'outline:1px dashed #7fd7ff;border-radius:4px' : '' },
           el('span', { class: 'legend-swatch', style: `background:${mk.color}` }),
           el('input', {
@@ -515,10 +520,10 @@ export function render(container, id) {
       }
       listsWrap.append(ml);
     }
-    if (map.stamps?.length) {
+    if (shown(map.stamps).length) {
       listsWrap.append(el('h3', {}, 'Placed things'));
       const sl = el('div', { class: 'marker-list' });
-      for (const s of map.stamps) {
+      for (const s of shown(map.stamps)) {
         sl.append(el('div', { class: 'mk-row', style: selected === s.id ? 'outline:1px dashed #7fd7ff;border-radius:4px' : '' },
           el('span', { class: 'legend-swatch', style: `background:${s.color}` }),
           el('input', {
@@ -547,10 +552,10 @@ export function render(container, id) {
       }
       listsWrap.append(ll);
     }
-    if (map.paths?.length) {
+    if (shown(map.paths).length) {
       listsWrap.append(el('h3', {}, 'Drawings'));
       const pl = el('div', { class: 'marker-list' });
-      for (const pa of map.paths) {
+      for (const pa of shown(map.paths)) {
         pl.append(el('div', { class: 'mk-row', style: selected === pa.id ? 'outline:1px dashed #7fd7ff;border-radius:4px' : '' },
           el('span', {
             class: 'legend-swatch', style: `background:${pa.color};cursor:pointer`,

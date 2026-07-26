@@ -18,6 +18,12 @@ export function render(container) {
       'Type ', kbd('[[Name]]'), ' to link to another entry — an autocomplete pops up after ', kbd('[['), '. Links you haven\'t written yet show ',
       el('span', { style: 'color:var(--accent2)' }, 'orange'), ' — click one to create the page. Hovering a link shows a preview card. Every page lists what links to it (backlinks). ',
       kbd('**bold**'), ', ', kbd('*italic*'), ', ', kbd('- lists'), ' and ', kbd('> quotes'), ' work in any text block.'),
+    p('Hover a block for its buttons: ', el('strong', {}, 'Edit'), ', a Text / Heading / Quote picker, 🔒, the arrows to move it, and ✕. ',
+      'Deleted something by accident? An ', el('strong', {}, 'Undo'), ' button appears in the corner for a few seconds.'),
+
+    h('📚 Type pages'),
+    p('Click a type name — the sidebar heading, a dashboard card, the badge on an entry — for that type\'s own page: every entry of that kind in one table, ',
+      'sortable, with the type\'s own fields as columns. Handy for spotting the stubs you never went back and filled in.'),
 
     h('📇 Details fields'),
     p('The Details card holds quick facts (Kind, Region, Population…). They\'re suggestions from the entry\'s type — hover the ',
@@ -44,9 +50,14 @@ export function render(container) {
       'Linked/named things become a numbered key under the map in PDF exports. ',
       'Exporting a PNG? Pick a resolution up to 4× — maps re-render sharp for printing instead of just being stretched.'),
 
-    h('📅 Timeline & sessions'),
-    p('Give any entry a date ("+ Add to timeline") and it appears in chronological order — with your own month names if you set them on the dashboard. ',
-      'After each game, write a ', el('strong', {}, 'Session'), ' entry with [[links]] to whoever showed up: every NPC then automatically lists which sessions they appeared in.'),
+    h('📅 Calendar, timeline & sessions'),
+    p('Give any entry a date ("+ Add to timeline") and it appears in chronological order. The ', el('strong', {}, 'Calendar'),
+      ' tab is where a year is defined: months and how long each one is, special days that belong to no month, and ',
+      el('strong', {}, 'ages'), ' — name one and every year from its first prints as "1026 Age of Ash" instead of your era suffix. Years stay absolute, so nothing you already dated moves.'),
+    p(el('strong', {}, 'Holidays and festivals'), ' are entries, not calendar settings. Make one (an Event does nicely), give it a date and tick ',
+      kbd('Repeats every year'), ' — it loses its year, reads as "Every year on 14 Harvestmoon", and gets its own section at the bottom of the Timeline. ',
+      'Because it\'s an ordinary entry it can hold secret blocks, be GM-only, and be [[linked]] like anything else.'),
+    p('After each game, write a ', el('strong', {}, 'Session'), ' entry with [[links]] to whoever showed up: every NPC then automatically lists which sessions they appeared in.'),
 
     h('📄 Sharing with players'),
     p('The Export tab builds a PDF of your world: the ', el('strong', {}, 'player edition'),
@@ -60,6 +71,11 @@ export function render(container) {
       kbd('data/.snapshots'), ') and deleted things go to ', kbd('data/.trash'), ' instead of vanishing. ',
       'Every entry also keeps its own history: the ⏳ History button on an entry lists the last 10 versions and restores any of them (the current state is saved first, so restoring is always safe). ',
       'To sync between devices, point the data folder at Dropbox/Drive/Syncthing from the dashboard\'s Sync card. One-click JSON backups live there too.'),
+
+    h('🔤 Words this app uses'),
+    p(el('strong', {}, 'Wiki-link'), ' — ', kbd('[[Name]]'), ' inside any text block. It jumps to that entry, or offers to create it. ',
+      el('strong', {}, 'Backlink'), ' — the same link seen from the other end: every entry lists what points at it, so an NPC shows the sessions they turned up in without you keeping a list. ',
+      el('strong', {}, 'GM-only'), ' — an entry players never see anywhere, exports included; the 🔒 button on a single block, relation or map pin hides just that piece instead.'),
 
     h('⌨️ Shortcuts'),
     p(kbd('Ctrl+K'), ' search · ', kbd('Ctrl+S'), ' save now · ', kbd('Esc'), ' close/finish editing · click any dice to roll it.'),

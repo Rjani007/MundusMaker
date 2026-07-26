@@ -5,6 +5,7 @@
 
 import { state, types, typeOf } from './state.js';
 import { mdToPlain, formatWorldDate } from './render.js';
+import { isHistoric, isRecurring, histSortKey, slotSortKey, cmpKey, formatYear, hasAges, ageBands } from './calendar.js';
 import { mapToJpeg, mapKey } from './maps/mapcore.js';
 import { ABILITIES, abilityMod } from './statblock.js';
 import { computeEncounter } from './encounter.js';
@@ -48,15 +49,38 @@ function pdfSafe(s) {
   return out;
 }
 
+/** The key an entity is grouped under (missing/blank types share one group). */
+export const typeKeyOf = (e) => e.type || '';
+
+/** Chapter groups: every type the world defines, then any type that only exists
+ *  on an entity — from an import, a hand-edited file, or a deleted type. Those
+ *  entries used to have no chapter and were dropped from the PDF without a word.
+ *  The Export view builds its checkboxes from this same list so the two can
+ *  never disagree about which keys exist. */
+export function typeGroups(entities) {
+  const known = types();
+  const extra = new Map();
+  for (const e of entities) {
+    const key = typeKeyOf(e);
+    // hasOwn, not `known[key]` — a type literally named "constructor" would
+    // otherwise look defined and vanish again
+    if (Object.hasOwn(known, key) || extra.has(key)) continue;
+    extra.set(key, { label: key || 'Untyped', plural: key || 'Untyped', color: '#8a8f98', fields: [] });
+  }
+  return [...Object.entries(known), ...[...extra].sort((a, b) => a[0].localeCompare(b[0]))];
+}
+
 export async function buildPdf(opts) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   const world = state.world;
   const edition = opts.gm ? 'Game Master Edition' : 'Player Edition';
 
-  const ents = [...state.entities.values()]
-    .filter((e) => (opts.gm || !e.gmOnly) && opts.typeKeys.has(e.type))
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const all = [...state.entities.values()];
+  const groups = typeGroups(all);
+  const labelOf = new Map(groups.map(([key, t]) => [key, t.label]));
+  const included = (e) => (opts.gm || !e.gmOnly) && opts.typeKeys.has(typeKeyOf(e));
+  const ents = all.filter(included).sort((a, b) => a.name.localeCompare(b.name));
   const visible = (e) => opts.gm || !e.gmOnly; // for relation targets
 
   // preload portraits so layout can stay synchronous
@@ -146,7 +170,7 @@ export async function buildPdf(opts) {
     doc.setFont('times', 'bold');
     doc.setFontSize(15);
     doc.setTextColor(255, 255, 255);
-    doc.text(text, M, y + 2);
+    doc.text(pdfSafe(text), M, y + 2);
     y += 30;
   }
 
@@ -157,7 +181,15 @@ export async function buildPdf(opts) {
 
   function writeEncounter(b, secretStyle) {
     const enc = b.enc || { partySize: 4, partyLevel: 1, rows: [] };
-    const c = computeEncounter(enc, (id) => state.entities.get(id));
+    // Resolve monster rows through the SAME visibility rule as the rest of the
+    // export. A revealed encounter may reference a gmOnly creature; resolving it
+    // through the raw entity map printed that creature's name and its secret
+    // statblock's CR straight into the player edition. computeEncounter already
+    // falls back to the row's own typed name when the entity resolves to null.
+    const c = computeEncounter(enc, (id) => {
+      const m = state.entities.get(id);
+      return m && (opts.gm || !m.gmOnly) ? m : null;
+    });
     y += 4;
     para(`Encounter — ${c.difficulty}`, 12, 'bold', [190, 75, 85], { font: 'times', ...secretStyle });
     for (const r of c.rows) {
@@ -194,9 +226,9 @@ export async function buildPdf(opts) {
   }
 
   // ---------- entities by type ----------
-  for (const [typeKey, t] of Object.entries(types())) {
+  for (const [typeKey, t] of groups) {
     if (!opts.typeKeys.has(typeKey)) continue;
-    const group = ents.filter((e) => e.type === typeKey);
+    const group = ents.filter((e) => typeKeyOf(e) === typeKey);
     if (!group.length) continue;
     sectionHeading(t.plural || t.label, hexToRgb(t.color));
 
@@ -229,8 +261,12 @@ export async function buildPdf(opts) {
       y += 8 + (nameLines.length - 1) * 19;
 
       const metaBits = [t.label, ...(e.tags || [])];
-      if (e.date?.year != null) {
-        metaBits.push(`${formatWorldDate(e.date)}${e.date.endYear ? ' – ' + e.date.endYear : ''}`.trim());
+      // Was `e.date?.year != null`, which dropped recurring dates — they have no
+      // year at all. The formatted string is the honest test, and only a
+      // historic date can carry an end year.
+      const dateStr = formatWorldDate(e.date);
+      if (dateStr) {
+        metaBits.push(`${dateStr}${isHistoric(e.date) && e.date.endYear ? ' – ' + e.date.endYear : ''}`.trim());
       }
       para(metaBits.join('  ·  '), 9, 'normal', [130, 124, 150], { maxW: headMaxW });
       y += 4;
@@ -295,7 +331,8 @@ export async function buildPdf(opts) {
         const rels = (e.relations || [])
           .filter((r) => (opts.gm || !r.secret))
           .map((r) => ({ r, target: state.entities.get(r.to) }))
-          .filter(({ target }) => target && visible(target) && opts.typeKeys.size);
+          // don't point at a chapter this edition doesn't contain
+          .filter(({ target }) => target && included(target));
         if (rels.length) {
           y += 2;
           for (const { r, target } of rels) {
@@ -349,10 +386,77 @@ export async function buildPdf(opts) {
 
   // ---------- timeline ----------
   if (opts.includeTimeline) {
-    const dated = [...state.entities.values()]
-      .filter((e) => (opts.gm || !e.gmOnly) && e.date && Number.isFinite(e.date.year))
-      .sort((a, b) => (a.date.year - b.date.year) || ((a.date.month ?? 0) - (b.date.month ?? 0)));
-    if (dated.length) {
+    // Recurring dates have no year, so they must be split out BEFORE any
+    // chronological comparison (undefined - undefined is NaN and the sort goes
+    // silently wrong). They print in their own band, ordered by slot.
+    const cal = world.calendar;
+    const onTimeline = all.filter((e) => included(e) && e.date);
+    const dated = onTimeline
+      .filter((e) => isHistoric(e.date))
+      .sort((a, b) => cmpKey(histSortKey(a.date, cal), histSortKey(b.date, cal)));
+    const annual = onTimeline
+      .filter((e) => isRecurring(e.date))
+      .sort((a, b) => cmpKey(slotSortKey(a.date, cal), slotSortKey(b.date, cal)) || a.name.localeCompare(b.name));
+
+    // PARITY WITH THE SCREEN. The row uses the same formatter the Timeline view
+    // uses — formatWorldDate for the date, formatYear for the end year on its own
+    // small line underneath — instead of the old `${year}–${endYear}` string,
+    // which dropped the month and day of a ranged date and skipped the age suffix
+    // on its start year.
+    function timelineRow(e) {
+      const dateText = pdfSafe(formatWorldDate(e.date));
+      const untilText = isHistoric(e.date) && Number.isFinite(e.date.endYear)
+        ? pdfSafe(`until ${formatYear(e.date.endYear, cal, world.era)}`)
+        : '';
+      doc.setFont('times', 'bold');
+      doc.setFontSize(12);
+      const dateW = doc.getTextWidth(dateText);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      const untilW = untilText ? doc.getTextWidth(untilText) : 0;
+      // the date column has to hold BOTH lines, or a long range runs under the
+      // snippet (on screen .tl-date is a fixed column and simply wraps)
+      const nameX = Math.max(95, dateW + 14, untilW + 14);
+
+      ensure(untilText ? 44 : 34);
+      y += 4;
+      doc.setFont('times', 'bold');
+      doc.setFontSize(12);
+      doc.setTextColor(90, 74, 140);
+      doc.text(dateText, M, y);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(40, 34, 60);
+      doc.text(pdfSafe(e.name), M + nameX, y);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(130, 124, 150);
+      const typeLabel = labelOf.get(typeKeyOf(e)) || typeOf(e).label || '';
+      doc.text(pdfSafe(typeLabel + (opts.gm && e.gmOnly ? ' · GM only' : '')), M + nameX + doc.getTextWidth(pdfSafe(e.name)) + 12, y);
+      if (untilText) {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(130, 124, 150);
+        doc.text(untilText, M, y + 11);
+      }
+      y += 14;
+      const firstBlock = (e.blocks || []).find((b) => b.kind === 'text' && b.text?.trim() && (opts.gm || !b.secret));
+      if (firstBlock) {
+        const snippet = mdToPlain(firstBlock.text).replace(/\s+/g, ' ').trim().slice(0, 220);
+        para(snippet, 9, 'normal', [110, 104, 130], { indent: nameX });
+      }
+      y += 4;
+    }
+
+    /** Age band / "Every year" heading — one shape, so the two cannot drift. */
+    function bandHeading(text) {
+      y += 10;
+      ensure(26);
+      para(text, 12.5, 'bold', [90, 74, 140], { font: 'times' });
+      y += 2;
+    }
+
+    if (dated.length || annual.length) {
       doc.addPage();
       y = M;
       sectionHeading('Timeline', [90, 74, 140]);
@@ -360,31 +464,21 @@ export async function buildPdf(opts) {
         para(`Current date: ${world.calendar.today}`, 9.5, 'italic', [110, 104, 130]);
         y += 4;
       }
-      const era = world.era ? ` ${world.era}` : '';
-      for (const e of dated) {
-        ensure(34);
-        y += 4;
-        doc.setFont('times', 'bold');
-        doc.setFontSize(12);
-        doc.setTextColor(90, 74, 140);
-        const yearStr = pdfSafe(`${e.date.endYear ? `${e.date.year}–${e.date.endYear}${era}` : formatWorldDate(e.date)}`);
-        doc.text(yearStr, M, y);
-        const nameX = Math.max(95, doc.getTextWidth(yearStr) + 14);
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(11);
-        doc.setTextColor(40, 34, 60);
-        doc.text(pdfSafe(e.name), M + nameX, y);
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(9);
-        doc.setTextColor(130, 124, 150);
-        doc.text(typeOf(e).label + (opts.gm && e.gmOnly ? ' · GM only' : ''), M + nameX + doc.getTextWidth(pdfSafe(e.name)) + 12, y);
-        y += 14;
-        const firstBlock = (e.blocks || []).find((b) => b.kind === 'text' && b.text?.trim() && (opts.gm || !b.secret));
-        if (firstBlock) {
-          const snippet = mdToPlain(firstBlock.text).replace(/\s+/g, ' ').trim().slice(0, 220);
-          para(snippet, 9, 'normal', [110, 104, 130], { indent: nameX });
+      // Same banding rule as the Timeline view, from the same kernel helpers, over
+      // the list `included()` has already filtered — so the player edition never
+      // prints a band header for an age only GM-only entries fall in. A world with
+      // no ages takes the flat branch and prints exactly as it does in 0.8.
+      if (hasAges(cal)) {
+        for (const band of ageBands(dated, cal, (e) => e.date)) {
+          bandHeading(band.label + (Number.isFinite(band.age?.startYear) ? `  ·  from ${band.age.startYear}` : ''));
+          for (const e of band.items) timelineRow(e);
         }
-        y += 4;
+      } else {
+        for (const e of dated) timelineRow(e);
+      }
+      if (annual.length) {
+        bandHeading('Every year');
+        for (const e of annual) timelineRow(e);
       }
     }
   }

@@ -34,7 +34,11 @@ dropdown in the top-right corner. The Help tab inside the app covers the rest.
 
 Entries are typed: characters, NPCs, locations, factions, items, events,
 creatures, sessions, notes. Each type has its own fields, and you can add your
-own types.
+own types. Click a type anywhere you see it — the sidebar heading, a card on
+the dashboard, the badge on an entry — and you get that type's own page: every
+location in one sortable table, with the columns that matter for locations
+(Region, Population, and so on) already filled in. It's the fastest way to see
+what you've actually written and what's still an empty stub.
 
 Writing works like a wiki. Type `[[Port Vellen]]` and it becomes a link, with
 autocomplete popping up as soon as you type `[[`. Hover a link and a card
@@ -45,9 +49,19 @@ link that pointed at the old name.
 
 A new NPC starts with Appearance / Personality / Hooks headings, a location
 with What you see / Who you meet / Secrets, and so on — write into them or
-delete them. The quick-facts fields (Kind, Region, Population…) have little
-`?` bubbles explaining what goes where, and any field you don't need can be
-hidden with the ✕ and brought back later.
+delete them. Empty ones tell you what they're for ("Write the Secrets
+section…") instead of sitting there blank. The quick-facts fields (Kind,
+Region, Population…) have little `?` bubbles explaining what goes where, and
+any field you don't need can be hidden with the ✕ and brought back later.
+
+The page is a page until you click it, and then it's an editor. Hover any
+paragraph and it outlines itself, with buttons that say what they do — Edit,
+Make secret, Delete — and a Text / Heading / Quote picker that shows what the
+block currently is. Start typing and a little row of formatting shortcuts
+appears under the box, so you don't have to remember the markup. Delete
+something by mistake and there's an Undo button in the corner for the next few
+seconds; nothing asks you "are you sure?" anymore, because it can just put it
+back.
 
 Things that get used constantly at the table:
 
@@ -87,10 +101,24 @@ screen size up to 4× for posters, re-rendered sharp rather than upscaled — an
 get embedded in the PDF at print quality, where linked and named things
 become a numbered key under the map.
 
-There's also a graph view of how everything connects, a timeline that can use
-your own calendar months, portraits on any entry, search over everything
-(Ctrl+K), and an import page that reads Obsidian/Markdown folders and
-5e.tools bestiary files.
+Your world keeps its own calendar. The Calendar tab is where you build a year:
+name the months and say how long each one is, add the odd day that belongs to
+no month at all (a Mid-year's Day, a Festival of Lights), and name your ages —
+declare an Age of Ash starting in 990 and every year from then on prints as
+"1026 Age of Ash" instead of your era suffix. Give an entry a date and it lands
+on the Timeline, grouped under the age it happened in. Tick "Repeats every
+year" instead and you've made a holiday: it drops its year, reads as "Every
+year on 14 Harvestmoon", and collects at the bottom of the timeline with the
+other festivals. Holidays are ordinary entries, so they can have secrets and
+links like anything else.
+
+Nothing you've already dated ever moves. Shorten a month after the fact and
+MundusMaker keeps your dates exactly as you wrote them and quietly mentions the
+ones that now hang past the end — it will not silently rewrite your history.
+
+There's also a graph view of how everything connects, portraits on any entry,
+search over everything including your quick-facts fields (Ctrl+K), and an
+import page that reads Obsidian/Markdown folders and 5e.tools bestiary files.
 
 ## The PDF export
 
@@ -139,8 +167,8 @@ If you want a new entry type, add it to that world's `world.json`:
 2d6+3                      clickable dice roll
 ```
 
-Blocks cycle between text, heading and quote with the ¶ button, move with the
-arrows, and lock with 🔒.
+Hover a block for its buttons: switch it between Text, Heading and Quote, move
+it with the arrows, and lock it with 🔒.
 
 ## For developers
 

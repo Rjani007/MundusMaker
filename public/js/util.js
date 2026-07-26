@@ -65,13 +65,38 @@ export function helpTip(text) {
 }
 
 let toastTimer = null;
-export function toast(msg, ms = 2600) {
+
+/** Hide the toast now (used by its own ✕ and after an action fires). */
+export function hideToast() {
+  clearTimeout(toastTimer);
+  document.getElementById('toast')?.classList.remove('show');
+}
+
+/**
+ * Transient message at the bottom of the screen.
+ * `action` ({ label, onAction }) adds one button — that's how Undo is offered.
+ * There is only ever ONE toast node, so a newer message replaces the older one
+ * and takes its button with it; that is what keeps undo single-step, and why
+ * callers must not treat a pending action as something they can rely on later.
+ */
+export function toast(msg, ms = 2600, action = null) {
   let t = document.getElementById('toast');
   if (!t) {
     t = el('div', { id: 'toast' });
     document.body.append(t);
   }
-  t.textContent = msg;
+  t.innerHTML = '';
+  t.append(el('span', {}, msg));
+  if (action?.label && typeof action.onAction === 'function') {
+    t.append(
+      el('button', {
+        class: 'toast-action',
+        onclick: () => { hideToast(); action.onAction(); },
+      }, action.label),
+      el('button', {
+        class: 'toast-close', title: 'Dismiss', 'aria-label': 'Dismiss', onclick: hideToast,
+      }, '✕'));
+  }
   t.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.remove('show'), ms);

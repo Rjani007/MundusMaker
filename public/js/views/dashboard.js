@@ -29,12 +29,18 @@ export function render(container) {
     oninput: (ev) => { w.era = ev.target.value; saveWorldSoon(); },
   });
 
+  // Real links: the stylesheet has always given these cards a pointer cursor and
+  // a hover border, so they advertised a click target that did nothing.
   const stats = el('div', { class: 'stat-cards' },
     Object.entries(types()).map(([key, t]) => {
       const n = ents.filter((e) => e.type === key).length;
-      return el('div', { class: 'stat-card', style: `border-left:3px solid ${t.color}` },
+      const label = t.plural || t.label;
+      return el('a', {
+        class: 'stat-card', href: `#/t/${encodeURIComponent(key)}`,
+        style: `border-left:3px solid ${t.color}`, title: `Open the ${label} page`,
+      },
         el('div', { class: 'num' }, n),
-        el('div', { class: 'lbl' }, t.plural || t.label));
+        el('div', { class: 'lbl' }, label));
     }));
 
   const recent = [...ents].sort((a, b) => (b.updated || '').localeCompare(a.updated || '')).slice(0, 8);
@@ -87,28 +93,12 @@ export function render(container) {
   }
   refreshWorldList();
 
-  // ---------- calendar ----------
-  const cal = (w.calendar ??= {});
-  const monthsInput = el('input', {
-    value: (cal.months || []).join(', '), style: 'width:100%',
-    placeholder: 'e.g. Deepwinter, Thawmarch, Seedfall, Highsun, Emberwane, Harvestmoon, Mistfall, Longdark',
-    oninput: (ev) => {
-      const list = ev.target.value.split(',').map((s) => s.trim()).filter(Boolean);
-      cal.months = list.length ? list : undefined;
-      saveWorldSoon();
-    },
-  });
-  const todayInput = el('input', {
-    value: cal.today || '', style: 'width:100%', placeholder: 'e.g. 14 Harvestmoon 1026 AR',
-    oninput: (ev) => { cal.today = ev.target.value.trim() || undefined; saveWorldSoon(); },
-  });
+  // The calendar editor moved to its own page (#/calendar) — months, lengths,
+  // special days, ages and today's date no longer fit in a dashboard card.
   const calendarCard = el('div', { class: 'card' },
-    el('h3', {}, 'Calendar'),
-    el('div', { class: 'small muted', style: 'margin-bottom:4px' },
-      'Month names (in order, comma separated) — dates on the timeline become “14 Harvestmoon 1021” instead of “1021.06.14”. Leave empty for numeric months.'),
-    monthsInput,
-    el('div', { class: 'small muted', style: 'margin:10px 0 4px' }, 'Current in-world date (free text, shown on the timeline):'),
-    todayInput);
+    el('div', { class: 'row' },
+      el('a', { href: '#/calendar' }, '📅 Calendar'),
+      el('span', { class: 'muted small' }, 'Months and their lengths, special days, ages, today’s date.')));
 
   // ---------- sync across devices ----------
   const syncWrap = el('div', {}, el('span', { class: 'muted small' }, 'Loading…'));
@@ -168,7 +158,11 @@ export function render(container) {
             ' ',
             el('span', { class: 'muted small' }, snippetFor(e, 90)))))
       : el('div', { class: 'notice' },
-          'This world is empty. Create your first entry above.'),
+          // "empty" is a lie when the entries exist but are all GM-only
+          state.entities.size
+            ? '👁 Every entry here is GM-only. Switch to GM view in the top bar to see them.'
+            : ['Nothing here yet. Name your first entry above — or ',
+               el('a', { href: '#/import' }, 'import notes you already have'), '.']),
     calendarCard,
     el('div', { class: 'card' },
       el('h3', {}, 'Your worlds'),

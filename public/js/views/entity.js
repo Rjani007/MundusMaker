@@ -8,7 +8,8 @@ import {
   saveEntity, scheduleSave, deleteEntity, duplicateEntity,
   replaceEntity, flushSaves,
 } from '../state.js';
-import { mdToHtml, backlinksFor, formatWorldDate } from '../render.js';
+import { mdToHtml, backlinksFor } from '../render.js';
+import { slotsOf, formatDate, formatYear, isHistoric, isRecurring } from '../calendar.js';
 import { newMap, MAP_KINDS, renderThumbnail } from '../maps/mapcore.js';
 import { defaultStat, statblockHtml, ABILITIES } from '../statblock.js';
 import { defaultEncounter, computeEncounter, DIFFICULTY_COLORS } from '../encounter.js';
@@ -45,6 +46,13 @@ const FIELD_HINTS = {
 };
 const fieldHint = (type, key) => FIELD_HINTS[`${type}:${key}`] || FIELD_HINTS[key] || null;
 
+// What to call a block in the "deleted" toast, so the Undo button says what it
+// would bring back.
+const BLOCK_NOUN = {
+  text: 'Block', heading: 'Heading', quote: 'Quote',
+  statblock: '⚔ Statblock', encounter: '💀 Encounter',
+};
+
 export function render(container, id) {
   const e = getEntity(id);
   if (!e) {
@@ -61,6 +69,35 @@ export function render(container, id) {
 
   const save = () => scheduleSave(e); // batched + visible in the topbar Save indicator
   const t = () => typeOf(e);
+
+  // ---------- single-step undo ----------
+  // Deleting a block, a relation or a quick fact is instant and unconfirmed;
+  // the safety net is the Undo button on the toast. Only one undo can be
+  // pending: the toast helper shows one message at a time, so a newer deletion
+  // takes the older button away with it.
+  // The two guards matter because that button outlives this render. It must not
+  // fire against a page that has been navigated away from or re-rendered (`e`
+  // would then be a stale twin of the cached entity and saving it would clobber
+  // newer edits), nor after a world switch (it would write this entry into the
+  // wrong world).
+  let pendingUndo = null;
+  function offerUndo(msg, restore) {
+    const token = { worldId: state.worldId };
+    pendingUndo = token;
+    toast(msg, 9000, {
+      label: 'Undo',
+      onAction: () => {
+        if (pendingUndo !== token) return;
+        pendingUndo = null;
+        if (!blocksWrap.isConnected || state.worldId !== token.worldId) {
+          toast('That undo has expired — check ⏳ History on the entry instead.', 4000);
+          return;
+        }
+        restore();
+        save();
+      },
+    });
+  }
 
   // ---------- rename propagation ----------
   let nameAtLoad = e.name;
@@ -111,7 +148,10 @@ export function render(container, id) {
 
   const meta = el('div', { class: 'ent-meta' },
     readOnly
-      ? [el('span', { class: 'type-badge' },
+      ? [el('a', {
+            class: 'type-badge', href: `#/t/${encodeURIComponent(e.type || '')}`,
+            title: `Open the ${t().plural || t().label} page`,
+          },
           el('span', { class: 'dot', style: `background:${t().color}` }), t().label),
          (e.tags || []).map((tag) => el('span', { class: 'tag' }, tag))]
       : [el('span', { class: 'dot', style: `background:${t().color}` }), typeSel, tagsInput, gmOnlyBtn,
@@ -164,10 +204,29 @@ export function render(container, id) {
           class: 'ghost small',
           title: suggested.includes(key) ? 'Hide this field on this entry (restore below)' : 'Remove field',
           onclick: () => {
-            if ((e.fields?.[key] ?? '').trim() && !confirm(`Remove “${key}” and its value?`)) return;
+            // Restore exactly this one field at its original position — never a
+            // whole-object snapshot. The undo window is long enough to edit
+            // another field in, and swapping the snapshot back would silently
+            // discard that edit and then persist the loss.
+            const wasSuggested = suggested.includes(key);
+            const prevValue = e.fields?.[key];
+            const prevIndex = Object.keys(e.fields || {}).indexOf(key);
+            const addedHidden = wasSuggested && !hidden.has(key);
             if (e.fields) delete e.fields[key];
-            if (suggested.includes(key) && !hidden.has(key)) (e.hiddenFields ??= []).push(key);
+            if (addedHidden) (e.hiddenFields ??= []).push(key);
             save(); refreshFields();
+            offerUndo(wasSuggested ? `“${key}” hidden.` : `“${key}” removed.`, () => {
+              // rebuild so the key lands back at its old display index while
+              // every other field keeps whatever it holds right now
+              const rest = Object.entries(e.fields || {}).filter(([k]) => k !== key);
+              const at = prevIndex < 0 ? rest.length : Math.min(prevIndex, rest.length);
+              rest.splice(at, 0, [key, prevValue]);
+              e.fields = Object.fromEntries(rest);
+              if (addedHidden && Array.isArray(e.hiddenFields)) {
+                e.hiddenFields = e.hiddenFields.filter((k) => k !== key);
+              }
+              refreshFields();
+            });
           },
         }, '✕'));
     }
@@ -246,37 +305,206 @@ export function render(container, id) {
   }
 
   // ---------- timeline date ----------
+  // Dates are shaped { year?, month?, day?, special?, endYear?, recurs? } and
+  // every field is optional. `month` is a POSITION in world.calendar.months (its
+  // meaning is unchanged from 0.8); `special` names an intercalary day instead
+  // and the two are mutually exclusive; `recurs: 'annual'` means the event comes
+  // round every year and therefore has NO year at all.
   const dateWrap = el('div', {});
+  const calOf = () => state.world?.calendar;
+  const eraOf = () => state.world?.era || '';
+  // Remembered across a recurring toggle so unticking the box restores the year
+  // the entry had rather than inventing one.
+  let lastYear = Number.isFinite(e.date?.year) ? e.date.year : null;
+
+  /**
+   * A believable in-world year for a brand new date. NEVER the real-world year:
+   * seeding 2026 into a homebrew setting was the old behaviour and it is
+   * nonsense in every world this app is for.
+   */
+  function defaultYear() {
+    const cal = calOf();
+    if (Number.isFinite(cal?.todayDate?.year)) return cal.todayDate.year;
+    const ages = (cal?.ages || []).filter((a) => Number.isFinite(a.startYear));
+    if (ages.length) return Math.max(...ages.map((a) => a.startYear));
+    const years = [...state.entities.values()].filter((x) => isHistoric(x.date)).map((x) => x.date.year);
+    if (years.length) return Math.max(...years);
+    return 1;
+  }
+
   function refreshDate() {
     dateWrap.innerHTML = '';
+    const cal = calOf(), era = eraOf();
     if (readOnly) {
-      if (e.date?.year != null) {
-        dateWrap.append(el('div', { class: 'small muted' }, `📅 ${formatWorldDate(e.date)}`));
-      }
+      // Was `e.date?.year != null`, which silently hid recurring dates (they have
+      // no year by design). The formatted string is the honest test.
+      const shown = formatDate(e.date, cal, era);
+      if (shown) dateWrap.append(el('div', { class: 'small muted' }, `📅 ${shown}`));
       return;
     }
     if (!e.date) {
       dateWrap.append(el('button', {
         class: 'ghost small',
-        onclick: () => { e.date = { year: new Date().getFullYear() }; save(); refreshDate(); },
+        title: 'Put this entry on the timeline with an in-world date',
+        onclick: () => { e.date = { year: defaultYear() }; lastYear = e.date.year; save(); refreshDate(); },
       }, '+ Add to timeline'));
       return;
     }
-    const num = (key, ph, width = 70) => el('input', {
-      type: 'number', value: e.date[key] ?? '', placeholder: ph, style: `width:${width}px`,
+
+    const d = e.date;
+    const recurs = isRecurring(d);
+    const slots = slotsOf(cal);
+    const slotOf = () => (d.special
+      ? slots.find((s) => s.kind === 'special' && s.id === d.special)
+      : (d.month ? slots.find((s) => s.kind === 'month' && s.month === d.month) : null));
+
+    const readout = el('span', { class: 'cal-preview' });
+    const hint = el('div', { class: 'small muted date-hint' });
+
+    function refreshReadout() {
+      const main = formatDate(d, cal, era);
+      const tail = !isRecurring(d) && d.endYear ? ` – ${formatYear(d.endYear, cal, era)}` : '';
+      readout.textContent = main ? main + tail : '—';
+    }
+
+    /**
+     * Soft warnings only. NO CLAMP: a day past the end of its month is kept and
+     * shown exactly as written — month lengths are declared long after dates are.
+     */
+    function refreshHint() {
+      hint.textContent = '';
+      if (!recurs && !Number.isFinite(d.year)) {
+        hint.textContent = 'Give it a year, or tick “Repeats every year” — until then it stays off the timeline.';
+        return;
+      }
+      const slot = slotOf();
+      if (slot && Number.isFinite(d.day) && d.day > slot.days) {
+        hint.textContent = `${slot.name || 'This month'} is ${slot.days} day${slot.days === 1 ? '' : 's'} long. The date is kept exactly as written.`;
+      }
+    }
+
+    // min/step/max are set BEFORE value — a number input snaps to the default
+    // step otherwise (same gotcha as the range inputs in the map editor).
+    const yearInput = el('input', {
+      type: 'number', step: 1, value: Number.isFinite(d.year) ? d.year : '',
+      placeholder: 'year', style: 'width:84px',
+      title: 'The year, counted from the start of the world. Ages only change how it prints — they never restart the numbering.',
       oninput: (ev) => {
-        const v = ev.target.value;
-        e.date[key] = v === '' ? null : Number(v);
-        save();
+        const raw = ev.target.value.trim();
+        const v = Math.round(Number(raw));
+        if (raw === '' || !Number.isFinite(v)) delete d.year;
+        else { d.year = v; lastYear = v; }
+        save(); refreshReadout(); refreshHint();
       },
     });
-    dateWrap.append(el('div', { class: 'row small' },
-      el('span', { class: 'muted' }, '📅 Year'), num('year', 'year', 84),
-      el('span', { class: 'muted' }, 'Month'), num('month', '–', 56),
-      el('span', { class: 'muted' }, 'Day'), num('day', '–', 56),
-      el('span', { class: 'muted' }, 'until year'), num('endYear', '–', 84),
-      el('span', { class: 'muted' }, formatWorldDate(e.date)),
-      el('button', { class: 'ghost small', onclick: () => { e.date = null; save(); refreshDate(); } }, 'Remove from timeline')));
+
+    function slotSelect() {
+      const sel = el('select', {
+        style: 'max-width:190px',
+        title: 'Which month — or which day that belongs to no month',
+        // rebuilds the whole row: the day bound depends on the slot
+        onchange: (ev) => {
+          const v = ev.target.value;
+          if (!v) { delete d.month; delete d.special; }
+          else if (v.startsWith('m:')) { d.month = Number(v.slice(2)); delete d.special; }
+          else { d.special = v.slice(2); delete d.month; }
+          save(); refreshDate();
+        },
+      }, el('option', { value: '' }, '— no month —'),
+        slots.map((s) => (s.kind === 'month'
+          ? el('option', { value: `m:${s.month}` }, s.name || `Month ${s.month}`)
+          : el('option', { value: `s:${s.id}` }, `${s.name || s.id} (special day)`))));
+      const want = d.special ? `s:${d.special}` : (d.month ? `m:${d.month}` : '');
+      // A month or special day the calendar no longer declares keeps its own
+      // option instead of being silently reset to "none" — no clamp, ever.
+      if (want && ![...sel.options].some((o) => o.value === want)) {
+        sel.append(el('option', { value: want },
+          d.special ? `${d.special} (not in the calendar)` : `Month ${d.month}`));
+      }
+      sel.value = want;
+      return sel;
+    }
+
+    /**
+     * The 0.8 control, kept for a world that has not named its months yet.
+     * Without it the select would offer nothing but "— no month —" and those
+     * GMs would silently lose the ability to date anything by month at all.
+     */
+    function monthNumber() {
+      return el('input', {
+        type: 'number', min: 1, step: 1, value: d.month ?? '', placeholder: 'month', style: 'width:70px',
+        title: 'Month number. Name your months on the Calendar page and this becomes a list.',
+        oninput: (ev) => {
+          const raw = ev.target.value.trim();
+          const v = Math.round(Number(raw));
+          if (raw === '' || !Number.isFinite(v) || v < 1) delete d.month; else d.month = v;
+          delete d.special;
+          save(); refreshReadout(); refreshHint();
+        },
+      });
+    }
+    const monthCtl = slots.length ? slotSelect() : monthNumber();
+
+    const slotNow = slotOf();
+    const dayInput = el('input', {
+      type: 'number', min: 1, ...(slotNow ? { max: slotNow.days } : {}), step: 1,
+      value: Number.isFinite(d.day) ? d.day : '', placeholder: 'day', style: 'width:64px',
+      title: slotNow ? `Day of ${slotNow.name || 'the month'} (${slotNow.days} long)` : 'Day of the month',
+      oninput: (ev) => {
+        const raw = ev.target.value.trim();
+        const v = Math.round(Number(raw));
+        if (raw === '' || !Number.isFinite(v) || v < 1) delete d.day; else d.day = v;
+        save(); refreshReadout(); refreshHint();
+      },
+    });
+
+    const endInput = el('input', {
+      type: 'number', step: 1, value: Number.isFinite(d.endYear) ? d.endYear : '',
+      placeholder: '–', style: 'width:84px',
+      title: 'For something that lasted — a war, a reign. Leave empty for a single date.',
+      oninput: (ev) => {
+        const raw = ev.target.value.trim();
+        const v = Math.round(Number(raw));
+        if (raw === '' || !Number.isFinite(v)) delete d.endYear; else d.endYear = v;
+        save(); refreshReadout();
+      },
+    });
+
+    const recurBox = el('input', {
+      type: 'checkbox', checked: recurs,
+      onchange: (ev) => {
+        if (ev.target.checked) {
+          if (Number.isFinite(d.year)) lastYear = d.year;
+          d.recurs = 'annual';
+          delete d.year;      // a recurring date has no year, by definition
+          delete d.endYear;   // ...so it cannot span years either
+        } else {
+          delete d.recurs;
+          d.year = Number.isFinite(lastYear) ? lastYear : defaultYear();
+        }
+        save(); refreshDate();
+      },
+    });
+
+    refreshReadout();
+    refreshHint();
+
+    dateWrap.append(el('div', { class: 'row small date-edit' },
+      el('span', { class: 'muted' }, recurs ? '📅' : '📅 Year'),
+      recurs ? null : yearInput,
+      monthCtl,
+      dayInput,
+      recurs ? null : el('span', { class: 'muted' }, 'until year'),
+      recurs ? null : endInput,
+      el('label', { class: 'row small', style: 'gap:5px;cursor:pointer;white-space:nowrap' },
+        recurBox, 'Repeats every year'),
+      helpTip('For holidays, festivals and anniversaries. A repeating date has no year — it just says “14 Harvestmoon, every year” — so it gets its own section on the Timeline instead of a spot in history.'),
+      readout,
+      el('button', {
+        class: 'ghost small',
+        onclick: () => { e.date = null; save(); refreshDate(); },
+      }, 'Remove from timeline')),
+      hint);
   }
   refreshDate();
 
@@ -322,19 +550,44 @@ export function render(container, id) {
   refreshPortrait();
 
   // ---------- blocks ----------
-  const blocksWrap = el('div', { class: 'blocks' });
+  // `editable` gates every "this is clickable" style: in player preview nothing
+  // here responds to a click, so it must not hover like it does.
+  const blocksWrap = el('div', { class: readOnly ? 'blocks' : 'blocks editable' });
 
-  function blockContentHtml(b) {
+  // An empty block used to say "Click to write…" and nothing more, which is
+  // useless in a fresh scaffold where five of them are stacked up. Naming the
+  // section the block sits under turns each blank into an actual instruction.
+  function emptyPrompt(idx) {
+    for (let j = idx - 1; j >= 0; j--) {
+      if (e.blocks[j].kind !== 'heading') continue;
+      const h = e.blocks[j].text?.trim();
+      return h ? `Write the ${h} section…` : 'Write here…';
+    }
+    return `Write about ${e.name?.trim() || 'this entry'}…`;
+  }
+
+  function blockContentHtml(b, idx) {
     if (b.kind === 'statblock') return statblockHtml(b.stat, e.name);
     if (b.kind === 'encounter') return encounterHtml(b);
-    if (b.kind === 'heading') return `<h3>${mdToHtml(b.text).replace(/^<p>|<\/p>$/g, '')}</h3>`;
-    if (b.kind === 'quote') return `<blockquote>${mdToHtml(b.text).replace(/^<p>|<\/p>$/g, '')}</blockquote>`;
-    return mdToHtml(b.text) || '<p class="muted">Click to write… ([[links]], **bold**, - lists)</p>';
+    // Placeholders are editor furniture. Empty text blocks never reach player
+    // preview (refreshBlocks filters them out), but an *empty heading* over a
+    // written section does — it must stay invisible there, exactly as before.
+    const ph = (text) => (readOnly ? '' : `<span class="ph">${esc(text)}</span>`);
+    const body = b.text?.trim() ? mdToHtml(b.text) : '';
+    const inline = body.replace(/^<p>|<\/p>$/g, '');
+    if (b.kind === 'heading') return `<h3>${body ? inline : ph('Section heading…')}</h3>`;
+    if (b.kind === 'quote') return `<blockquote>${body ? inline : ph('Something said, sung or carved…')}</blockquote>`;
+    return body || `<p>${ph(emptyPrompt(idx))}</p>`;
   }
 
   function encounterHtml(b) {
     const enc = b.enc || defaultEncounter();
-    const c = computeEncounter(enc, getEntity);
+    // Same visibility rule as the export: a revealed encounter must not surface
+    // a GM-only creature's name (or its secret statblock's CR) in player preview.
+    const c = computeEncounter(enc, (id) => {
+      const m = getEntity(id);
+      return m && (state.gm || !m.gmOnly) ? m : null;
+    });
     const rows = c.rows.map((r) => `<tr>
       <td style="width:44px">${r.count}×</td>
       <td>${r.entity ? `<a href="#/e/${esc(r.entity.id)}">${esc(r.displayName)}</a>` : esc(r.displayName)}</td>
@@ -352,7 +605,15 @@ export function render(container, id) {
     </div>`;
   }
 
+  // `editing` is what makes the mode change visible (accent ring + the toolbar
+  // stops hiding). It is never removed by hand: every way out of an editor goes
+  // through refreshBlocks(), which rebuilds the node without the class.
   function openEditor(b, blockNode) {
+    if (blockNode.classList.contains('editing')) {
+      blockNode.querySelector('textarea, input, select')?.focus();
+      return; // already open — re-opening would throw away the caret position
+    }
+    blockNode.classList.add('editing');
     if (b.kind === 'statblock') editStatblock(b, blockNode);
     else if (b.kind === 'encounter') editEncounter(b, blockNode);
     else editBlock(b, blockNode);
@@ -426,6 +687,20 @@ export function render(container, id) {
     ta.focus();
     ta.setSelectionRange(ta.value.length, ta.value.length);
 
+    // One way out, shared by blur, Esc, Done and the Help link. Guarded: Done
+    // closes on pointerdown (see below) and some browsers also fire blur when
+    // the focused textarea is torn out of the DOM, so commit can be reached
+    // twice for a single close.
+    let closed = false;
+    const commit = () => {
+      if (closed) return;
+      closed = true;
+      b.text = ta.value;
+      save();
+      refreshBlocks();
+      refreshBacklinksSoon();
+    };
+
     // [[wiki-link]] autocomplete
     let ac = null, acItems = [], acIndex = 0, acRange = null;
     const closeAc = () => { ac?.remove(); ac = null; acItems = []; };
@@ -453,7 +728,7 @@ export function render(container, id) {
       acItems = cands;
       acIndex = Math.min(acIndex, cands.length - 1);
       acRange = { start: pos - m[1].length, end: pos };
-      if (!ac) { ac = el('div', { class: 'wl-autocomplete' }); holder.append(ac); }
+      if (!ac) { ac = el('div', { class: 'wl-autocomplete' }); holder.insertBefore(ac, hint); }
       renderAc();
     };
     const pickAc = (i) => {
@@ -471,6 +746,67 @@ export function render(container, id) {
       ta.focus();
     };
 
+    // ---- markup helpers behind the hint row ----
+    const applyEdit = (fn) => {
+      fn(ta.selectionStart, ta.selectionEnd);
+      b.text = ta.value; // same save-on-input contract as typing
+      save();
+      grow();
+      closeAc(); // the query under the caret has moved; a stale list would lie
+      ta.focus();
+    };
+    const wrapSel = (before, after) => applyEdit((start, end) => {
+      const sel = ta.value.slice(start, end);
+      ta.value = ta.value.slice(0, start) + before + sel + after + ta.value.slice(end);
+      ta.setSelectionRange(start + before.length, start + before.length + sel.length);
+    });
+    const insertText = (s) => applyEdit((start, end) => {
+      ta.value = ta.value.slice(0, start) + s + ta.value.slice(end);
+      ta.setSelectionRange(start + s.length, start + s.length);
+    });
+    const prefixLines = (mark) => applyEdit((start, end) => {
+      const from = ta.value.lastIndexOf('\n', start - 1) + 1; // -1 → 0, i.e. first line
+      const nl = ta.value.indexOf('\n', end);
+      const to = nl === -1 ? ta.value.length : nl;
+      const body = ta.value.slice(from, to).split('\n').map((l) => mark + l).join('\n');
+      ta.value = ta.value.slice(0, from) + body + ta.value.slice(to);
+      ta.setSelectionRange(from, from + body.length);
+    });
+
+    // ---- formatting help at the point of editing ----
+    // Every chip inserts exactly the markup it shows, so the row is the
+    // cheatsheet and the toolbar at once. The full guide stays in Help; resist
+    // growing this row.
+    // All of these fire on pointerdown with preventDefault: on a plain click
+    // the textarea would blur first, commit() would rebuild the block, and the
+    // button would be gone before the click ever landed.
+    const chip = (label, tip, run) => {
+      const btn = el('button', { class: 'fmt-chip', title: tip }, label);
+      btn.addEventListener('pointerdown', (ev) => { ev.preventDefault(); run(); });
+      return btn;
+    };
+    const done = el('button', { class: 'fmt-done', title: 'Finish editing (Esc does the same)' }, 'Done');
+    done.addEventListener('pointerdown', (ev) => { ev.preventDefault(); commit(); });
+    const more = el('a', { class: 'fmt-more', href: '#/help', title: 'The full guide to links, dice and secrets' }, 'More…');
+    more.addEventListener('pointerdown', (ev) => { ev.preventDefault(); commit(); location.hash = '#/help'; });
+
+    const hint = el('div', { class: 'edit-hint' },
+      chip('[[link]]', 'Link to another entry — an autocomplete opens', () => {
+        wrapSel('[[', ']]');
+        const p = ta.selectionEnd; // caret just inside ]] so the list can filter
+        ta.setSelectionRange(p, p);
+        updateAc();
+      }),
+      chip('**bold**', 'Bold', () => wrapSel('**', '**')),
+      chip('*italic*', 'Italic', () => wrapSel('*', '*')),
+      chip('- list', 'Bullet list', () => prefixLines('- ')),
+      chip('> quote', 'Quoted line', () => prefixLines('> ')),
+      chip('2d6+3', 'Dice written like this become clickable rolls', () => insertText('2d6+3')),
+      more,
+      el('span', { class: 'spacer' }),
+      done);
+    holder.append(hint);
+
     ta.addEventListener('input', () => {
       grow();
       b.text = ta.value; // save as you type (debounced) so nothing is ever lost
@@ -486,12 +822,7 @@ export function render(container, id) {
       }
       if (ev.key === 'Escape') ta.blur();
     });
-    ta.addEventListener('blur', () => {
-      b.text = ta.value;
-      save();
-      refreshBlocks();
-      refreshBacklinksSoon();
-    });
+    ta.addEventListener('blur', commit);
   }
 
   // --- statblock editor ---
@@ -602,6 +933,17 @@ export function render(container, id) {
     content.replaceWith(el('div', { class: 'block-content' }, form));
   }
 
+  // A block-toolbar button. The pointerdown guard is what lets the toolbar be
+  // used while a text editor is open in the same block: on a plain click the
+  // mousedown would blur the textarea, commit() would rebuild the block, and
+  // the button would be gone before the click ever landed. (The old icon-only
+  // toolbar had the same defect — it was simply never visible enough to notice.)
+  function ctrlBtn(attrs, ...kids) {
+    const btn = el('button', attrs, ...kids);
+    btn.addEventListener('pointerdown', (ev) => ev.preventDefault());
+    return btn;
+  }
+
   function refreshBlocks() {
     blocksWrap.innerHTML = '';
     // players never see secrets; empty scaffold blocks — and headings whose
@@ -620,33 +962,51 @@ export function render(container, id) {
     }
     for (const b of list) {
       const idx = e.blocks.indexOf(b);
-      const node = el('div', { class: `block${b.secret ? ' secret' : ''}` });
+      const node = el('div', { class: `block${b.secret ? ' secret' : ''}${hasContent(b) ? '' : ' empty'}` });
       if (!readOnly) {
         node.append(el('div', { class: 'bctrl' },
-          el('button', {
-            class: b.secret ? 'on' : '', title: b.secret ? 'Secret: visible only to you (GM). Click to reveal to players.' : 'Make this block a GM secret',
+          ctrlBtn({
+            class: 'bc-edit', title: 'Edit this block — clicking its text does the same',
+            onclick: () => openEditor(b, node),
+          }, '✏️ Edit'),
+          // A named picker, not the old ¶ cycle button: all three styles are
+          // visible, the current one is marked, and there is no "click it three
+          // more times to get back to text".
+          b.kind === 'statblock' || b.kind === 'encounter' ? null : el('span', { class: 'bc-style' },
+            [['text', 'Text'], ['heading', 'Heading'], ['quote', 'Quote']].map(([k, label]) => ctrlBtn({
+              class: k === b.kind ? 'sel' : '',
+              title: k === b.kind ? `Already a ${label.toLowerCase()} block` : `Turn this into a ${label.toLowerCase()} block`,
+              onclick: () => { if (b.kind === k) return; b.kind = k; save(); refreshBlocks(); },
+            }, label))),
+          ctrlBtn({
+            class: b.secret ? 'on' : '',
+            title: b.secret
+              ? 'Secret: visible only to you (GM). Click to reveal it to players.'
+              : 'Lock this block: only you (GM) see it — players and player exports never do.',
             onclick: () => { b.secret = !b.secret; save(); refreshBlocks(); },
-          }, '🔒'),
-          b.kind === 'statblock' || b.kind === 'encounter' ? null : el('button', {
-            title: 'Cycle style: text → heading → quote',
-            onclick: () => {
-              b.kind = b.kind === 'text' ? 'heading' : b.kind === 'heading' ? 'quote' : 'text';
-              save(); refreshBlocks();
-            },
-          }, '¶'),
-          el('button', { title: 'Move up', onclick: () => { moveBlock(idx, -1); } }, '↑'),
-          el('button', { title: 'Move down', onclick: () => { moveBlock(idx, +1); } }, '↓'),
-          el('button', {
-            title: 'Delete block', onclick: () => {
-              const hasContent = b.kind === 'statblock' || b.kind === 'encounter' || b.text?.trim();
-              if (hasContent && !confirm('Delete this block?')) return;
+          }, b.secret ? '🔓 Reveal' : '🔒 Make secret'),
+          ctrlBtn({ class: 'bc-icon', title: 'Move up', 'aria-label': 'Move block up', onclick: () => { moveBlock(idx, -1); } }, '↑'),
+          ctrlBtn({ class: 'bc-icon', title: 'Move down', 'aria-label': 'Move block down', onclick: () => { moveBlock(idx, +1); } }, '↓'),
+          ctrlBtn({
+            class: 'bc-del',
+            title: 'Delete this block (you can undo)', onclick: () => {
+              const removed = e.blocks[idx];
+              // A statblock or encounter represents real work and the undo toast
+              // is transient (9s, and gone on navigation), so those keep an
+              // explicit confirm. Text/heading/quote rely on undo alone.
+              const costly = b.kind === 'statblock' || b.kind === 'encounter';
+              if (costly && !confirm(`Delete this ${BLOCK_NOUN[b.kind] || 'block'}? You can undo for a few seconds afterwards.`)) return;
               e.blocks.splice(idx, 1);
               save(); refreshBlocks();
+              offerUndo(`${BLOCK_NOUN[b.kind] || 'Block'} deleted.`, () => {
+                e.blocks.splice(Math.min(idx, e.blocks.length), 0, removed);
+                refreshBlocks();
+              });
             },
-          }, '✕')));
+          }, '✕ Delete')));
       }
       const content = el('div', { class: 'block-content' });
-      content.innerHTML = blockContentHtml(b);
+      content.innerHTML = blockContentHtml(b, idx);
       if (!readOnly) {
         content.addEventListener('click', (ev) => {
           if (ev.target.closest('a')) return; // let links navigate
@@ -658,18 +1018,24 @@ export function render(container, id) {
     }
     if (!readOnly) {
       blocksWrap.append(el('div', { class: 'add-block-row' },
-        el('button', { class: 'ghost', onclick: () => addBlock({ kind: 'text' }) }, '+ Text'),
-        el('button', { class: 'ghost', onclick: () => addBlock({ kind: 'heading' }) }, '+ Heading'),
-        el('button', { class: 'ghost', onclick: () => addBlock({ kind: 'quote' }) }, '+ Quote'),
+        el('button', { class: 'ghost', title: 'A paragraph of prose', onclick: () => addBlock({ kind: 'text' }) }, '+ Text'),
+        el('button', { class: 'ghost', title: 'A section title, e.g. “Appearance”', onclick: () => addBlock({ kind: 'heading' }) }, '+ Heading'),
+        el('button', { class: 'ghost', title: 'Something said, sung or carved — shown indented', onclick: () => addBlock({ kind: 'quote' }) }, '+ Quote'),
         el('button', { class: 'ghost', title: 'A classic monster/NPC statblock — editable, exports to PDF', onclick: () => addBlock({ kind: 'statblock' }) }, '+ ⚔ Statblock'),
         el('button', {
           class: 'ghost', title: 'Encounter with XP budget and difficulty math — starts as a GM secret',
           onclick: () => addBlock({ kind: 'encounter', secret: true }),
         }, '+ 💀 Encounter'),
+        // Kept as its own button rather than folded into "+ Text then lock it":
+        // a GM-only paragraph is the single most-used thing in the app, and
+        // folding it would hide it behind a control you must first discover.
+        // "Secret text" (not "Secret block") because it is a text block that
+        // starts locked, not a sixth kind of block.
         el('button', {
           style: 'border-color:var(--secret-border);color:#cbb3ef',
+          title: 'A text block that starts locked: only you (GM) see it. Players, player preview and player exports never get it.',
           onclick: () => addBlock({ kind: 'text', secret: true }),
-        }, '+ 🔒 Secret block')));
+        }, '+ 🔒 Secret text')));
     }
   }
 
@@ -724,7 +1090,18 @@ export function render(container, id) {
             type: 'checkbox', checked: !!r.secret,
             onchange: (ev) => { r.secret = ev.target.checked; save(); },
           }), '🔒 secret'),
-        el('button', { class: 'ghost', onclick: () => { e.relations.splice(i, 1); save(); refreshRelations(); } }, '✕')));
+        el('button', {
+          class: 'ghost', title: 'Remove this relation (you can undo)',
+          onclick: () => {
+            const removed = e.relations[i];
+            e.relations.splice(i, 1);
+            save(); refreshRelations();
+            offerUndo('Relation removed.', () => {
+              e.relations.splice(Math.min(i, e.relations.length), 0, removed);
+              refreshRelations();
+            });
+          },
+        }, '✕')));
     });
     relWrap.append(el('button', {
       class: 'ghost small',

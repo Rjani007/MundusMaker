@@ -46,5 +46,9 @@ export function render(container) {
         el('button', { class: 'primary', onclick: createMap }, 'Generate')),
       el('div', { class: 'muted small', style: 'margin-top:6px' },
         'Maps are seeded — every map can be re-rolled, then edited by hand: paint terrain, carve dungeon rooms, drop markers and labels. You can also attach a map to an existing entry from its page.')) : null,
-    withMaps.length ? cards : el('div', { class: 'notice' }, 'No maps yet.')));
+    withMaps.length ? cards : el('div', { class: 'notice' },
+      state.gm
+        ? ['No maps yet — world, town or dungeon, each one generated from a seed. ',
+           el('button', { class: 'small', onclick: () => nameInput.focus() }, 'Generate your first')]
+        : ['No maps yet. Maps you make in GM view show up here.'])));
 }

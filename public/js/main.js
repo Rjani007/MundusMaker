@@ -8,8 +8,10 @@ import {
 import { api } from './api.js';
 import * as dashboard from './views/dashboard.js';
 import * as entity from './views/entity.js';
+import * as typeView from './views/type.js';
 import * as graph from './views/graph.js';
 import * as timeline from './views/timeline.js';
+import * as calendarView from './views/calendar.js';
 import * as mapsView from './views/maps.js';
 import * as mapeditor from './views/mapeditor.js';
 import * as exportView from './views/export.js';
@@ -23,6 +25,11 @@ let cleanup = null;
 
 // ---------- router ----------
 
+/** decodeURIComponent throws on a stray '%' — a hand-typed hash must not blank the app. */
+function safeDecode(s) {
+  try { return decodeURIComponent(s || ''); } catch { return s || ''; }
+}
+
 function route() {
   const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
   if (cleanup) { try { cleanup(); } catch { /* view already gone */ } cleanup = null; }
@@ -33,9 +40,12 @@ function route() {
   try {
     if (!parts.length) ret = dashboard.render(viewEl);
     else if (parts[0] === 'e') { nav = ''; ret = entity.render(viewEl, parts[1]); }
+    // #/t/<typeKey> — the per-type landing page; an unknown key renders a notice
+    else if (parts[0] === 't') { ret = typeView.render(viewEl, safeDecode(parts[1])); }
     else if (parts[0] === 'new') { nav = ''; renderCreate(viewEl, decodeURIComponent(parts[1] || '')); }
     else if (parts[0] === 'graph') { nav = 'graph'; ret = graph.render(viewEl); }
     else if (parts[0] === 'timeline') { nav = 'timeline'; ret = timeline.render(viewEl); }
+    else if (parts[0] === 'calendar') { nav = 'calendar'; ret = calendarView.render(viewEl); }
     else if (parts[0] === 'maps') { nav = 'maps'; ret = mapsView.render(viewEl); }
     else if (parts[0] === 'map') { nav = 'maps'; ret = mapeditor.render(viewEl, parts[1]); }
     else if (parts[0] === 'export') { nav = 'export'; ret = exportView.render(viewEl); }
@@ -83,7 +93,7 @@ function buildSidebar() {
   sidebarEl.innerHTML = '';
   searchInput = el('input', {
     class: 'side-search', type: 'search', placeholder: 'Search…  (Ctrl+K)',
-    title: 'Searches names, tags and text. Start with # to search tags only.',
+    title: 'Searches names, tags, quick facts and text. Start with # to search tags only.',
     oninput: (ev) => { search = ev.target.value.trim().toLowerCase(); renderSidebarList(); },
   });
 
@@ -104,6 +114,20 @@ function buildSidebar() {
   renderSidebarList();
 }
 
+/** Every type the world defines, plus any type that only exists on an entity —
+ *  from an import, a hand-edited file, or a type someone deleted. Without the
+ *  extra groups those entries belong nowhere and vanish from the sidebar. */
+function sidebarGroups(ents) {
+  const known = types();
+  const extra = new Map();
+  for (const e of ents) {
+    const key = e.type || '';
+    if (Object.hasOwn(known, key) || extra.has(key)) continue;
+    extra.set(key, { ...typeOf(e), label: key || 'Untyped', plural: key || 'Untyped' });
+  }
+  return [...Object.entries(known), ...[...extra].sort((a, b) => a[0].localeCompare(b[0]))];
+}
+
 function renderSidebarList() {
   if (!listEl || !state.loaded) return;
   listEl.innerHTML = '';
@@ -115,27 +139,37 @@ function renderSidebarList() {
     if (search.startsWith('#')) return (e.tags || []).some((t) => t.toLowerCase().includes(search.slice(1)));
     if (e.name.toLowerCase().includes(search)) return true;
     if ((e.tags || []).some((t) => t.toLowerCase().includes(search))) return true;
+    // quick facts: the key counts too, so "population" lists every settlement
+    for (const [k, v] of Object.entries(e.fields || {})) {
+      if (k.toLowerCase().includes(search)) return true;
+      if (String(v ?? '').toLowerCase().includes(search)) return true;
+    }
     // full-text over blocks (secret blocks only match in GM view)
     return (e.blocks || []).some((b) =>
       (state.gm || !b.secret) && (b.text || '').toLowerCase().includes(search));
   };
 
   const ents = visibleEntities().filter(match);
-  for (const [key, t] of Object.entries(types())) {
-    const group = ents.filter((e) => e.type === key).sort((a, b) => a.name.localeCompare(b.name));
+  for (const [key, t] of sidebarGroups(ents)) {
+    const group = ents.filter((e) => (e.type || '') === key).sort((a, b) => a.name.localeCompare(b.name));
     if (!group.length) continue;
     const isCollapsed = collapsed.has(key) && !search;
-    const head = el('div', {
-      class: 'side-group-head',
-      onclick: () => {
-        collapsed.has(key) ? collapsed.delete(key) : collapsed.add(key);
-        writeSetting('collapsed', JSON.stringify([...collapsed]));
-        renderSidebarList();
-      },
-    },
-      el('span', { class: 'dot', style: `background:${t.color}` }),
-      t.plural || t.label,
-      el('span', { class: 'count' }, `${isCollapsed ? '▸ ' : ''}${group.length}`));
+    const label = t.plural || t.label || key || 'Untyped';
+    // The name is a link and the count is the collapse toggle — clicking
+    // "Characters" to see the characters must not be the gesture that hides them.
+    const head = el('div', { class: 'side-group-head' },
+      el('a', { class: 'side-group-link', href: `#/t/${encodeURIComponent(key)}`, title: `Open the ${label} page` },
+        el('span', { class: 'dot', style: `background:${t.color}` }),
+        label),
+      el('button', {
+        class: 'count side-group-toggle',
+        title: isCollapsed ? `Expand ${label}` : `Collapse ${label}`,
+        onclick: () => {
+          collapsed.has(key) ? collapsed.delete(key) : collapsed.add(key);
+          writeSetting('collapsed', JSON.stringify([...collapsed]));
+          renderSidebarList();
+        },
+      }, `${isCollapsed ? '▸ ' : '▾ '}${group.length}`));
     const groupEl = el('div', { class: 'side-group' }, head);
     if (!isCollapsed) {
       for (const e of group) {

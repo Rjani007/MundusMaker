@@ -2,7 +2,7 @@
 // Solid edges = explicit relations, dashed edges = [[wiki-link]] mentions.
 // Player preview automatically drops GM-only nodes and secret relations.
 
-import { el } from '../util.js';
+import { el, helpTip } from '../util.js';
 import { state, types, typeOf, visibleEntities } from '../state.js';
 import { extractLinkIds } from '../render.js';
 
@@ -27,13 +27,31 @@ export function render(container) {
         el('span', { class: 'dot', style: `background:${t.color}` }),
         t.plural || t.label));
     }
-    hud.append(el('label', { style: 'margin-top:6px;border-top:1px solid var(--line);padding-top:6px' },
-      el('input', { type: 'checkbox', checked: showMentions, onchange: (ev) => { showMentions = ev.target.checked; rebuild(); } }),
-      'show [[mention]] links'));
+    // the tip sits OUTSIDE the label — inside it, hovering to read would toggle the box
+    hud.append(el('div', { style: 'display:flex;align-items:center;gap:4px;margin-top:6px;border-top:1px solid var(--line);padding-top:6px' },
+      el('label', {},
+        el('input', { type: 'checkbox', checked: showMentions, onchange: (ev) => { showMentions = ev.target.checked; rebuild(); } }),
+        'show [[mention]] links'),
+      helpTip('A wiki-link: type [[Name]] in any text block and it links to that entry. Those are the dashed lines here; relations you added by hand are solid.')));
     hud.append(el('span', { class: 'muted', style: 'font-size:12px' }, 'drag nodes · scroll to zoom · click to open'));
   }
   buildHud();
   wrap.append(hud);
+
+  // Empty state lives in the DOM, not on the canvas — it needs a working link.
+  const emptyEl = el('div', { class: 'graph-empty' });
+  function refreshEmpty() {
+    emptyEl.innerHTML = '';
+    if (nodes.length) { emptyEl.style.display = 'none'; return; }
+    emptyEl.style.display = '';
+    emptyEl.append(visibleEntities().length
+      ? el('div', { class: 'notice' }, 'No entries of the ticked types. Tick one in the panel to see it.')
+      : el('div', { class: 'notice' },
+          el('div', {}, 'The graph draws how your world connects — every relation and every [[mention]].'),
+          el('div', { style: 'margin-top:8px' },
+            el('a', { href: '#/' }, 'Create your first entry'), ' and link it to another.')));
+  }
+  wrap.append(emptyEl);
   container.append(wrap);
 
   const ctx = canvas.getContext('2d');
@@ -82,6 +100,7 @@ export function render(container) {
     }
     for (const n of nodes) n.r = 7 + Math.min(9, (deg.get(n.id) || 0) * 1.4);
     alpha = 1;
+    refreshEmpty();
   }
   rebuild();
 
@@ -189,13 +208,6 @@ export function render(container) {
       ctx.globalAlpha = 1;
     }
     ctx.restore();
-
-    if (!nodes.length) {
-      ctx.fillStyle = '#9c94b0';
-      ctx.font = '15px "Segoe UI", sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('Nothing to show — create some entries and relations first.', canvas.width / 2, canvas.height / 2);
-    }
   }
 
   let raf;
