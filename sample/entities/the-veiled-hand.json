@@ -1,0 +1,21 @@
+{
+  "id": "the-veiled-hand",
+  "name": "The Veiled Hand",
+  "type": "faction",
+  "tags": ["conspiracy"],
+  "gmOnly": true,
+  "fields": { "Goal": "Recover the Hollow Crown and open the inner seal", "Leader": "Unknown — signs orders as 'the Tide's Regent'", "Reach": "Cells in every port on the Reach" },
+  "date": null,
+  "blocks": [
+    { "id": "b1", "kind": "text", "text": "The conspiracy behind half the Reach's misfortunes. This entire entry is **GM-only**: players never see it in lists, graph, timeline, search, or exports until you reveal it.", "secret": false },
+    { "id": "b2", "kind": "text", "text": "The Hand descends from the court sorcerers who drowned Maro with [[The Hollow Crown]] during [[The Drowning War]]. They believe the drowning was interrupted, not finished. They bankroll [[Kestrel Vane]]'s salvage runs, hold [[Ilsa Corvin]]'s leash, and burned the harbor archive on the [[Night of Broken Lanterns]] to destroy the one map of the [[Undercrypt of Maro]]'s outer galleries.", "secret": false }
+  ],
+  "relations": [
+    { "to": "kestrel-vane", "label": "funds", "secret": false },
+    { "to": "ilsa-corvin", "label": "blackmails", "secret": false },
+    { "to": "the-hollow-crown", "label": "hunts", "secret": false }
+  ],
+  "map": null,
+  "created": "2026-06-24T10:00:00.000Z",
+  "updated": "2026-07-01T10:00:00.000Z"
+}

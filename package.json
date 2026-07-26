@@ -1,0 +1,21 @@
+{
+  "name": "loreweave",
+  "version": "0.8.0",
+  "description": "A free, open-source, fully local worldbuilding wiki for GMs — typed entities, backlinks, graph view, timelines, per-block secrets, player-safe PDF export, and procedural map generators. No cloud, no accounts, no AI.",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "vendor": "node scripts/vendor.js",
+    "bestiary": "node scripts/build-bestiary.js",
+    "package": "node scripts/package.js",
+    "package:all": "node scripts/package.js all"
+  },
+  "devDependencies": {
+    "jspdf": "^2.5.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

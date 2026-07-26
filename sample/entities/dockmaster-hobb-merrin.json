@@ -1,0 +1,47 @@
+{
+  "id": "dockmaster-hobb-merrin",
+  "name": "Dockmaster Hobb Merrin",
+  "type": "npc",
+  "tags": ["docks"],
+  "gmOnly": false,
+  "fields": { "Role": "Dockmaster", "Species": "Human", "Disposition": "Gruff but fair", "Found at": "The harbor chain, dawn to dusk" },
+  "date": null,
+  "blocks": [
+    { "id": "b1", "kind": "text", "text": "Runs the quays of [[Port Vellen]] with a tide-table memory and a voice like a foghorn. Nothing is loaded or unloaded without Hobb's chalk mark. He is the first person any newcomer to Vellen actually meets.", "secret": false },
+    {
+      "id": "b2",
+      "kind": "statblock",
+      "secret": false,
+      "text": "",
+      "stat": {
+        "name": "",
+        "meta": "Medium humanoid (human), lawful neutral",
+        "ac": "11 (padded jacket)",
+        "hp": "18 (4d8)",
+        "speed": "30 ft.",
+        "str": 14, "dex": 10, "con": 11, "int": 12, "wis": 14, "cha": 12,
+        "vitals": [
+          { "k": "Skills", "v": "Insight +4, Intimidation +3" },
+          { "k": "Senses", "v": "passive Perception 12" },
+          { "k": "Languages", "v": "Common, Trade-cant" },
+          { "k": "Challenge", "v": "1/8 (25 XP)" }
+        ],
+        "traits": [
+          { "name": "Tide-Table Memory", "text": "Hobb can recall every vessel, cargo and captain that has passed the chain in the last ten years." }
+        ],
+        "actions": [
+          { "name": "Boathook", "text": "Melee Weapon Attack: +4 to hit, reach 10 ft., one target. Hit: 5 (1d6 + 2) piercing damage." },
+          { "name": "Bellow", "text": "Every creature within 30 ft. that can hear Hobb must succeed on a DC 11 Wisdom save or be distracted until the end of its next turn." }
+        ]
+      }
+    },
+    { "id": "b3", "kind": "text", "text": "Hobb takes a quiet retainer from [[Kestrel Vane]] to chalk certain crates without looking inside. He tells himself it's harbor-peace money. If pressed with proof, he'll cooperate — ashamed, not defiant.", "secret": true }
+  ],
+  "relations": [
+    { "to": "port-vellen", "label": "keeps the harbor of", "secret": false },
+    { "to": "kestrel-vane", "label": "paid to look away by", "secret": true }
+  ],
+  "map": null,
+  "created": "2026-07-02T10:00:00.000Z",
+  "updated": "2026-07-03T11:00:00.000Z"
+}

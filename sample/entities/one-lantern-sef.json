@@ -1,0 +1,19 @@
+{
+  "id": "one-lantern-sef",
+  "name": "One-Lantern Sef",
+  "type": "npc",
+  "tags": ["informant"],
+  "gmOnly": false,
+  "fields": { "Role": "Beggar, informant", "Species": "Human", "Disposition": "Friendly for coin", "Found at": "The fish market steps" },
+  "date": null,
+  "blocks": [
+    { "id": "b1", "kind": "text", "text": "A one-eyed beggar who has held the same spot on the fish market steps in [[Port Vellen]] for twenty years. Sef sees everything and sells most of it: a copper for gossip, silver for the truth, gold for the truth *and* his silence. Survived the [[Night of Broken Lanterns]] — his lantern was the only one on the front that stayed lit.", "secret": false },
+    { "id": "b2", "kind": "text", "text": "Sef's lantern stayed lit because it's the old shrine-lantern of drowned Maro — the working that snuffed the harbor couldn't touch it. Sef doesn't know this. [[Brother Aldous]] does, and quietly refills its oil himself.", "secret": true }
+  ],
+  "relations": [
+    { "to": "port-vellen", "label": "watches", "secret": false }
+  ],
+  "map": null,
+  "created": "2026-07-02T11:00:00.000Z",
+  "updated": "2026-07-02T11:00:00.000Z"
+}

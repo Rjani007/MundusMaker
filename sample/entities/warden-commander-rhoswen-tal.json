@@ -1,0 +1,19 @@
+{
+  "id": "warden-commander-rhoswen-tal",
+  "name": "Warden-Commander Rhoswen Tal",
+  "type": "character",
+  "tags": ["order"],
+  "gmOnly": false,
+  "fields": { "Role": "Warden-Commander", "Species": "Human", "Status": "On duty" },
+  "date": null,
+  "blocks": [
+    { "id": "b1", "kind": "text", "text": "Commands the [[Grey Fleet]] from the harbor chain of [[Port Vellen]]. Ten years hunting [[Kestrel Vane]].", "secret": false }
+  ],
+  "relations": [
+    { "to": "the-tidewardens", "label": "commands", "secret": false },
+    { "to": "kestrel-vane", "label": "hunts", "secret": false }
+  ],
+  "map": null,
+  "created": "2026-06-28T10:00:00.000Z",
+  "updated": "2026-07-03T10:00:00.000Z"
+}

@@ -1,0 +1,47 @@
+{
+  "id": "undercrypt-of-maro",
+  "name": "Undercrypt of Maro",
+  "type": "location",
+  "tags": ["dungeon"],
+  "gmOnly": false,
+  "fields": { "Kind": "Sealed crypt", "Region": "Beneath Port Vellen" },
+  "date": null,
+  "blocks": [
+    { "id": "b1", "kind": "text", "text": "The burial galleries of drowned Maro, sealed since [[The Drowning War]]. The entrance below the Lantern Shrine in [[Port Vellen]] is bricked up and warded — officially, no one has been inside for forty years.", "secret": false },
+    { "id": "b2", "kind": "text", "text": "Officially. The outer galleries are a smuggler den reachable by the tunnel behind the fish market. The inner seal still holds — it can only be opened by [[The Hollow Crown]], which is why [[The Veiled Hand]] is tearing the Reach apart looking for it.", "secret": true },
+    { "id": "b3", "kind": "text", "text": "Room 1 is the entrance gallery. The pit trap before the double doors resets itself — that's not clockwork, that's the crypt *wanting* it armed.", "secret": true },
+    {
+      "id": "enc1",
+      "kind": "encounter",
+      "text": "",
+      "secret": true,
+      "enc": {
+        "partySize": 4,
+        "partyLevel": 3,
+        "rows": [
+          { "to": "reach-serpent", "cr": "2", "count": 1 },
+          { "to": null, "name": "Drowned thralls", "cr": "1/8", "count": 4 }
+        ]
+      }
+    }
+  ],
+  "relations": [
+    { "to": "port-vellen", "label": "lies beneath", "secret": false },
+    { "to": "the-hollow-crown", "label": "sealed by", "secret": true }
+  ],
+  "map": {
+    "kind": "dungeon",
+    "seed": "maro-13",
+    "params": { "cols": 42, "rows": 27, "rooms": 10, "loops": 0.25 },
+    "strokes": [],
+    "grid": null,
+    "markers": [
+      { "id": "mk1", "x": 0.08, "y": 0.5, "shape": "triangle", "color": "#4a9e6f", "label": "Entrance", "secret": false },
+      { "id": "mk2", "x": 0.4, "y": 0.35, "shape": "cross", "color": "#e0524a", "label": "Pit trap", "secret": true },
+      { "id": "mk3", "x": 0.78, "y": 0.62, "shape": "star", "color": "#e0a72c", "label": "The Hollow Crown", "secret": true }
+    ],
+    "labels": []
+  },
+  "created": "2026-06-21T10:00:00.000Z",
+  "updated": "2026-06-27T10:00:00.000Z"
+}

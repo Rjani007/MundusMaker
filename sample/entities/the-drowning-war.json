@@ -1,0 +1,20 @@
+{
+  "id": "the-drowning-war",
+  "name": "The Drowning War",
+  "type": "event",
+  "tags": ["history", "war"],
+  "gmOnly": false,
+  "fields": { "Outcome": "The kingdom of Maro lost beneath the sea" },
+  "date": { "year": 988, "endYear": 992 },
+  "blocks": [
+    { "id": "b1", "kind": "text", "text": "Four years in which the sea rose without storm or season and took the kingdom of Maro — its capital, its roads, its hundred villages — leaving the coastline now called [[The Sundered Reach]]. The war's last act sealed the [[Undercrypt of Maro]].", "secret": false },
+    { "id": "b2", "kind": "text", "text": "Histories call it a war because the kingdoms fought *over* the drowning, not because anyone fought the sea. Who or what raised the water was never settled.", "secret": false },
+    { "id": "b3", "kind": "text", "text": "The sea was raised deliberately, by Maro's own court sorcerers, wielding [[The Hollow Crown]] against a rebellion they could not defeat in the field. The Veiled Hand is what remains of them.", "secret": true }
+  ],
+  "relations": [
+    { "to": "the-sundered-reach", "label": "created", "secret": false }
+  ],
+  "map": null,
+  "created": "2026-06-25T12:00:00.000Z",
+  "updated": "2026-06-26T12:00:00.000Z"
+}

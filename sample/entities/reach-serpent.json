@@ -1,0 +1,17 @@
+{
+  "id": "reach-serpent",
+  "name": "Reach Serpent",
+  "type": "creature",
+  "tags": ["sea"],
+  "gmOnly": false,
+  "fields": { "Habitat": "The drowned quarter, Gulf of Maro", "Threat": "High — avoid at night" },
+  "date": null,
+  "blocks": [
+    { "id": "b1", "kind": "text", "text": "Pale, eyeless serpents the length of a longboat that nest in the sunken streets of old Maro. They surface on moonless nights and follow lantern light. Fishermen in [[Port Vellen]] paint eyes on their hulls to confuse them — nobody can say whether it works, only that the painted boats come back.", "secret": false },
+    { "id": "b2", "kind": "text", "text": "They aren't animals. They're the drowned kingdom's grave-wards, grown strange — they answer to whoever wears [[The Hollow Crown]].", "secret": true }
+  ],
+  "relations": [],
+  "map": null,
+  "created": "2026-06-27T10:00:00.000Z",
+  "updated": "2026-06-27T10:00:00.000Z"
+}

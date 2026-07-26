@@ -1,0 +1,20 @@
+{
+  "id": "ilsa-corvin",
+  "name": "Ilsa Corvin",
+  "type": "character",
+  "tags": ["authority"],
+  "gmOnly": false,
+  "fields": { "Role": "Magistrate of Port Vellen", "Species": "Human", "Status": "In office" },
+  "date": null,
+  "blocks": [
+    { "id": "b1", "kind": "text", "text": "Magistrate of [[Port Vellen]] for eleven years: iron-grey, unbribable in public, and the only reason the town's three powers haven't burned it down around each other. Keeps the peace between the [[The Tidewardens|Tidewardens]] and the docks by pretending not to see [[Kestrel Vane]].", "secret": false },
+    { "id": "b2", "kind": "text", "text": "Ilsa's brother drowned owing the Veiled Hand a blood-debt, and they hold the note. She has been feeding them harbor records for years and hates herself for it. She would flip to the party's side the moment anyone offered her a way out.", "secret": true }
+  ],
+  "relations": [
+    { "to": "port-vellen", "label": "governs", "secret": false },
+    { "to": "the-veiled-hand", "label": "blackmailed by", "secret": true }
+  ],
+  "map": null,
+  "created": "2026-06-22T10:10:00.000Z",
+  "updated": "2026-06-28T10:00:00.000Z"
+}

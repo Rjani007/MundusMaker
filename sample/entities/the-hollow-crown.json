@@ -1,0 +1,19 @@
+{
+  "id": "the-hollow-crown",
+  "name": "The Hollow Crown",
+  "type": "item",
+  "tags": ["artifact"],
+  "gmOnly": false,
+  "fields": { "Kind": "Regalia of drowned Maro", "Owner": "Lost", "Rarity": "Unique" },
+  "date": null,
+  "blocks": [
+    { "id": "b1", "kind": "text", "text": "The coronation crown of Maro, said to have gone down with the king's barge in [[The Drowning War]]. Sailors' tales give it a new resting place every winter; salvage guilds have dredged half the gulf chasing them.", "secret": false },
+    { "id": "b2", "kind": "text", "text": "It is not regalia — it is the *key*. The crown is the instrument that called the sea onto Maro, and it opens the inner seal of the [[Undercrypt of Maro]]. [[Brother Aldous]] dropped it into the gulf from the shrine pier, and only he knows where.", "secret": true }
+  ],
+  "relations": [
+    { "to": "undercrypt-of-maro", "label": "opens the seal of", "secret": true }
+  ],
+  "map": null,
+  "created": "2026-06-25T10:00:00.000Z",
+  "updated": "2026-06-27T10:00:00.000Z"
+}

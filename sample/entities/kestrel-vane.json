@@ -1,0 +1,21 @@
+{
+  "id": "kestrel-vane",
+  "name": "Kestrel Vane",
+  "type": "character",
+  "tags": ["smuggler"],
+  "gmOnly": false,
+  "fields": { "Role": "Smuggler queen", "Species": "Human", "Status": "At large" },
+  "date": null,
+  "blocks": [
+    { "id": "b1", "kind": "text", "text": "Captain of the *Gull's Debt* and uncrowned queen of [[Port Vellen]]'s night trade. Kestrel runs salvage, contraband, and people — always with a smile, always with a ledger. The [[The Tidewardens|Tidewardens]] have posted a bounty three times; three times it was quietly withdrawn.", "secret": false },
+    { "id": "b2", "kind": "quote", "text": "Everything the sea takes comes back eventually. I just charge for delivery.", "secret": false },
+    { "id": "b3", "kind": "text", "text": "Kestrel is a paid asset of [[The Veiled Hand]] — she doesn't know their real goal, only that they pay in old-kingdom gold for anything recovered from the drowned quarter. She survived the [[Night of Broken Lanterns]] because they warned her to be at sea.", "secret": true }
+  ],
+  "relations": [
+    { "to": "port-vellen", "label": "operates from", "secret": false },
+    { "to": "the-veiled-hand", "label": "paid asset of", "secret": true }
+  ],
+  "map": null,
+  "created": "2026-06-22T10:00:00.000Z",
+  "updated": "2026-06-30T10:00:00.000Z"
+}

@@ -1,0 +1,21 @@
+{
+  "id": "session-1-lanterns-in-the-fog",
+  "name": "Session 1 — Lanterns in the Fog",
+  "type": "session",
+  "tags": ["campaign"],
+  "gmOnly": false,
+  "fields": { "Played on": "2026-06-28", "Players": "Mira, Devan, Kass, Olu" },
+  "date": { "year": 1026, "month": 10, "day": 2 },
+  "blocks": [
+    { "id": "b1", "kind": "text", "text": "The party made landfall in [[Port Vellen]] on a fog-bound evening and paid [[Dockmaster Hobb Merrin]]'s berth fee with their last honest coin. [[One-Lantern Sef]] sold them two rumors: that [[Kestrel Vane]] pays triple for anything fished out of the drowned quarter, and that [[Brother Aldous]] has stopped lighting the western lamps.", "secret": false },
+    { "id": "b2", "kind": "heading", "text": "Where we left off", "secret": false },
+    { "id": "b3", "kind": "text", "text": "Kass took a job from the [[The Tidewardens|Tidewardens]] without telling the others. The party sleeps at the Tavern; the bells of the Lantern Shrine ring a quarter past every hour — one ring short of what [[Ilsa Corvin]]'s curfew notice says they should.", "secret": false },
+    { "id": "b4", "kind": "text", "text": "Next session: the Hand's watcher on the fish market steps has marked the party. If they visit Sef again, he's gone — lantern still burning. Session logs mentioning an entry show up in its backlinks, so every NPC's page now lists this session automatically.", "secret": true }
+  ],
+  "relations": [
+    { "to": "port-vellen", "label": "took place in", "secret": false }
+  ],
+  "map": null,
+  "created": "2026-06-28T20:00:00.000Z",
+  "updated": "2026-06-28T23:30:00.000Z"
+}

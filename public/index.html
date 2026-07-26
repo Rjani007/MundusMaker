@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Loreweave</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%232c2438'/%3E%3Ccircle cx='11' cy='13' r='4' fill='%23e0724a'/%3E%3Ccircle cx='21' cy='19' r='4' fill='%234a9e6f'/%3E%3Cpath d='M13 16l6 1' stroke='%23cbbfe0' stroke-width='2'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <a class="brand" href="#/">Loreweave</a>
+    <nav id="mainnav">
+      <a href="#/" data-nav="dashboard">World</a>
+      <a href="#/graph" data-nav="graph">Graph</a>
+      <a href="#/timeline" data-nav="timeline">Timeline</a>
+      <a href="#/maps" data-nav="maps">Maps</a>
+      <a href="#/export" data-nav="export">Export</a>
+      <a href="#/help" data-nav="help" title="Quick start and tips">Help</a>
+    </nav>
+    <div class="topbar-right">
+      <button id="saveBtn" class="save-btn" title="Everything autosaves; click to save immediately (Ctrl+S)">✓ Saved</button>
+      <select id="worldSelect" title="Switch between your worlds"></select>
+      <label class="gm-toggle" id="gmToggle" title="Toggle between GM view (secrets visible) and a preview of what players would see">
+        <input type="checkbox" id="gmToggleInput">
+        <span class="gm-label"></span>
+      </label>
+    </div>
+  </header>
+  <div id="layout">
+    <aside id="sidebar"></aside>
+    <main id="view"></main>
+  </div>
+</div>
+<script src="vendor/jspdf.umd.min.js"></script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

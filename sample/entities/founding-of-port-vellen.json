@@ -1,0 +1,18 @@
+{
+  "id": "founding-of-port-vellen",
+  "name": "Founding of Port Vellen",
+  "type": "event",
+  "tags": ["history"],
+  "gmOnly": false,
+  "fields": { "Outcome": "The Reach gains its last deep-water port" },
+  "date": { "year": 812 },
+  "blocks": [
+    { "id": "b1", "kind": "text", "text": "Vellen the Anchorwright raised the first pier where the fishing fleet sheltered from the autumn gales. Within a generation the shelter had walls, a shrine, and a magistrate — see [[Port Vellen]].", "secret": false }
+  ],
+  "relations": [
+    { "to": "port-vellen", "label": "founded", "secret": false }
+  ],
+  "map": null,
+  "created": "2026-06-25T11:00:00.000Z",
+  "updated": "2026-06-25T11:00:00.000Z"
+}

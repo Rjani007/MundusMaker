@@ -1,0 +1,37 @@
+{
+  "id": "port-vellen",
+  "name": "Port Vellen",
+  "type": "location",
+  "tags": ["port", "trade"],
+  "gmOnly": false,
+  "fields": { "Kind": "Port town", "Region": "The Sundered Reach", "Population": "~4,200" },
+  "date": null,
+  "blocks": [
+    { "id": "b1", "kind": "text", "text": "The last real port on the Reach: lantern-lit quays, salt-rotted warehouses, and a market where anything can be bought if you don't ask where it surfaced. Governed — nominally — by Magistrate [[Ilsa Corvin]].", "secret": false },
+    { "id": "b2", "kind": "text", "text": "The [[The Tidewardens|Tidewardens]] keep a garrison at the harbor chain. Half the town pays tithes to them; the other half pays [[Kestrel Vane]].", "secret": false },
+    { "id": "b3", "kind": "quote", "text": "Vellen floats on three things: fish, salvage, and secrets. — [[Brother Aldous]]", "secret": false },
+    { "id": "b4", "kind": "heading", "text": "Beneath the town", "secret": false },
+    { "id": "b5", "kind": "text", "text": "Cellar walls in the old quarter are older than the town above them. The sealed [[Undercrypt of Maro]] lies below the Lantern Shrine.", "secret": false },
+    { "id": "b6", "kind": "text", "text": "The smugglers' tunnel behind the fish market connects to the Undercrypt's outer galleries. Kestrel's crew uses it; the Veiled Hand watches it. If the party buys passage, roll for a tail.", "secret": true }
+  ],
+  "relations": [
+    { "to": "the-sundered-reach", "label": "lies within", "secret": false },
+    { "to": "ilsa-corvin", "label": "governed by", "secret": false }
+  ],
+  "map": {
+    "kind": "town",
+    "seed": "vellen-7",
+    "params": { "size": 3, "density": 1, "walls": true, "river": false, "layout": "coastal" },
+    "strokes": [],
+    "grid": null,
+    "markers": [
+      { "id": "mk1", "x": 0.44, "y": 0.42, "shape": "star", "color": "#e0a72c", "label": "Lantern Shrine", "secret": false },
+      { "id": "mk2", "x": 0.58, "y": 0.66, "shape": "cross", "color": "#9b59d0", "label": "Smugglers' tunnel", "secret": true }
+    ],
+    "labels": [
+      { "id": "lb1", "x": 0.5, "y": 0.08, "text": "Port Vellen", "size": 34 }
+    ]
+  },
+  "created": "2026-06-20T10:05:00.000Z",
+  "updated": "2026-06-29T09:00:00.000Z"
+}

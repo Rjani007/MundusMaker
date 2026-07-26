@@ -1,0 +1,20 @@
+{
+  "name": "The Sundered Reach",
+  "description": "A storm-wracked coast of drowned kingdoms, smuggler ports, and older things stirring beneath the tide.",
+  "era": "AR",
+  "calendar": {
+    "months": ["Deepwinter", "Latewinter", "Thawmarch", "Rainmoot", "Seedfall", "Highsun", "Suncrest", "Emberwane", "Harvestmoon", "Mistfall", "Frostwane", "Longdark"],
+    "today": "3 Mistfall 1026 AR"
+  },
+  "types": {
+    "character": { "label": "Character", "plural": "Characters", "color": "#e0724a", "fields": ["Role", "Species", "Status"] },
+    "npc": { "label": "NPC", "plural": "NPCs", "color": "#d9913f", "fields": ["Role", "Species", "Disposition", "Found at"] },
+    "location": { "label": "Location", "plural": "Locations", "color": "#4a9e6f", "fields": ["Kind", "Region", "Population"] },
+    "faction": { "label": "Faction", "plural": "Factions", "color": "#7b6fe0", "fields": ["Goal", "Leader", "Reach"] },
+    "item": { "label": "Item", "plural": "Items", "color": "#d4a72c", "fields": ["Kind", "Owner", "Rarity"] },
+    "event": { "label": "Event", "plural": "Events", "color": "#c95d8f", "fields": ["Outcome"] },
+    "creature": { "label": "Creature", "plural": "Creatures", "color": "#5aa7c9", "fields": ["Habitat", "Threat"] },
+    "session": { "label": "Session", "plural": "Sessions", "color": "#4ab8a8", "fields": ["Played on", "Players"] },
+    "note": { "label": "Note", "plural": "Notes", "color": "#8a8f98", "fields": [] }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "id": "night-of-broken-lanterns",
+  "name": "Night of Broken Lanterns",
+  "type": "event",
+  "tags": ["recent"],
+  "gmOnly": false,
+  "fields": { "Outcome": "Harbor archive destroyed; twelve dead" },
+  "date": { "year": 1021, "month": 9, "day": 14 },
+  "blocks": [
+    { "id": "b1", "kind": "text", "text": "Five years ago every lantern on [[Port Vellen]]'s harbor front went out between one bell and the next. In the dark, the harbor archive burned and twelve people drowned in a flat calm. The town blames wreckers; the [[The Tidewardens|Tidewardens]] blame [[Kestrel Vane]]; Kestrel was provably at sea.", "secret": false },
+    { "id": "b2", "kind": "text", "text": "The Veiled Hand snuffed the lanterns with the same working that once called the sea — a rehearsal. The archive held the only surveyed map of the [[Undercrypt of Maro]]'s outer galleries. The twelve drowned were the surveyors' descendants, silenced by name.", "secret": true }
+  ],
+  "relations": [
+    { "to": "port-vellen", "label": "struck", "secret": false }
+  ],
+  "map": null,
+  "created": "2026-06-26T10:00:00.000Z",
+  "updated": "2026-06-30T12:00:00.000Z"
+}

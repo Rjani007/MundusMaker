@@ -1,0 +1,20 @@
+{
+  "id": "the-tidewardens",
+  "name": "The Tidewardens",
+  "type": "faction",
+  "tags": ["order"],
+  "gmOnly": false,
+  "fields": { "Goal": "Keep the sea lanes open and the salvage law enforced", "Leader": "Warden-Commander Rhoswen Tal", "Reach": "Garrisons in every major port" },
+  "date": null,
+  "blocks": [
+    { "id": "b1", "kind": "text", "text": "The closest thing the Reach has to a navy: grey-cloaked wardens who patrol the drowned quarter, license salvage, and hang wreckers. Founded after [[The Drowning War]] to stop the looting of the dead kingdom — these days they mostly tax it.", "secret": false },
+    { "id": "b2", "kind": "text", "text": "Their garrison in [[Port Vellen]] holds the harbor chain. Warden-Commander Tal has chased [[Kestrel Vane]] for a decade and privately respects her more than her own quartermasters.", "secret": false }
+  ],
+  "relations": [
+    { "to": "port-vellen", "label": "garrisons", "secret": false },
+    { "to": "kestrel-vane", "label": "hunts", "secret": false }
+  ],
+  "map": null,
+  "created": "2026-06-24T11:00:00.000Z",
+  "updated": "2026-06-25T10:00:00.000Z"
+}

@@ -1,0 +1,35 @@
+{
+  "id": "the-sundered-reach",
+  "name": "The Sundered Reach",
+  "type": "location",
+  "tags": ["region"],
+  "gmOnly": false,
+  "fields": { "Kind": "Coastal region", "Region": "The western sea", "Population": "Scattered ports and fishing holds" },
+  "date": null,
+  "blocks": [
+    { "id": "b1", "kind": "text", "text": "The Reach is what remains of the old kingdom of **Maro** after the sea took two-thirds of it in a single generation. Drowned towers still break the surface at low tide, and every harbor town grew fat on what washes ashore.", "secret": false },
+    { "id": "b2", "kind": "text", "text": "Its largest surviving port is [[Port Vellen]], seat of what passes for law here. The [[The Tidewardens|Tidewardens]] patrol the shipping lanes, though smugglers like [[Kestrel Vane]] treat their patrol routes as a timetable.", "secret": false },
+    { "id": "b3", "kind": "heading", "text": "History", "secret": false },
+    { "id": "b4", "kind": "text", "text": "The drowning began with [[The Drowning War]] in 988 AR — scholars still argue whether the sea rose in anger or was *called*. See also the [[Founding of Port Vellen]].", "secret": false },
+    { "id": "b5", "kind": "text", "text": "The sea was called. The ritual that sank Maro was performed with [[The Hollow Crown]], and [[The Veiled Hand]] intends to finish the job. No player should learn this until Act 3.", "secret": true }
+  ],
+  "relations": [],
+  "map": {
+    "kind": "world",
+    "seed": "reach-42",
+    "params": { "water": 0.5, "scale": 3, "island": true, "rivers": 7 },
+    "strokes": [],
+    "grid": null,
+    "markers": [
+      { "id": "mk1", "x": 0.36, "y": 0.55, "shape": "square", "color": "#e0524a", "label": "Port Vellen", "secret": false },
+      { "id": "mk2", "x": 0.62, "y": 0.38, "shape": "triangle", "color": "#e0a72c", "label": "Watcher's Tor", "secret": false },
+      { "id": "mk3", "x": 0.48, "y": 0.72, "shape": "cross", "color": "#9b59d0", "label": "Veiled Hand cache", "secret": true }
+    ],
+    "labels": [
+      { "id": "lb1", "x": 0.5, "y": 0.1, "text": "The Sundered Reach", "size": 34 },
+      { "id": "lb2", "x": 0.75, "y": 0.8, "text": "Gulf of Maro", "size": 20 }
+    ]
+  },
+  "created": "2026-06-20T10:00:00.000Z",
+  "updated": "2026-06-28T10:00:00.000Z"
+}

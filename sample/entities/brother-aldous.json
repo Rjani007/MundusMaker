@@ -1,0 +1,19 @@
+{
+  "id": "brother-aldous",
+  "name": "Brother Aldous",
+  "type": "character",
+  "tags": ["clergy"],
+  "gmOnly": false,
+  "fields": { "Role": "Keeper of the Lantern Shrine", "Species": "Human", "Status": "Alive" },
+  "date": null,
+  "blocks": [
+    { "id": "b1", "kind": "text", "text": "The gentle, half-deaf keeper of the Lantern Shrine in [[Port Vellen]]. Lights the harbor lamps every dusk, remembers everyone's name, and buries the drowned that nobody claims. The whole town owes him a favor and he has never once collected.", "secret": false },
+    { "id": "b2", "kind": "text", "text": "Aldous was a novice when the [[Undercrypt of Maro]] was sealed — he is the last living person who saw the inner door and the last to hold [[The Hollow Crown]]. He gave it to the sea from the shrine's pier. On a calm night he can point to the spot.", "secret": true }
+  ],
+  "relations": [
+    { "to": "port-vellen", "label": "ministers in", "secret": false }
+  ],
+  "map": null,
+  "created": "2026-06-23T10:00:00.000Z",
+  "updated": "2026-06-26T10:00:00.000Z"
+}
