@@ -65,7 +65,7 @@ export function render(container) {
         isCurrent || state.worlds.length <= 1 ? null : el('button', {
           class: 'ghost danger small',
           onclick: async () => {
-            if (!confirm(`Delete the world “${world.name}” (${world.entities} entries)?\n\nIt is moved to the data folder's .trash — recoverable by hand, but gone from TomeWeaver.`)) return;
+            if (!confirm(`Delete the world “${world.name}” (${world.entities} entries)?\n\nIt is moved to the data folder's .trash — recoverable by hand, but gone from MundusMaker.`)) return;
             await api.deleteWorld(world.id);
             await refreshWorlds();
             refreshWorldList();
@@ -116,7 +116,7 @@ export function render(container) {
     let status;
     try { status = await api.status(); } catch { syncWrap.textContent = 'Status unavailable.'; return; }
     const pathInput = el('input', {
-      placeholder: status.platform === 'win32' ? 'e.g. C:\\Users\\you\\Dropbox\\TomeWeaver' : 'e.g. /Users/you/Dropbox/TomeWeaver',
+      placeholder: status.platform === 'win32' ? 'e.g. C:\\Users\\you\\Dropbox\\MundusMaker' : 'e.g. /Users/you/Dropbox/MundusMaker',
       style: 'flex:1;min-width:0',
     });
     const moveBtn = el('button', {
@@ -126,7 +126,7 @@ export function render(container) {
         if (!confirm(`Copy your worlds into:\n\n${target}\n\nand make it the data folder from the next start? Your current data stays where it is as a fallback.`)) return;
         try {
           const res = await api.setDataDir(target, true);
-          syncNote.textContent = `✓ Copied ${res.copied} world(s) to ${res.dataDir}. Restart TomeWeaver (close the black window, start it again) to finish.`;
+          syncNote.textContent = `✓ Copied ${res.copied} world(s) to ${res.dataDir}. Restart MundusMaker (close the black window, start it again) to finish.`;
           syncNote.style.color = 'var(--ok)';
         } catch (err) {
           toast('Could not set data folder: ' + err.message, 5000);
@@ -140,7 +140,7 @@ export function render(container) {
         el('span', { class: 'muted' }, ` (set via ${status.configuredVia})`)),
       el('p', { class: 'muted small', style: 'margin:10px 0 6px' },
         'To sync between devices: point the data folder at a folder that Dropbox, Google Drive, OneDrive or Syncthing already syncs. Do the same on your other device (edit ',
-        el('code', {}, 'tomeweaver.config.json'), ' next to the app, or use the box below). Only edit on one device at a time — the last save wins.'),
+        el('code', {}, 'mundusmaker.config.json'), ' next to the app, or use the box below). Only edit on one device at a time — the last save wins.'),
       el('div', { class: 'row' }, pathInput, moveBtn),
       syncNote);
   })();

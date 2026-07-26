@@ -8,7 +8,7 @@ export function render(container) {
   const kbd = (t) => el('code', {}, t);
 
   container.append(el('div', { class: 'page' },
-    el('h1', {}, 'How TomeWeaver works'),
+    el('h1', {}, 'How MundusMaker works'),
     el('div', { class: 'notice' },
       'Everything lives on your computer as plain files — no account, no cloud, no AI. Close the black window to stop; your work autosaves as you type (watch the ✓ in the top bar).'),
 
@@ -56,7 +56,7 @@ export function render(container) {
     p('The Import page (dashboard → Import…) reads a folder of Obsidian/Markdown notes, the bundled SRD bestiary, or a bestiary JSON from a local 5e.tools download.'),
 
     h('💾 Your data & backups'),
-    p('Worlds are folders of readable JSON in the ', kbd('data'), ' folder next to the app. TomeWeaver keeps a daily snapshot of each world (last 7, in ',
+    p('Worlds are folders of readable JSON in the ', kbd('data'), ' folder next to the app. MundusMaker keeps a daily snapshot of each world (last 7, in ',
       kbd('data/.snapshots'), ') and deleted things go to ', kbd('data/.trash'), ' instead of vanishing. ',
       'Every entry also keeps its own history: the ⏳ History button on an entry lists the last 10 versions and restores any of them (the current state is saved first, so restoring is always safe). ',
       'To sync between devices, point the data folder at Dropbox/Drive/Syncthing from the dashboard\'s Sync card. One-click JSON backups live there too.'),
@@ -65,5 +65,5 @@ export function render(container) {
     p(kbd('Ctrl+K'), ' search · ', kbd('Ctrl+S'), ' save now · ', kbd('Esc'), ' close/finish editing · click any dice to roll it.'),
 
     el('p', { class: 'muted small', style: 'margin-top:24px' },
-      'TomeWeaver is free and open source (MIT). Bundled monsters are from the SRD 5.1 by Wizards of the Coast LLC, CC-BY-4.0.')));
+      'MundusMaker is free and open source (MIT). Bundled monsters are from the SRD 5.1 by Wizards of the Coast LLC, CC-BY-4.0.')));
 }

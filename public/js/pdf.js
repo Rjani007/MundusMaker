@@ -102,7 +102,7 @@ export async function buildPdf(opts) {
   doc.text(opts.gm ? 'includes all secrets' : 'all secrets removed — safe to share', PAGE_W / 2, badgeY + 33, { align: 'center' });
   doc.setFontSize(9);
   doc.setTextColor(140, 132, 160);
-  doc.text(`Exported ${new Date().toISOString().slice(0, 10)} · Made with TomeWeaver`, PAGE_W / 2, PAGE_H - 46, { align: 'center' });
+  doc.text(`Exported ${new Date().toISOString().slice(0, 10)} · Made with MundusMaker`, PAGE_W / 2, PAGE_H - 46, { align: 'center' });
 
   doc.addPage();
   y = M;

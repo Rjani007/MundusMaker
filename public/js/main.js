@@ -264,10 +264,10 @@ async function boot() {
     viewEl.append(el('div', { class: 'page' },
       el('div', { class: 'notice warn' },
         'Could not load your worlds from the local server (', err.message, '). ',
-        'Make sure you started TomeWeaver (double-click Start-TomeWeaver, or run node server.js) and are opening it via that server.')));
+        'Make sure you started MundusMaker (double-click Start-MundusMaker, or run node server.js) and are opening it via that server.')));
     return;
   }
-  document.title = `${state.world.name || 'TomeWeaver'} · TomeWeaver`;
+  document.title = `${state.world.name || 'MundusMaker'} · MundusMaker`;
   buildSidebar();
   wireGmToggle();
   wireSaveButton();
@@ -275,7 +275,7 @@ async function boot() {
   document.getElementById('worldSelect').addEventListener('change', onWorldSelect);
   on('change', () => {
     renderSidebarList();
-    document.title = `${state.world.name || 'TomeWeaver'} · TomeWeaver`;
+    document.title = `${state.world.name || 'MundusMaker'} · MundusMaker`;
   });
   on('worlds', renderWorldSelect);
   wireLinkPreviews();

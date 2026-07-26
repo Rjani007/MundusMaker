@@ -1,14 +1,14 @@
 // Shared utilities: DOM helpers, seeded RNG, value noise, slugs.
 
 // ---------- remembered settings ----------
-// Keys are brand-namespaced, so the Loreweave → TomeWeaver rename would have
+// Keys are brand-namespaced, so the Loreweave → MundusMaker rename would have
 // orphaned every existing user's active world, GM toggle and sidebar state.
 // Reads fall back through LEGACY_PREFIXES and adopt the value under the current
 // name; the old key is never deleted, so downgrading to an older build still
 // works. If the app is ever renamed again, prepend the outgoing prefix here —
 // do not add another bespoke fallback at each call site.
-const PREFIX = 'tomeweaver.';
-const LEGACY_PREFIXES = ['loreweave.'];
+const PREFIX = 'mundusmaker.';
+const LEGACY_PREFIXES = ['tomeweaver.', 'loreweave.']; // newest legacy first
 
 /** Read a remembered setting, migrating it forward from a previous app name. */
 export function readSetting(key) {

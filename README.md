@@ -1,4 +1,4 @@
-# TomeWeaver
+# MundusMaker
 
 A worldbuilding wiki for tabletop GMs that runs entirely on your own machine.
 Your campaign is a folder of plain text files on your disk. There's no account,
@@ -12,18 +12,18 @@ bar that shows you exactly what the players would see before you hit export.
 
 ## Getting started
 
-Grab the `TomeWeaver-x.y.z-windows-x64.zip` build, unzip it anywhere, and
-double-click `Start-TomeWeaver.bat`. Your browser opens by itself. Keep the
+Grab the `MundusMaker-x.y.z-windows-x64.zip` build, unzip it anywhere, and
+double-click `Start-MundusMaker.bat`. Your browser opens by itself. Keep the
 black window open while you play, close it when you're done. That build has
 everything inside it, nothing to install.
 
 Running from source instead needs Node.js (free, from [nodejs.org](https://nodejs.org),
 the LTS button). Then:
 
-- Windows: double-click `Start-TomeWeaver.bat`
-- macOS: double-click `Start-TomeWeaver.command` (if macOS refuses, open a
-  terminal and run `bash "Start-TomeWeaver.command"` once)
-- Linux: `sh start-tomeweaver.sh`
+- Windows: double-click `Start-MundusMaker.bat`
+- macOS: double-click `Start-MundusMaker.command` (if macOS refuses, open a
+  terminal and run `bash "Start-MundusMaker.command"` once)
+- Linux: `sh start-mundusmaker.sh`
 - or just `node server.js [dataFolder] [port] [--no-open]`
 
 First run loads a small sample world called The Sundered Reach. Poke around in
@@ -40,7 +40,7 @@ Writing works like a wiki. Type `[[Port Vellen]]` and it becomes a link, with
 autocomplete popping up as soon as you type `[[`. Hover a link and a card
 shows you who or what it is without leaving the page. Links to pages that
 don't exist yet show up orange; clicking one creates the page. Every page
-lists what links to it. Rename something and TomeWeaver offers to fix every
+lists what links to it. Rename something and MundusMaker offers to fix every
 link that pointed at the old name.
 
 A new NPC starts with Appearance / Personality / Hooks headings, a location
