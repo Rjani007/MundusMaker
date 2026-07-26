@@ -1,5 +1,33 @@
 // Shared utilities: DOM helpers, seeded RNG, value noise, slugs.
 
+// ---------- remembered settings ----------
+// Keys are brand-namespaced, so the Loreweave → TomeWeaver rename would have
+// orphaned every existing user's active world, GM toggle and sidebar state.
+// Reads fall back through LEGACY_PREFIXES and adopt the value under the current
+// name; the old key is never deleted, so downgrading to an older build still
+// works. If the app is ever renamed again, prepend the outgoing prefix here —
+// do not add another bespoke fallback at each call site.
+const PREFIX = 'tomeweaver.';
+const LEGACY_PREFIXES = ['loreweave.'];
+
+/** Read a remembered setting, migrating it forward from a previous app name. */
+export function readSetting(key) {
+  const current = localStorage.getItem(PREFIX + key);
+  if (current !== null) return current;
+  for (const old of LEGACY_PREFIXES) {
+    const legacy = localStorage.getItem(old + key);
+    if (legacy !== null) {
+      localStorage.setItem(PREFIX + key, legacy); // adopt once, leave the old key alone
+      return legacy;
+    }
+  }
+  return null; // null, never the string 'null' — callers rely on `|| default`
+}
+
+export function writeSetting(key, value) {
+  localStorage.setItem(PREFIX + key, value);
+}
+
 export function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {

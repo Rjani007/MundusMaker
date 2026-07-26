@@ -1,6 +1,6 @@
 // App shell: router, sidebar, world switcher, GM/player toggle.
 
-import { el, toast, rollDice } from './util.js';
+import { el, toast, rollDice, readSetting, writeSetting } from './util.js';
 import {
   init, on, state, setGm, types, typeOf, visibleEntities, createEntity,
   selectWorld, refreshWorlds, saveState, flushSaves,
@@ -76,7 +76,7 @@ function renderCreate(container, name) {
 
 let search = '';
 let searchInput = null;
-const collapsed = new Set(JSON.parse(localStorage.getItem('loreweave.collapsed') || '[]'));
+const collapsed = new Set(JSON.parse(readSetting('collapsed') || '[]'));
 let listEl = null;
 
 function buildSidebar() {
@@ -129,7 +129,7 @@ function renderSidebarList() {
       class: 'side-group-head',
       onclick: () => {
         collapsed.has(key) ? collapsed.delete(key) : collapsed.add(key);
-        localStorage.setItem('loreweave.collapsed', JSON.stringify([...collapsed]));
+        writeSetting('collapsed', JSON.stringify([...collapsed]));
         renderSidebarList();
       },
     },
@@ -264,10 +264,10 @@ async function boot() {
     viewEl.append(el('div', { class: 'page' },
       el('div', { class: 'notice warn' },
         'Could not load your worlds from the local server (', err.message, '). ',
-        'Make sure you started Loreweave (double-click Start-Loreweave, or run node server.js) and are opening it via that server.')));
+        'Make sure you started TomeWeaver (double-click Start-TomeWeaver, or run node server.js) and are opening it via that server.')));
     return;
   }
-  document.title = `${state.world.name || 'Loreweave'} · Loreweave`;
+  document.title = `${state.world.name || 'TomeWeaver'} · TomeWeaver`;
   buildSidebar();
   wireGmToggle();
   wireSaveButton();
@@ -275,7 +275,7 @@ async function boot() {
   document.getElementById('worldSelect').addEventListener('change', onWorldSelect);
   on('change', () => {
     renderSidebarList();
-    document.title = `${state.world.name || 'Loreweave'} · Loreweave`;
+    document.title = `${state.world.name || 'TomeWeaver'} · TomeWeaver`;
   });
   on('worlds', renderWorldSelect);
   wireLinkPreviews();

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /*
- * Loreweave server — zero-dependency local wiki backend with multiple worlds.
+ * TomeWeaver server — zero-dependency local wiki backend with multiple worlds.
  *
  * Usage:  node server.js [dataDir] [port] [--no-open]
  *   dataDir    defaults to ./data
@@ -31,14 +31,31 @@ const flags = process.argv.slice(2).filter((a) => a.startsWith('--'));
 const dataDirArg = args.find((a) => !/^\d+$/.test(a));
 const portArg = args.find((a) => /^\d+$/.test(a));
 
-// data dir priority: CLI arg > env var > loreweave.config.json > ./data
-const CONFIG_PATH = path.join(ROOT, 'loreweave.config.json');
+// data dir priority: CLI arg > env var > tomeweaver.config.json > ./data
+// The app was renamed from Loreweave, so the old config filename and the old
+// env vars stay honoured. Missing this would send an upgrading user's DATA_DIR
+// back to ./data, where the app finds no worlds, seeds a fresh sample world and
+// looks exactly like total data loss — worst for the folder-sync users, who are
+// the ones most likely to have a config file at all.
+const CONFIG_PATH = path.join(ROOT, 'tomeweaver.config.json');
+const LEGACY_CONFIG_PATH = path.join(ROOT, 'loreweave.config.json');
 let config = {};
-try { config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')); } catch { /* no config file */ }
-const DATA_DIR = path.resolve(dataDirArg || process.env.LOREWEAVE_DATA || config.dataDir || path.join(ROOT, 'data'));
+let configPathUsed = CONFIG_PATH;
+try {
+  config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+} catch {
+  try {
+    config = JSON.parse(fs.readFileSync(LEGACY_CONFIG_PATH, 'utf8'));
+    configPathUsed = LEGACY_CONFIG_PATH;
+  } catch { /* no config file at either name */ }
+}
+// Env vars can't be migrated — nothing can rewrite a user's shortcut or shell
+// profile — so both names are honoured indefinitely.
+const DATA_DIR_ENV = process.env.TOMEWEAVER_DATA || process.env.LOREWEAVE_DATA;
+const DATA_DIR = path.resolve(dataDirArg || DATA_DIR_ENV || config.dataDir || path.join(ROOT, 'data'));
 const WORLDS_DIR = path.join(DATA_DIR, 'worlds');
 const PORT = Number(portArg || process.env.PORT || config.port || 4870);
-const NO_OPEN = flags.includes('--no-open') || !!process.env.LOREWEAVE_NO_OPEN;
+const NO_OPEN = flags.includes('--no-open') || !!process.env.TOMEWEAVER_NO_OPEN || !!process.env.LOREWEAVE_NO_OPEN;
 const VERSION = (() => {
   try { return JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version; } catch { return '?'; }
 })();
@@ -138,13 +155,13 @@ function bootstrap() {
       const from = path.join(DATA_DIR, sub);
       if (fs.existsSync(from)) fs.renameSync(from, path.join(dir, sub));
     }
-    console.log(`[loreweave] migrated existing world into worlds/${wid}/`);
+    console.log(`[tomeweaver] migrated existing world into worlds/${wid}/`);
   }
 
   // first run: seed the sample world
   if (!listWorldIds().length) {
     if (fs.existsSync(SAMPLE_DIR)) {
-      console.log('[loreweave] first run — seeding the sample world "The Sundered Reach"');
+      console.log('[tomeweaver] first run — seeding the sample world "The Sundered Reach"');
       copyDirSync(SAMPLE_DIR, path.join(WORLDS_DIR, 'the-sundered-reach'));
     } else {
       createWorld('My World');
@@ -156,7 +173,7 @@ function bootstrap() {
     fs.mkdirSync(path.join(WORLDS_DIR, wid, 'exports'), { recursive: true });
   }
 
-  try { snapshotWorlds(); } catch (err) { console.error('[loreweave] snapshot failed:', err.message); }
+  try { snapshotWorlds(); } catch (err) { console.error('[tomeweaver] snapshot failed:', err.message); }
 }
 
 /** Daily safety copies of every world (world.json, entities, assets — not exports). Keeps the last 7. */
@@ -180,7 +197,7 @@ function snapshotWorlds() {
     }
     const all = fs.readdirSync(snapDir).sort();
     while (all.length > 7) fs.rmSync(path.join(snapDir, all.shift()), { recursive: true, force: true });
-    console.log(`[loreweave] daily snapshot: ${wid} → .snapshots/${wid}/${stamp}`);
+    console.log(`[tomeweaver] daily snapshot: ${wid} → .snapshots/${wid}/${stamp}`);
   }
 }
 
@@ -247,7 +264,7 @@ function listEntities(dir) {
     try {
       out.push(JSON.parse(fs.readFileSync(path.join(entDir, f), 'utf8')));
     } catch (e) {
-      console.error(`[loreweave] skipping unreadable entity file ${f}: ${e.message}`);
+      console.error(`[tomeweaver] skipping unreadable entity file ${f}: ${e.message}`);
     }
   }
   return out;
@@ -265,8 +282,10 @@ async function handleApi(req, res, pathname) {
       platform: process.platform,
       dataDir: DATA_DIR,
       configPath: CONFIG_PATH,
-      configuredVia: dataDirArg ? 'command line' : process.env.LOREWEAVE_DATA ? 'environment variable'
-        : config.dataDir ? 'loreweave.config.json' : 'default',
+      // report the file that actually won, not the one we'd prefer — otherwise
+      // the Sync card claims 'default' while a legacy config is in force
+      configuredVia: dataDirArg ? 'command line' : DATA_DIR_ENV ? 'environment variable'
+        : config.dataDir ? path.basename(configPathUsed) : 'default',
     });
   }
   if (pathname === '/api/config' && method === 'POST') {
@@ -352,7 +371,7 @@ async function handleApi(req, res, pathname) {
       const body = JSON.parse((await readBody(req, 8 * 1024 * 1024)).toString('utf8'));
       if (body.id !== id) return sendJson(res, 400, { error: 'id mismatch' });
       body.updated = new Date().toISOString();
-      try { writeHistory(dir, id); } catch (err) { console.error('[loreweave] history write failed:', err.message); }
+      try { writeHistory(dir, id); } catch (err) { console.error('[tomeweaver] history write failed:', err.message); }
       fs.writeFileSync(file, JSON.stringify(body, null, 2));
       return sendJson(res, 200, { ok: true, entity: body });
     }
@@ -423,13 +442,16 @@ async function handleApi(req, res, pathname) {
 
   if (route === '/backup' && method === 'GET') {
     const world = JSON.parse(fs.readFileSync(path.join(dir, 'world.json'), 'utf8'));
-    return sendJson(res, 200, { loreweave: 1, exported: new Date().toISOString(), world, entities: listEntities(dir) });
+    // Both format markers are emitted: `tomeweaver` keeps new backups restorable
+    // into the older builds already in other GMs' hands, `tomeweaver` is what we
+    // read going forward. Restore accepts either.
+    return sendJson(res, 200, { tomeweaver: 1, loreweave: 1, exported: new Date().toISOString(), world, entities: listEntities(dir) });
   }
 
   if (route === '/restore' && method === 'POST') {
     const body = JSON.parse((await readBody(req, 100 * 1024 * 1024)).toString('utf8'));
-    if (!body || body.loreweave !== 1 || !body.world || !Array.isArray(body.entities)) {
-      return sendJson(res, 400, { error: 'not a loreweave backup' });
+    if (!body || (body.tomeweaver !== 1 && body.loreweave !== 1) || !body.world || !Array.isArray(body.entities)) {
+      return sendJson(res, 400, { error: 'not a TomeWeaver backup' });
     }
     const entDir = path.join(dir, 'entities');
     for (const f of fs.readdirSync(entDir)) {
@@ -499,7 +521,7 @@ const server = http.createServer(async (req, res) => {
       res.end();
     }
   } catch (err) {
-    console.error(`[loreweave] ${req.method} ${pathname} failed:`, err.message);
+    console.error(`[tomeweaver] ${req.method} ${pathname} failed:`, err.message);
     sendJson(res, err.status || (err instanceof SyntaxError ? 400 : 500), { error: err.message });
   }
 });
@@ -513,8 +535,8 @@ function openBrowser(url) {
 
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
-    console.log(`[loreweave] port ${PORT} is already in use — Loreweave is probably already running.`);
-    console.log(`[loreweave] opening http://localhost:${PORT} in your browser.`);
+    console.log(`[tomeweaver] port ${PORT} is already in use — TomeWeaver is probably already running.`);
+    console.log(`[tomeweaver] opening http://localhost:${PORT} in your browser.`);
     if (!NO_OPEN) openBrowser(`http://localhost:${PORT}`);
     process.exit(0);
   }
@@ -523,8 +545,8 @@ server.on('error', (err) => {
 
 server.listen(PORT, '127.0.0.1', () => {
   const url = `http://localhost:${PORT}`;
-  console.log(`[loreweave] serving on ${url}`);
-  console.log(`[loreweave] worlds stored in ${WORLDS_DIR}`);
-  console.log('[loreweave] keep this window open while you use Loreweave. Press Ctrl+C to stop.');
+  console.log(`[tomeweaver] serving on ${url}`);
+  console.log(`[tomeweaver] worlds stored in ${WORLDS_DIR}`);
+  console.log('[tomeweaver] keep this window open while you use TomeWeaver. Press Ctrl+C to stop.');
   if (!NO_OPEN) openBrowser(url);
 });

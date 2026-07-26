@@ -27,7 +27,7 @@ export function parseFrontmatter(text) {
   return { meta, body };
 }
 
-/** Markdown body → Loreweave blocks: # headings become heading blocks. */
+/** Markdown body → TomeWeaver blocks: # headings become heading blocks. */
 export function mdToBlocks(body) {
   const blocks = [];
   let buf = [];
@@ -50,7 +50,7 @@ export function mdToBlocks(body) {
 // ---------- bundled SRD bestiary ----------
 
 let bundled = null;
-/** The ~322 SRD 5.1 monsters shipped with Loreweave (CC-BY-4.0). Cached. */
+/** The ~322 SRD 5.1 monsters shipped with TomeWeaver (CC-BY-4.0). Cached. */
 export async function loadBundledBestiary() {
   if (!bundled) {
     const res = await fetch('/bestiary/srd-bestiary.json');
@@ -107,7 +107,7 @@ function listish(v) {
   return String(v);
 }
 
-/** Convert one 5etools monster entry into a Loreweave statblock. */
+/** Convert one 5etools monster entry into a TomeWeaver statblock. */
 export function monsterToStat(mon) {
   const size = (mon.size || []).map((s) => SIZE_NAMES[s] || s).join(' or ') || 'Medium';
   const typeStr = typeof mon.type === 'string' ? mon.type

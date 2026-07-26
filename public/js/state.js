@@ -2,14 +2,16 @@
 // entities, and the GM/player view flag.
 
 import { api } from './api.js';
-import { slugify, uid } from './util.js';
+import { slugify, uid, readSetting, writeSetting } from './util.js';
 
 export const state = {
   worlds: [],       // [{id, name, description, entities}]
   worldId: null,
   world: null,
   entities: new Map(), // id -> entity
-  gm: localStorage.getItem('loreweave.gm') !== 'off',
+  // defaults to GM view; a remembered 'off' must survive the rename, or a GM who
+  // left the app in player preview is silently flipped back to seeing secrets
+  gm: readSetting('gm') !== 'off',
   loaded: false,
 };
 
@@ -20,7 +22,7 @@ export function on(type, fn) { bus.addEventListener(type, fn); }
 /** Discover worlds and pick the remembered (or first) one. */
 export async function init() {
   state.worlds = await api.listWorlds();
-  const remembered = localStorage.getItem('loreweave.world');
+  const remembered = readSetting('world');
   const pick = state.worlds.find((w) => w.id === remembered) || state.worlds[0];
   if (!pick) return false; // no worlds exist (all deleted at runtime)
   await selectWorld(pick.id);
@@ -39,7 +41,7 @@ export async function selectWorld(worldId) {
     api.setWorld(prevId);
     throw err;
   }
-  localStorage.setItem('loreweave.world', worldId); // only remember worlds that actually load
+  writeSetting('world', worldId); // only remember worlds that actually load
 }
 
 export async function refreshWorlds() {
@@ -70,7 +72,7 @@ export async function loadAll() {
 
 export function setGm(gm) {
   state.gm = gm;
-  localStorage.setItem('loreweave.gm', gm ? 'on' : 'off');
+  writeSetting('gm', gm ? 'on' : 'off');
   emit('gm');
   emit('change');
 }

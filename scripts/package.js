@@ -29,7 +29,7 @@ const TARGETS = {
 // files shipped to end users (data/, dist/, node_modules/ etc. stay behind)
 const APP_FILES = [
   'server.js', 'package.json', 'LICENSE', 'README.md',
-  'Start-Loreweave.bat', 'Start-Loreweave.command', 'start-loreweave.sh',
+  'Start-TomeWeaver.bat', 'Start-TomeWeaver.command', 'start-tomeweaver.sh',
   'public', 'sample',
 ];
 
@@ -93,7 +93,7 @@ async function build(target, nodeVersion) {
 
   // 3. assemble the app folder — staged under work/ so it never collides with
   //    an extracted copy someone is browsing or running out of dist/
-  const outName = `Loreweave-${APP_VERSION}-${target}`;
+  const outName = `TomeWeaver-${APP_VERSION}-${target}`;
   const stageRoot = path.join(DIST, 'work', `stage-${target}`);
   const outDir = path.join(stageRoot, outName);
   fs.rmSync(stageRoot, { recursive: true, force: true });
@@ -141,7 +141,7 @@ async function build(target, nodeVersion) {
   }
   const nodeVersion = await latestLtsVersion();
   for (const t of targets) await build(t, nodeVersion);
-  console.log('\nDone. Share the archive — unzip, double-click the Start-Loreweave launcher, play.');
+  console.log('\nDone. Share the archive — unzip, double-click the Start-TomeWeaver launcher, play.');
 })().catch((err) => {
   console.error('packaging failed:', err.message);
   process.exit(1);

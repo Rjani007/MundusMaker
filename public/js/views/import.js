@@ -157,7 +157,7 @@ export function render(container) {
     el('div', { class: 'card' },
       el('h3', {}, 'Monsters & statblocks'),
       el('p', { class: 'muted small' },
-        'Loreweave ships with the ', el('strong', {}, 'SRD 5.1 bestiary'), ' — 322 classic D&D monsters ',
+        'TomeWeaver ships with the ', el('strong', {}, 'SRD 5.1 bestiary'), ' — 322 classic D&D monsters ',
         '(goblins to ancient dragons), fully offline. You can also pick a bestiary JSON from a local ',
         '5e.tools download (its ', el('code', {}, 'data/bestiary/'), ' folder — only import content you own). ',
         'Ticked monsters become entries with full statblocks, ready for encounter blocks. ',

@@ -211,7 +211,7 @@ export function render(container, id) {
     const list = el('div', {});
     if (!items.length) {
       list.append(el('div', { class: 'muted small' },
-        'No previous versions yet. Loreweave keeps one automatically when you come back and edit an entry (at most one every few minutes), up to the last 10.'));
+        'No previous versions yet. TomeWeaver keeps one automatically when you come back and edit an entry (at most one every few minutes), up to the last 10.'));
     }
     for (const it of items) {
       const when = it.updated ? new Date(it.updated).toLocaleString() : it.stamp;
