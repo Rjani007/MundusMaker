@@ -77,6 +77,9 @@ const MIME = {
   '.json': 'application/json; charset=utf-8',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
   '.webmanifest': 'application/manifest+json',
@@ -161,7 +164,7 @@ function bootstrap() {
     const dir = path.join(WORLDS_DIR, wid);
     fs.mkdirSync(dir, { recursive: true });
     fs.renameSync(legacyWorld, path.join(dir, 'world.json'));
-    for (const sub of ['entities', 'exports']) {
+    for (const sub of ['entities', 'exports', 'assets']) {
       const from = path.join(DATA_DIR, sub);
       if (fs.existsSync(from)) fs.renameSync(from, path.join(dir, sub));
     }
@@ -186,7 +189,29 @@ function bootstrap() {
   try { snapshotWorlds(); } catch (err) { console.error('[mundusmaker] snapshot failed:', err.message); }
 }
 
-/** Daily safety copies of every world (world.json, entities, assets — not exports). Keeps the last 7. */
+/**
+ * Copy one world (world.json, entities, assets — not exports) into .snapshots.
+ * The stamp starts with the date so lexical order stays chronological even when
+ * a label ("pre-restore") is appended — retention shifts oldest-first off that
+ * same lexical sort.
+ */
+function snapshotWorld(wid, label) {
+  const snapDir = path.join(DATA_DIR, '.snapshots', wid);
+  fs.mkdirSync(snapDir, { recursive: true });
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[T:]/g, '-') + (label ? `-${label}` : '');
+  const dest = path.join(snapDir, stamp);
+  const src = path.join(WORLDS_DIR, wid);
+  fs.mkdirSync(dest, { recursive: true });
+  fs.copyFileSync(path.join(src, 'world.json'), path.join(dest, 'world.json'));
+  for (const sub of ['entities', 'assets']) {
+    if (fs.existsSync(path.join(src, sub))) copyDirSync(path.join(src, sub), path.join(dest, sub));
+  }
+  const all = fs.readdirSync(snapDir).sort();
+  while (all.length > 7) fs.rmSync(path.join(snapDir, all.shift()), { recursive: true, force: true });
+  return stamp;
+}
+
+/** Daily safety copies of every world. Keeps the last 7 per world. */
 function snapshotWorlds() {
   const snapRoot = path.join(DATA_DIR, '.snapshots');
   for (const wid of listWorldIds()) {
@@ -197,16 +222,7 @@ function snapshotWorlds() {
       const age = Date.now() - fs.statSync(path.join(snapDir, existing[existing.length - 1])).mtimeMs;
       if (age < 20 * 3600 * 1000) continue; // one per day is plenty
     }
-    const stamp = new Date().toISOString().slice(0, 16).replace(/[T:]/g, '-');
-    const dest = path.join(snapDir, stamp);
-    const src = path.join(WORLDS_DIR, wid);
-    fs.mkdirSync(dest, { recursive: true });
-    fs.copyFileSync(path.join(src, 'world.json'), path.join(dest, 'world.json'));
-    for (const sub of ['entities', 'assets']) {
-      if (fs.existsSync(path.join(src, sub))) copyDirSync(path.join(src, sub), path.join(dest, sub));
-    }
-    const all = fs.readdirSync(snapDir).sort();
-    while (all.length > 7) fs.rmSync(path.join(snapDir, all.shift()), { recursive: true, force: true });
+    const stamp = snapshotWorld(wid);
     console.log(`[mundusmaker] daily snapshot: ${wid} → .snapshots/${wid}/${stamp}`);
   }
 }
@@ -280,6 +296,61 @@ function listEntities(dir) {
   return out;
 }
 
+// ---------- migration from older installs ----------
+// Strictly read-only detection. The migrate route COPIES worlds in and never
+// writes to, moves, or deletes anything at the source.
+
+/**
+ * Given an install root OR a data dir, find that install's data the way it
+ * would itself: its own config file (any rename-era name), else its ./data.
+ * Returns { path, dataDir, layout: 'v1'|'v2', worlds: [{id,name,entities}] } or null.
+ */
+function detectInstallData(candidatePath) {
+  const p = path.resolve(String(candidatePath || ''));
+  if (!p || !fs.existsSync(p) || !fs.statSync(p).isDirectory()) return null;
+  let dataDir = null;
+  if (fs.existsSync(path.join(p, 'worlds')) || fs.existsSync(path.join(p, 'world.json'))) {
+    dataDir = p; // pointed straight at a data folder
+  } else {
+    for (const name of CONFIG_NAMES) {
+      try {
+        const cfg = JSON.parse(fs.readFileSync(path.join(p, name), 'utf8'));
+        if (cfg.dataDir) { dataDir = path.resolve(p, cfg.dataDir); break; }
+      } catch { /* try the next name */ }
+    }
+    if (!dataDir && fs.existsSync(path.join(p, 'data'))) dataDir = path.join(p, 'data');
+  }
+  if (!dataDir || !fs.existsSync(dataDir)) return null;
+  if (path.resolve(dataDir) === DATA_DIR) return null; // that's the live data dir — nothing to migrate
+  const countEntities = (d) => {
+    const entDir = path.join(d, 'entities');
+    return fs.existsSync(entDir) ? fs.readdirSync(entDir).filter((f) => f.endsWith('.json')).length : 0;
+  };
+  const readName = (worldJson, fallback) => {
+    try { return JSON.parse(fs.readFileSync(worldJson, 'utf8')).name || fallback; } catch { return fallback; }
+  };
+  const worlds = [];
+  const wdir = path.join(dataDir, 'worlds');
+  if (fs.existsSync(wdir)) {
+    for (const d of fs.readdirSync(wdir, { withFileTypes: true })) {
+      if (!d.isDirectory() || !fs.existsSync(path.join(wdir, d.name, 'world.json'))) continue;
+      worlds.push({
+        id: d.name,
+        name: readName(path.join(wdir, d.name, 'world.json'), d.name),
+        entities: countEntities(path.join(wdir, d.name)),
+      });
+    }
+  }
+  if (worlds.length) return { path: p, dataDir, layout: 'v2', worlds };
+  if (fs.existsSync(path.join(dataDir, 'world.json'))) {
+    return {
+      path: p, dataDir, layout: 'v1',
+      worlds: [{ id: '__v1__', name: readName(path.join(dataDir, 'world.json'), 'My World'), entities: countEntities(dataDir) }],
+    };
+  }
+  return null;
+}
+
 // ---------- API ----------
 
 async function handleApi(req, res, pathname) {
@@ -345,6 +416,60 @@ async function handleApi(req, res, pathname) {
     fs.mkdirSync(trash, { recursive: true });
     fs.renameSync(dir, path.join(trash, `${wid}-${Date.now()}`));
     return sendJson(res, 200, { ok: true, note: 'moved to data/.trash, not erased' });
+  }
+
+  // --- migration from older installs (Loreweave / TomeWeaver / MundusMaker) ---
+  if (pathname === '/api/scan-installs' && method === 'GET') {
+    const results = [];
+    const parent = path.dirname(ROOT);
+    let siblings = [];
+    try { siblings = fs.readdirSync(parent, { withFileTypes: true }).filter((d) => d.isDirectory()); } catch { /* parent unreadable */ }
+    for (const d of siblings) {
+      const full = path.join(parent, d.name);
+      if (full === ROOT) continue;
+      const looksLikeInstall = /loreweave|tomeweaver|mundusmaker/i.test(d.name)
+        || (fs.existsSync(path.join(full, 'server.js')) && fs.existsSync(path.join(full, 'public')));
+      if (!looksLikeInstall) continue;
+      try {
+        const found = detectInstallData(full);
+        if (found) results.push(found);
+      } catch { /* unreadable candidate — skip */ }
+    }
+    return sendJson(res, 200, results);
+  }
+  if (pathname === '/api/scan-path' && method === 'POST') {
+    const body = JSON.parse((await readBody(req, 64 * 1024)).toString('utf8'));
+    const found = detectInstallData(body.path);
+    return sendJson(res, 200, found ? [found] : []);
+  }
+  if (pathname === '/api/migrate-install' && method === 'POST') {
+    const body = JSON.parse((await readBody(req, 64 * 1024)).toString('utf8'));
+    // re-verify on the server — never trust a listing the client assembled
+    const found = detectInstallData(body.dataDir);
+    if (!found) return sendJson(res, 400, { error: 'no MundusMaker/Loreweave data found at that path' });
+    const wanted = Array.isArray(body.worldIds) && body.worldIds.length
+      ? body.worldIds : found.worlds.map((w) => w.id);
+    const migrated = [];
+    for (const w of found.worlds) {
+      if (!wanted.includes(w.id)) continue;
+      const newId = uniqueWorldId(w.name);
+      const destDir = path.join(WORLDS_DIR, newId);
+      if (found.layout === 'v1') {
+        // synthesize a v2 world folder by COPY — the source keeps its v1 shape
+        fs.mkdirSync(destDir, { recursive: true });
+        fs.copyFileSync(path.join(found.dataDir, 'world.json'), path.join(destDir, 'world.json'));
+        for (const sub of ['entities', 'exports', 'assets']) {
+          const from = path.join(found.dataDir, sub);
+          if (fs.existsSync(from)) copyDirSync(from, path.join(destDir, sub));
+        }
+      } else {
+        copyDirSync(path.join(found.dataDir, 'worlds', w.id), destDir);
+      }
+      fs.mkdirSync(path.join(destDir, 'entities'), { recursive: true });
+      fs.mkdirSync(path.join(destDir, 'exports'), { recursive: true });
+      migrated.push({ from: w.id, id: newId, name: w.name, entities: w.entities });
+    }
+    return sendJson(res, 200, { migrated });
   }
 
   // --- world-scoped routes: /api/w/<wid>/... ---
@@ -452,18 +577,32 @@ async function handleApi(req, res, pathname) {
 
   if (route === '/backup' && method === 'GET') {
     const world = JSON.parse(fs.readFileSync(path.join(dir, 'world.json'), 'utf8'));
-    // Both format markers are emitted: `mundusmaker` keeps new backups restorable
+    // Both format markers are emitted: `loreweave` keeps new backups restorable
     // into the older builds already in other GMs' hands, `mundusmaker` is what we
     // read going forward. Restore accepts either.
-    return sendJson(res, 200, { mundusmaker: 1, loreweave: 1, exported: new Date().toISOString(), world, entities: listEntities(dir) });
+    const payload = { mundusmaker: 1, loreweave: 1, exported: new Date().toISOString(), world, entities: listEntities(dir) };
+    // ?assets=1 embeds portraits/uploads (base64) — off by default, backups stay small
+    if (new URL(req.url, 'http://localhost').searchParams.get('assets') === '1') {
+      payload.assets = [];
+      const assetsDir = path.join(dir, 'assets');
+      if (fs.existsSync(assetsDir)) {
+        for (const f of fs.readdirSync(assetsDir)) {
+          const fp = path.join(assetsDir, f);
+          if (fs.statSync(fp).isFile()) payload.assets.push({ name: f, dataBase64: fs.readFileSync(fp).toString('base64') });
+        }
+      }
+    }
+    return sendJson(res, 200, payload);
   }
 
   if (route === '/restore' && method === 'POST') {
-    const body = JSON.parse((await readBody(req, 100 * 1024 * 1024)).toString('utf8'));
+    const body = JSON.parse((await readBody(req, 200 * 1024 * 1024)).toString('utf8'));
     const isBackup = body && [body.mundusmaker, body.tomeweaver, body.loreweave].includes(1);
     if (!isBackup || !body.world || !Array.isArray(body.entities)) {
       return sendJson(res, 400, { error: 'not a MundusMaker backup' });
     }
+    // the state being replaced must survive — same rule as entity-history restore
+    try { snapshotWorld(wid, 'pre-restore'); } catch (err) { console.error('[mundusmaker] pre-restore snapshot failed:', err.message); }
     const entDir = path.join(dir, 'entities');
     for (const f of fs.readdirSync(entDir)) {
       if (f.endsWith('.json')) fs.unlinkSync(path.join(entDir, f));
@@ -472,6 +611,17 @@ async function handleApi(req, res, pathname) {
     for (const ent of body.entities) {
       if (!ent || !SAFE_ID.test(String(ent.id))) continue;
       fs.writeFileSync(path.join(entDir, ent.id + '.json'), JSON.stringify(ent, null, 2));
+    }
+    // backup-v2 embedded assets: restored by (sanitized) name, overwriting like-named files
+    if (Array.isArray(body.assets)) {
+      const assetsDir = path.join(dir, 'assets');
+      fs.mkdirSync(assetsDir, { recursive: true });
+      for (const a of body.assets) {
+        if (!a || typeof a.name !== 'string') continue;
+        const safe = a.name.replace(/[^\w.\-]+/g, '_').slice(-80);
+        if (!safe) continue;
+        fs.writeFileSync(path.join(assetsDir, safe), Buffer.from(String(a.dataBase64 || ''), 'base64'));
+      }
     }
     return sendJson(res, 200, { ok: true, count: body.entities.length });
   }

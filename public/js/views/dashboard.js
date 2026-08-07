@@ -1,11 +1,32 @@
 // World dashboard: name/description, stats, recent entries, world management.
 // Backup/restore and the data-folder card moved to #/settings in 0.10.
 
-import { el, toast } from '../util.js';
+import { el, toast, readSetting, writeSetting } from '../util.js';
 import { state, types, typeOf, visibleEntities, scheduleWorldSave, createEntity, refreshWorlds } from '../state.js';
 import { snippetFor } from '../render.js';
 import { api } from '../api.js';
 import { switchTo } from '../main.js';
+
+// One cheap scan per app load, and only while the user still has nothing but
+// the sample world — an upgrader's first boot is exactly when it helps.
+let scannedThisLoad = false;
+
+function maybeOfferMigration(container) {
+  if (scannedThisLoad || readSetting('migrateDismissed')) return;
+  if (state.worlds.length !== 1 || state.worlds[0]?.id !== 'the-sundered-reach') return;
+  scannedThisLoad = true;
+  api.scanInstalls().then((found) => {
+    if (!found.length || !container.isConnected) return;
+    const worlds = found.flatMap((f) => f.worlds);
+    container.prepend(el('div', { class: 'notice', style: 'margin-bottom:14px' },
+      `📦 Found ${worlds.length} world${worlds.length === 1 ? '' : 's'} from an older install (${found[0].path}${found.length > 1 ? ', …' : ''}). `,
+      el('a', { href: '#/import' }, 'Bring them in from the Import page'), ' — the old copy stays untouched. ',
+      el('button', {
+        class: 'ghost small',
+        onclick: (ev) => { writeSetting('migrateDismissed', '1'); ev.target.closest('.notice').remove(); },
+      }, 'Dismiss')));
+  }).catch(() => { /* scanning is best-effort */ });
+}
 
 export function render(container) {
   const w = state.world;
@@ -100,7 +121,7 @@ export function render(container) {
       el('a', { href: '#/calendar' }, '📅 Calendar'),
       el('span', { class: 'muted small' }, 'Months and their lengths, special days, ages, today’s date.')));
 
-  container.append(el('div', { class: 'page' },
+  const page = el('div', { class: 'page' },
     nameInput,
     el('div', { class: 'card world-desc', style: 'margin-top:14px' },
       el('h3', {}, 'About this world'),
@@ -135,5 +156,7 @@ export function render(container) {
     el('div', { class: 'card' },
       el('div', { class: 'row' },
         el('a', { href: '#/settings' }, '⚙ App settings'),
-        el('span', { class: 'muted small' }, 'Data folder & device sync, backups, about.')))));
+        el('span', { class: 'muted small' }, 'Data folder & device sync, backups, about.'))));
+  container.append(page);
+  maybeOfferMigration(page);
 }

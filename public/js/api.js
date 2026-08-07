@@ -48,6 +48,11 @@ export const api = {
   exportFile: (name, dataBase64) => req('POST', w('/export-file'), { name, dataBase64 }),
   uploadAsset: (name, dataBase64) => req('POST', w('/assets'), { name, dataBase64 }),
   assetUrl: (worldId, file) => `/assets/${encodeURIComponent(worldId)}/${encodeURIComponent(file)}`,
-  backup: () => req('GET', w('/backup')),
+  backup: (withAssets) => req('GET', w('/backup') + (withAssets ? '?assets=1' : '')),
   restore: (payload) => req('POST', w('/restore'), payload),
+
+  // migration from older installs (Loreweave/TomeWeaver era)
+  scanInstalls: () => req('GET', '/api/scan-installs'),
+  scanPath: (p) => req('POST', '/api/scan-path', { path: p }),
+  migrateInstall: (dataDir, worldIds) => req('POST', '/api/migrate-install', { dataDir, worldIds }),
 };

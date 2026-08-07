@@ -651,3 +651,13 @@ a.type-badge:hover { text-decoration: none; border-color: var(--accent); color: 
   background: var(--line); display: inline-block;
 }
 .onboard-dot.on { background: var(--accent); }
+
+/* ---------- 0.11.0: imported images, CSV column mapping ---------- */
+.md-img { display: block; max-width: 100%; border-radius: 6px; margin: 8px 0; }
+.csv-map-wrap { overflow-x: auto; margin-top: 10px; }
+.csv-map { border-collapse: collapse; font-size: 13px; }
+.csv-map th, .csv-map td {
+  border: 1px solid var(--line); padding: 4px 8px; text-align: left;
+  max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.csv-map th { background: var(--bg3); font-family: inherit; }

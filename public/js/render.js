@@ -30,6 +30,10 @@ function inlineMd(text) {
     if (ent) return label; // gm-only target in player preview: render as plain text
     return `<a class="wl missing" href="#/new/${encodeURIComponent(target.trim())}" title="Not written yet — click to create">${label}</a>`;
   });
+  // images, but ONLY from the world's own /assets/ — remote URLs stay plain
+  // text, so a note can never make the app fetch anything off this machine
+  html = html.replace(/!\[([^\]]*)\]\((\/assets\/[^\s)]+)\)/g,
+    '<img class="md-img" src="$2" alt="$1" loading="lazy">');
   html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
   html = html.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
   html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
@@ -74,6 +78,7 @@ export function mdToHtml(text) {
 /** Plain text with markup stripped — for snippets and PDF export. */
 export function mdToPlain(text) {
   return String(text || '')
+    .replace(/!\[([^\]]*)\]\(\/assets\/[^\s)]+\)/g, '$1')
     .replace(WIKILINK, (_, target, display) => (display || target).trim())
     .replace(/\*\*([^*]+)\*\*/g, '$1')
     .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1$2')

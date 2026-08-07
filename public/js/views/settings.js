@@ -60,39 +60,30 @@ export function render(container) {
   })();
 
   // ---------- backup ----------
-  const backupRow = el('div', { class: 'row' },
-    el('button', {
-      onclick: async () => {
-        const data = await api.backup();
-        downloadBlob(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }),
-          `${(state.world.name || 'world').replace(/\W+/g, '-').toLowerCase()}-backup.json`);
-        toast('Backup downloaded');
-      },
-    }, 'Download backup (.json)'),
-    el('button', {
-      onclick: () => {
-        const input = el('input', { type: 'file', accept: '.json' });
-        input.addEventListener('change', async () => {
-          const file = input.files[0];
-          if (!file) return;
-          if (!confirm('Restoring replaces ALL entries in the CURRENT world with the backup. Continue?')) return;
-          try {
-            const payload = JSON.parse(await file.text());
-            await api.restore(payload);
-            location.reload();
-          } catch (err) {
-            toast('Restore failed: ' + err.message);
+  const withImages = el('input', { type: 'checkbox' });
+  const backupCard = el('div', {},
+    el('div', { class: 'row' },
+      el('button', {
+        onclick: async () => {
+          const data = await api.backup(withImages.checked);
+          const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+          if (blob.size > 64 * 1024 * 1024) {
+            toast('That backup is over 64 MB — for image-heavy worlds, syncing or copying the data folder itself is the better tool.', 7000);
           }
-        });
-        input.click();
-      },
-    }, 'Restore from backup…'),
-    el('span', { class: 'muted small' }, 'Backs up the current world. Each world also lives as plain JSON files in the data folder — copy it anywhere, or put it in git.'));
+          downloadBlob(blob, `${(state.world.name || 'world').replace(/\W+/g, '-').toLowerCase()}-backup.json`);
+          toast('Backup downloaded');
+        },
+      }, 'Download backup (.json)'),
+      el('label', { class: 'small', style: 'display:flex;align-items:center;gap:6px' },
+        withImages, 'Include images (portraits & uploads)')),
+    el('p', { class: 'muted small', style: 'margin:8px 0 0' },
+      'Backs up the current world. Restoring lives on the ', el('a', { href: '#/import' }, 'Import page'),
+      '. Each world is also plain JSON files in the data folder — copy it anywhere, or put it in git.'));
 
   container.append(el('div', { class: 'page' },
     el('h1', {}, 'Settings'),
     el('div', { class: 'card' }, el('h3', {}, 'Data folder & sync'), syncWrap),
-    el('div', { class: 'card' }, el('h3', {}, 'Backup'), backupRow),
+    el('div', { class: 'card' }, el('h3', {}, 'Backup'), backupCard),
     // migration-from-older-installs card lands here in 0.11 (plan phase B5)
     el('div', { class: 'card' }, el('h3', {}, 'About'), aboutWrap)));
 }

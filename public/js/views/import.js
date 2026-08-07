@@ -1,56 +1,241 @@
 // Import view: bring existing work into the current world.
-//   1. A folder of Markdown/Obsidian notes ([[links]] are the same syntax)
-//   2. Monsters from a locally downloaded 5e.tools bestiary JSON
+//
+// Most formats are IMPORTERS registry entries — stage(files) parses and
+// previews (no writes), commit() creates entities — so new formats are one
+// entry + converters in importers.js. Cards with bespoke interaction (the
+// bestiary browser, old-install migration, backup restore) render themselves.
 
-import { el, uid, toast, slugify } from '../util.js';
-import { state, types, newEntity, saveEntity, findByName } from '../state.js';
-import { parseFrontmatter, mdToBlocks, monsterToStat, loadBundledBestiary } from '../importers.js';
+import { el, uid, toast } from '../util.js';
+import { state, types, newEntity, saveEntity, findByName, refreshWorlds } from '../state.js';
+import { parseFrontmatter, mdToBlocks, parseCsv, monsterToStat, loadBundledBestiary } from '../importers.js';
 import { crFromStat } from '../encounter.js';
+import { api } from '../api.js';
 
-export function render(container) {
-  if (!state.gm) {
-    container.append(el('div', { class: 'page' }, el('div', { class: 'notice warn' }, 'Importing is a GM activity — switch to GM view first.')));
-    return;
-  }
+const IMG_EXT = /\.(png|jpe?g|webp|gif|svg)$/i;
 
-  // ---------- markdown ----------
-  const mdStatus = el('div', { class: 'small muted', style: 'margin-top:8px' });
-  const mdTypeSel = el('select', {},
-    Object.entries(types()).map(([key, t]) => el('option', { value: key, selected: key === 'note' }, t.label)));
-  const mdInput = el('input', { type: 'file', webkitdirectory: true, multiple: true, style: 'display:none' });
-  let mdFiles = [];
+async function fileToBase64(f) {
+  const buf = new Uint8Array(await f.arrayBuffer());
+  let bin = '';
+  for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
 
-  mdInput.addEventListener('change', () => {
-    mdFiles = [...mdInput.files].filter((f) => f.name.toLowerCase().endsWith('.md'));
-    mdStatus.textContent = mdFiles.length
-      ? `Found ${mdFiles.length} .md file${mdFiles.length === 1 ? '' : 's'}. Choose a default type, then import.`
-      : 'No .md files in that folder.';
+// ---------- markdown / Obsidian (with images) ----------
+
+function markdownImporter() {
+  let staged = null; // { md: File[], imgs: File[] }
+  return {
+    id: 'markdown',
+    title: 'Markdown / Obsidian folder',
+    desc: () => el('p', { class: 'muted small' },
+      'Pick a folder of .md files (an Obsidian vault works as-is). Each file becomes an entry: ',
+      'the filename is the name, # headings become heading blocks, and [[wiki-links]] keep working. ',
+      'Images come too: embedded pictures are uploaded into the world, and an image named like a note ',
+      'becomes its portrait. Frontmatter type: and tags: are respected; folder names become tags.'),
+    pick: { kind: 'folder' },
+    typeDefault: 'note',
+    stage(files) {
+      const md = files.filter((f) => f.name.toLowerCase().endsWith('.md'));
+      const imgs = files.filter((f) => IMG_EXT.test(f.name));
+      staged = { md, imgs };
+      if (!md.length) return { summary: 'No .md files in that folder.', ready: false };
+      return {
+        summary: `Found ${md.length} note${md.length === 1 ? '' : 's'} and ${imgs.length} image${imgs.length === 1 ? '' : 's'}. Choose a default type, then import.`,
+        ready: true,
+      };
+    },
+    async commit({ typeKey, setStatus }) {
+      const { md, imgs } = staged;
+      const uploaded = new Map(); // File -> asset file name (upload once, reuse)
+      const ensureUploaded = async (file) => {
+        if (!uploaded.has(file)) {
+          const res = await api.uploadAsset(file.name, await fileToBase64(file));
+          uploaded.set(file, res.file);
+        }
+        return uploaded.get(file);
+      };
+      // Obsidian refs are usually bare basenames; fall back to path-suffix match.
+      const findImg = (ref) => {
+        const norm = ref.trim().replace(/\\/g, '/').replace(/^\.\//, '').toLowerCase();
+        const base = norm.split('/').pop();
+        return imgs.find((f) => (f.webkitRelativePath || f.name).toLowerCase().endsWith('/' + norm))
+          || imgs.find((f) => f.name.toLowerCase() === base);
+      };
+      const IMG_REF = /!\[\[([^\]]+?\.(?:png|jpe?g|webp|gif|svg))(?:\|[^\]]*)?\]\]|!\[([^\]]*)\]\(([^)\s]+?\.(?:png|jpe?g|webp|gif|svg))\)/gi;
+
+      let imported = 0, skipped = 0;
+      for (const f of md) {
+        const name = f.name.replace(/\.md$/i, '').trim();
+        if (!name || findByName(name)) { skipped++; continue; }
+        const { meta, body } = parseFrontmatter(await f.text());
+
+        // rewrite image embeds to /assets/ BEFORE mdToBlocks (which would turn ![[x]] into a wiki-link)
+        let text = '';
+        let last = 0;
+        for (const m of body.matchAll(IMG_REF)) {
+          const ref = m[1] || m[3];
+          const alt = m[2] || '';
+          const file = findImg(ref);
+          text += body.slice(last, m.index);
+          if (file) text += `![${alt}](/assets/${encodeURIComponent(state.worldId)}/${encodeURIComponent(await ensureUploaded(file))})`;
+          else text += m[0]; // image not in the folder — leave the reference as written
+          last = m.index + m[0].length;
+        }
+        text += body.slice(last);
+
+        const type = meta.type && types()[meta.type] ? meta.type : typeKey;
+        const e = newEntity(name, type);
+        e.blocks = mdToBlocks(text);
+        const segs = (f.webkitRelativePath || '').split('/').slice(0, -1).map((s) => s.toLowerCase());
+        const tags = new Set([...(Array.isArray(meta.tags) ? meta.tags : meta.tags ? [meta.tags] : []), ...segs]);
+        e.tags = [...tags].filter(Boolean).slice(0, 6);
+        const portrait = imgs.find((im) => im.name.replace(IMG_EXT, '').toLowerCase() === name.toLowerCase());
+        if (portrait) e.image = await ensureUploaded(portrait);
+        await saveEntity(e);
+        imported++;
+        if (imported % 20 === 0) setStatus(`Importing… ${imported}/${md.length}`);
+      }
+      staged = null;
+      return { done: `Done: imported ${imported}, skipped ${skipped} (already existed or unnamed), uploaded ${uploaded.size} image${uploaded.size === 1 ? '' : 's'}. [[Links]] between notes resolve automatically.` };
+    },
+  };
+}
+
+// ---------- CSV ----------
+
+function csvImporter() {
+  let headers = [], data = [], selects = [];
+  return {
+    id: 'csv',
+    title: 'CSV / spreadsheet',
+    desc: () => el('p', { class: 'muted small' },
+      'A table of anything — NPCs, shops, holidays. The first row must be column names. ',
+      'Map each column to what it means (the entry name, its type, tags, or a quick fact) and import. ',
+      'Export any spreadsheet as .csv; commas, semicolons and tabs all work.'),
+    pick: { kind: 'file', accept: '.csv,.tsv,.txt' },
+    typeDefault: 'note',
+    async stage(files) {
+      const rows = parseCsv(await files[0].text());
+      if (rows.length < 2) return { summary: 'Need a header row plus at least one data row.', ready: false };
+      headers = rows[0].map((h) => String(h).trim() || '(unnamed)');
+      data = rows.slice(1);
+      selects = headers.map((h, i) => {
+        const sel = el('select', { class: 'small' },
+          el('option', { value: 'name' }, 'Entry name'),
+          el('option', { value: 'type' }, 'Type'),
+          el('option', { value: 'tags' }, 'Tags (split on ;)'),
+          el('option', { value: 'field' }, `Fact: “${h}”`),
+          el('option', { value: 'ignore' }, 'Ignore'));
+        sel.value = /^name$/i.test(h) ? 'name'
+          : /^type$/i.test(h) ? 'type'
+          : /^tags?$/i.test(h) ? 'tags' : 'field';
+        if (sel.value !== 'name' && i === 0 && !headers.some((x) => /^name$/i.test(x))) sel.value = 'name';
+        return sel;
+      });
+      const table = el('table', { class: 'csv-map' },
+        el('tr', {}, headers.map((h) => el('th', {}, h))),
+        el('tr', {}, selects.map((s) => el('td', {}, s))),
+        data.slice(0, 5).map((r) => el('tr', {}, headers.map((_, i) => el('td', { class: 'muted small' }, String(r[i] ?? ''))))));
+      return {
+        summary: `${data.length} row${data.length === 1 ? '' : 's'}. Tell me what each column is:`,
+        preview: el('div', { class: 'csv-map-wrap' }, table),
+        ready: true,
+      };
+    },
+    async commit({ typeKey }) {
+      const roles = selects.map((s) => s.value);
+      const nameIdx = roles.indexOf('name');
+      if (nameIdx < 0) return { done: 'One column must be mapped to “Entry name”.' };
+      const typeByLabel = {};
+      for (const [key, t] of Object.entries(types())) {
+        typeByLabel[key.toLowerCase()] = key;
+        typeByLabel[String(t.label).toLowerCase()] = key;
+      }
+      let imported = 0, skipped = 0;
+      for (const row of data) {
+        const name = String(row[nameIdx] ?? '').trim();
+        if (!name || findByName(name)) { skipped++; continue; }
+        const typeIdx = roles.indexOf('type');
+        const rowType = typeIdx >= 0 ? typeByLabel[String(row[typeIdx] ?? '').trim().toLowerCase()] : null;
+        const e = newEntity(name, rowType || typeKey);
+        const tags = new Set();
+        roles.forEach((role, i) => {
+          const cell = String(row[i] ?? '').trim();
+          if (!cell) return;
+          if (role === 'field') e.fields[headers[i]] = cell;
+          if (role === 'tags') cell.split(';').map((t) => t.trim().toLowerCase()).filter(Boolean).forEach((t) => tags.add(t));
+        });
+        e.tags = [...tags].slice(0, 6);
+        await saveEntity(e);
+        imported++;
+      }
+      headers = []; data = []; selects = [];
+      return { done: `Done: imported ${imported}, skipped ${skipped} (blank or already existed).` };
+    },
+  };
+}
+
+// Registry — Phase E adds World Anvil / Foundry entries here.
+const IMPORTERS = [markdownImporter, csvImporter];
+
+// ---------- generic card over a registry entry ----------
+
+function importerCard(spec) {
+  const status = el('div', { class: 'small muted', style: 'margin-top:8px' });
+  const previewWrap = el('div', {});
+  const typeSel = el('select', {},
+    Object.entries(types()).map(([key, t]) =>
+      el('option', { value: key, selected: key === spec.typeDefault }, t.label)));
+  const input = el('input', {
+    type: 'file', style: 'display:none',
+    ...(spec.pick.kind === 'folder' ? { webkitdirectory: true, multiple: true } : { accept: spec.pick.accept || '' }),
+  });
+  let ready = false;
+
+  input.addEventListener('change', async () => {
+    previewWrap.innerHTML = '';
+    ready = false;
+    const files = [...input.files];
+    if (!files.length) return;
+    status.textContent = 'Reading…';
+    try {
+      const res = await spec.stage(files);
+      status.textContent = res.summary;
+      if (res.preview) previewWrap.append(res.preview);
+      ready = !!res.ready;
+    } catch (err) {
+      status.textContent = 'Could not read that: ' + err.message;
+    }
   });
 
-  const mdImport = async () => {
-    if (!mdFiles.length) { mdInput.click(); return; }
-    let imported = 0, skipped = 0;
-    mdStatus.textContent = 'Importing…';
-    for (const f of mdFiles) {
-      const name = f.name.replace(/\.md$/i, '').trim();
-      if (!name || findByName(name)) { skipped++; continue; }
-      const { meta, body } = parseFrontmatter(await f.text());
-      const type = meta.type && types()[meta.type] ? meta.type : mdTypeSel.value;
-      const e = newEntity(name, type);
-      e.blocks = mdToBlocks(body);
-      const folder = (f.webkitRelativePath || '').split('/').slice(0, -1).pop();
-      const tags = new Set([...(Array.isArray(meta.tags) ? meta.tags : meta.tags ? [meta.tags] : [])]);
-      if (folder) tags.add(folder.toLowerCase());
-      e.tags = [...tags].slice(0, 6);
-      await saveEntity(e);
-      imported++;
+  const run = async () => {
+    if (!ready) { input.click(); return; }
+    status.textContent = 'Importing…';
+    try {
+      const res = await spec.commit({ typeKey: typeSel.value, setStatus: (s) => { status.textContent = s; } });
+      status.textContent = res.done;
+      previewWrap.innerHTML = '';
+      ready = false;
+      input.value = '';
+      toast('Import finished');
+    } catch (err) {
+      status.textContent = 'Import failed: ' + err.message;
     }
-    mdStatus.textContent = `Done: imported ${imported}, skipped ${skipped} (already existed or unnamed). [[Links]] between notes resolve automatically.`;
-    toast(`Imported ${imported} notes`);
-    mdFiles = [];
   };
 
-  // ---------- 5e.tools ----------
+  return el('div', { class: 'card' },
+    el('h3', {}, spec.title),
+    spec.desc(),
+    el('div', { class: 'row' },
+      el('button', { onclick: () => input.click() }, spec.pick.kind === 'folder' ? '📁 Choose folder…' : '📄 Choose file…'),
+      el('span', { class: 'muted small' }, 'imported as'), typeSel,
+      el('button', { class: 'primary', onclick: run }, 'Import')),
+    status, previewWrap, input);
+}
+
+// ---------- bestiary browser (bespoke) ----------
+
+function bestiaryCard() {
   const beStatus = el('div', { class: 'small muted', style: 'margin-top:8px' });
   const beList = el('div', { class: 'import-list', style: 'display:none' });
   const beSearch = el('input', { type: 'search', placeholder: 'Filter monsters…', style: 'flex:1', oninput: () => renderMonsterList() });
@@ -139,40 +324,142 @@ export function render(container) {
     toast(`Imported ${imported} statblocks`);
   };
 
+  return el('div', { class: 'card' },
+    el('h3', {}, 'Monsters & statblocks'),
+    el('p', { class: 'muted small' },
+      'MundusMaker ships with the ', el('strong', {}, 'SRD 5.1 bestiary'), ' — 322 classic D&D monsters ',
+      '(goblins to ancient dragons), fully offline. You can also pick a bestiary JSON from a local ',
+      '5e.tools download (its ', el('code', {}, 'data/bestiary/'), ' folder — only import content you own). ',
+      'Ticked monsters become entries with full statblocks, ready for encounter blocks. ',
+      'Tip: you can also copy a monster straight into any statblock via its “📖 From bestiary” button.'),
+    el('div', { class: 'row' },
+      el('button', { class: 'primary', onclick: loadBuiltin }, '📖 Browse SRD bestiary'),
+      el('button', { onclick: () => beInput.click() }, '📄 Choose 5e.tools JSON…'),
+      beSearch,
+      el('span', { class: 'muted small' }, 'as'), beTypeSel,
+      el('button', { onclick: beImport }, 'Import selected')),
+    beStatus, beList, beInput,
+    el('p', { class: 'muted', style: 'font-size:11px;margin-top:10px' },
+      'Bundled monsters are from the System Reference Document 5.1 by Wizards of the Coast LLC, ',
+      'licensed under Creative Commons Attribution 4.0.'));
+}
+
+// ---------- old-install migration (bespoke) ----------
+
+function migrateCard() {
+  const status = el('div', { class: 'small muted', style: 'margin-top:8px' });
+  const results = el('div', {});
+  const pathInput = el('input', { placeholder: 'or paste a path to an old MundusMaker/Loreweave folder…', style: 'flex:1;min-width:0' });
+
+  function renderResults(found) {
+    results.innerHTML = '';
+    if (!found.length) {
+      status.textContent = 'Nothing found. If your old copy lives elsewhere, paste its folder path above — the app folder and its data folder both work.';
+      return;
+    }
+    status.textContent = `Found ${found.length} older install${found.length === 1 ? '' : 's'}. Nothing is copied until you say so; the old install is never modified.`;
+    for (const inst of found) {
+      const checks = new Map();
+      const rows = inst.worlds.map((w) => {
+        const cb = el('input', { type: 'checkbox', checked: true });
+        checks.set(w.id, cb);
+        return el('label', { class: 'import-row' }, cb,
+          el('span', {}, w.name),
+          el('span', { class: 'muted small' }, `${w.entities} ${w.entities === 1 ? 'entry' : 'entries'}`));
+      });
+      const copyBtn = el('button', {
+        class: 'primary',
+        onclick: async () => {
+          const ids = [...checks.entries()].filter(([, cb]) => cb.checked).map(([id]) => id);
+          if (!ids.length) { toast('Tick at least one world'); return; }
+          copyBtn.disabled = true;
+          try {
+            const res = await api.migrateInstall(inst.dataDir, ids);
+            await refreshWorlds();
+            const names = res.migrated.map((m) => `“${m.name}”`).join(', ');
+            status.textContent = `✓ Copied ${res.migrated.length} world${res.migrated.length === 1 ? '' : 's'} in: ${names}. Open them from the world menu in the top bar. The old install still has its own copy.`;
+            toast(`Copied ${res.migrated.length} world(s) in`);
+          } catch (err) {
+            toast('Migration failed: ' + err.message, 5000);
+            copyBtn.disabled = false;
+          }
+        },
+      }, '⬇ Copy selected in');
+      results.append(el('div', { class: 'notice', style: 'margin-top:10px' },
+        el('div', { class: 'small' }, el('strong', {}, inst.path),
+          el('span', { class: 'muted' }, inst.layout === 'v1' ? ' (single-world, old format)' : '')),
+        el('div', { class: 'muted small', style: 'margin-bottom:6px' }, 'data: ', el('code', {}, inst.dataDir)),
+        rows, el('div', { class: 'row', style: 'margin-top:8px' }, copyBtn)));
+    }
+  }
+
+  const scan = async (fn) => {
+    status.textContent = 'Looking…';
+    results.innerHTML = '';
+    try { renderResults(await fn()); }
+    catch (err) { status.textContent = 'Scan failed: ' + err.message; }
+  };
+
+  return el('div', { class: 'card' },
+    el('h3', {}, 'Move in from an older install'),
+    el('p', { class: 'muted small' },
+      'Upgraded from Loreweave, or unzipped a new MundusMaker next to an old one? This finds the old ',
+      'copy and brings its worlds in — as copies, with the original left untouched.'),
+    el('div', { class: 'row' },
+      el('button', { class: 'primary', onclick: () => scan(api.scanInstalls) }, '🔍 Scan for old installs'),
+      pathInput,
+      el('button', { onclick: () => { if (pathInput.value.trim()) scan(() => api.scanPath(pathInput.value.trim())); else pathInput.focus(); } }, 'Check this path')),
+    status, results);
+}
+
+// ---------- backup restore (bespoke; typed confirm) ----------
+
+function restoreCard() {
+  const status = el('div', { class: 'small muted', style: 'margin-top:8px' });
+  const input = el('input', { type: 'file', accept: '.json', style: 'display:none' });
+  input.addEventListener('change', async () => {
+    const file = input.files[0];
+    if (!file) return;
+    const typed = prompt(
+      `Restoring replaces ALL entries in the current world with the backup's.\n` +
+      `A safety snapshot is taken first (data/.snapshots).\n\n` +
+      `Type the world's name (${state.world.name}) to continue:`);
+    if (typed === null) return;
+    if (typed.trim() !== state.world.name) { toast('Name didn’t match — nothing was changed.', 5000); return; }
+    try {
+      status.textContent = 'Restoring…';
+      const payload = JSON.parse(await file.text());
+      await api.restore(payload);
+      location.reload();
+    } catch (err) {
+      status.textContent = 'Restore failed: ' + err.message;
+    }
+  });
+  return el('div', { class: 'card' },
+    el('h3', {}, 'Restore a backup'),
+    el('p', { class: 'muted small' },
+      'Load a backup .json (from the Settings page) into the current world — for moving between machines ',
+      'or undoing disasters. Everything currently in this world is replaced; a snapshot of it is kept in ',
+      el('code', {}, 'data/.snapshots'), ' just in case.'),
+    el('div', { class: 'row' },
+      el('button', { onclick: () => input.click() }, '↩ Restore from backup…')),
+    status, input);
+}
+
+// ---------- page ----------
+
+export function render(container) {
+  if (!state.gm) {
+    container.append(el('div', { class: 'page' }, el('div', { class: 'notice warn' }, 'Importing is a GM activity — switch to GM view first.')));
+    return;
+  }
+
   container.append(el('div', { class: 'page' },
     el('h1', {}, 'Import'),
-
-    el('div', { class: 'card' },
-      el('h3', {}, 'Markdown / Obsidian folder'),
-      el('p', { class: 'muted small' },
-        'Pick a folder of .md files (an Obsidian vault works as-is). Each file becomes an entry: ',
-        'the filename is the name, # headings become heading blocks, and [[wiki-links]] keep working. ',
-        'Frontmatter type: and tags: are respected; the subfolder name becomes a tag so you can re-sort later.'),
-      el('div', { class: 'row' },
-        el('button', { onclick: () => mdInput.click() }, '📁 Choose folder…'),
-        el('span', { class: 'muted small' }, 'imported as'), mdTypeSel,
-        el('button', { class: 'primary', onclick: mdImport }, 'Import notes')),
-      mdStatus, mdInput),
-
-    el('div', { class: 'card' },
-      el('h3', {}, 'Monsters & statblocks'),
-      el('p', { class: 'muted small' },
-        'MundusMaker ships with the ', el('strong', {}, 'SRD 5.1 bestiary'), ' — 322 classic D&D monsters ',
-        '(goblins to ancient dragons), fully offline. You can also pick a bestiary JSON from a local ',
-        '5e.tools download (its ', el('code', {}, 'data/bestiary/'), ' folder — only import content you own). ',
-        'Ticked monsters become entries with full statblocks, ready for encounter blocks. ',
-        'Tip: you can also copy a monster straight into any statblock via its “📖 From bestiary” button.'),
-      el('div', { class: 'row' },
-        el('button', { class: 'primary', onclick: loadBuiltin }, '📖 Browse SRD bestiary'),
-        el('button', { onclick: () => beInput.click() }, '📄 Choose 5e.tools JSON…'),
-        beSearch,
-        el('span', { class: 'muted small' }, 'as'), beTypeSel,
-        el('button', { onclick: beImport }, 'Import selected')),
-      beStatus, beList, beInput,
-      el('p', { class: 'muted', style: 'font-size:11px;margin-top:10px' },
-        'Bundled monsters are from the System Reference Document 5.1 by Wizards of the Coast LLC, ',
-        'licensed under Creative Commons Attribution 4.0.')),
-
+    migrateCard(),
+    ...IMPORTERS.map((make) => importerCard(make())),
+    bestiaryCard(),
+    restoreCard(),
     el('p', { class: 'muted small' },
       'Everything imports into the current world (', el('strong', {}, state.world.name), '). Files are read locally in your browser — nothing is uploaded anywhere.')));
 }

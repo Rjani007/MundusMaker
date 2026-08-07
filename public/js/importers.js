@@ -47,6 +47,40 @@ export function mdToBlocks(body) {
   return blocks;
 }
 
+// ---------- CSV ----------
+
+/**
+ * Hand-rolled CSV parse: BOM strip, CRLF, quoted fields (embedded delimiters,
+ * newlines, doubled quotes), delimiter sniffed from the header line (, ; tab).
+ * Returns an array of rows; blank rows dropped.
+ */
+export function parseCsv(text) {
+  text = String(text).replace(/^\uFEFF/, '');
+  const headerEnd = text.indexOf('\n');
+  const header = headerEnd < 0 ? text : text.slice(0, headerEnd);
+  let delim = ',', best = 0;
+  for (const d of [',', ';', '\t']) {
+    const n = header.split(d).length;
+    if (n > best) { best = n; delim = d; }
+  }
+  const rows = [];
+  let row = [], field = '', inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQ) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; }
+        else inQ = false;
+      } else field += c;
+    } else if (c === '"') inQ = true;
+    else if (c === delim) { row.push(field); field = ''; }
+    else if (c === '\n') { row.push(field.replace(/\r$/, '')); rows.push(row); row = []; field = ''; }
+    else field += c;
+  }
+  if (field !== '' || row.length) { row.push(field.replace(/\r$/, '')); rows.push(row); }
+  return rows.filter((r) => r.some((cell) => String(cell).trim() !== ''));
+}
+
 // ---------- bundled SRD bestiary ----------
 
 let bundled = null;
