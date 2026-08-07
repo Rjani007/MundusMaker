@@ -91,6 +91,7 @@ export function render(container, rawKey) {
         el('td', { class: 'flags' },
           e.map ? el('span', { title: 'has a map' }, '🗺') : null,
           (e.blocks || []).some((b) => b.kind === 'statblock') ? el('span', { title: 'has a statblock' }, '⚔') : null,
+          (e.blocks || []).some((b) => b.kind === 'sheet') ? el('span', { title: 'has a character sheet' }, '🎭') : null,
           e.gmOnly ? el('span', { title: 'GM-only — invisible to players' }, '🔒') : null))));
     tableWrap.append(el('table', { class: 'type-table' }, el('thead', {}, head), body));
   }
@@ -112,7 +113,8 @@ export function render(container, rawKey) {
     ? el('div', { class: 'card' },
         el('h3', {}, `New ${t.label}`),
         el('div', { class: 'row' }, nameInput,
-          el('button', { class: 'primary', onclick: createOne }, '+ Create')))
+          el('button', { class: 'primary', onclick: createOne }, '+ Create'),
+          key === 'character' ? el('a', { href: '#/create', title: 'Guided, rules-checked character build with an interactive sheet' }, '🎭 …or use the character creator') : null))
     : el('div', { class: 'notice' },
         `“${key}” isn’t one of this world’s entry types — these entries came from an import, or from a type that was deleted. Open one and pick a type to file it properly.`);
 

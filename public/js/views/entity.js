@@ -14,6 +14,7 @@ import { newMap, MAP_KINDS, renderThumbnail } from '../maps/mapcore.js';
 import { defaultStat, statblockHtml, ABILITIES } from '../statblock.js';
 import { defaultEncounter, computeEncounter, DIFFICULTY_COLORS } from '../encounter.js';
 import { monsterToStat, loadBundledBestiary } from '../importers.js';
+import { SHEET_SYSTEMS, handleSheetClick } from '../sheets/sheetcore.js';
 import { api } from '../api.js';
 
 function escapeRegExp(s) {
@@ -50,7 +51,7 @@ const fieldHint = (type, key) => FIELD_HINTS[`${type}:${key}`] || FIELD_HINTS[ke
 // would bring back.
 const BLOCK_NOUN = {
   text: 'Block', heading: 'Heading', quote: 'Quote',
-  statblock: '⚔ Statblock', encounter: '💀 Encounter',
+  statblock: '⚔ Statblock', encounter: '💀 Encounter', sheet: '🎭 Character sheet',
 };
 
 export function render(container, id) {
@@ -569,6 +570,11 @@ export function render(container, id) {
   function blockContentHtml(b, idx) {
     if (b.kind === 'statblock') return statblockHtml(b.stat, e.name);
     if (b.kind === 'encounter') return encounterHtml(b);
+    if (b.kind === 'sheet') {
+      const sys = SHEET_SYSTEMS[b.system];
+      return sys ? sys.html(b.data, { gm: state.gm })
+        : `<div class="notice warn">Unknown sheet system “${esc(b.system || '?')}” — from a newer MundusMaker?</div>`;
+    }
     // Placeholders are editor furniture. Empty text blocks never reach player
     // preview (refreshBlocks filters them out), but an *empty heading* over a
     // written section does — it must stay invisible there, exactly as before.
@@ -616,7 +622,26 @@ export function render(container, id) {
     blockNode.classList.add('editing');
     if (b.kind === 'statblock') editStatblock(b, blockNode);
     else if (b.kind === 'encounter') editEncounter(b, blockNode);
+    else if (b.kind === 'sheet') editSheet(b, blockNode);
     else editBlock(b, blockNode);
+  }
+
+  // --- character-sheet editor (form comes from the system module) ---
+  function editSheet(b, blockNode) {
+    const sys = SHEET_SYSTEMS[b.system];
+    const form = el('div', { class: 'sb-form' });
+    if (!sys) {
+      form.append(el('div', { class: 'notice warn' }, `No “${b.system || '?'}” system in this build — the data is intact, not editable here.`));
+    } else {
+      form.append(sys.editor(b, save));
+    }
+    form.append(el('div', { class: 'row', style: 'margin-top:10px' },
+      el('button', { class: 'primary', onclick: () => { save(); refreshBlocks(); } }, 'Done'),
+      el('span', { class: 'muted small' }, 'Changes save automatically. Dots and boxes are edited on the sheet itself.')));
+    // the CoC "recompute derived" button rebuilds its numbers and asks to reopen
+    form.addEventListener('sheet-reopen', () => { refreshBlocks(); });
+    const content = blockNode.querySelector('.block-content');
+    content.replaceWith(el('div', { class: 'block-content' }, form));
   }
 
   // --- encounter editor ---
@@ -948,7 +973,7 @@ export function render(container, id) {
     blocksWrap.innerHTML = '';
     // players never see secrets; empty scaffold blocks — and headings whose
     // whole section is empty — are edit-mode only
-    const hasContent = (b) => b.kind === 'statblock' || b.kind === 'encounter' || b.text?.trim();
+    const hasContent = (b) => b.kind === 'statblock' || b.kind === 'encounter' || b.kind === 'sheet' || b.text?.trim();
     let list = e.blocks;
     if (readOnly) {
       const shown = e.blocks.filter((b) => !b.secret);
@@ -972,7 +997,7 @@ export function render(container, id) {
           // A named picker, not the old ¶ cycle button: all three styles are
           // visible, the current one is marked, and there is no "click it three
           // more times to get back to text".
-          b.kind === 'statblock' || b.kind === 'encounter' ? null : el('span', { class: 'bc-style' },
+          b.kind === 'statblock' || b.kind === 'encounter' || b.kind === 'sheet' ? null : el('span', { class: 'bc-style' },
             [['text', 'Text'], ['heading', 'Heading'], ['quote', 'Quote']].map(([k, label]) => ctrlBtn({
               class: k === b.kind ? 'sel' : '',
               title: k === b.kind ? `Already a ${label.toLowerCase()} block` : `Turn this into a ${label.toLowerCase()} block`,
@@ -994,7 +1019,7 @@ export function render(container, id) {
               // A statblock or encounter represents real work and the undo toast
               // is transient (9s, and gone on navigation), so those keep an
               // explicit confirm. Text/heading/quote rely on undo alone.
-              const costly = b.kind === 'statblock' || b.kind === 'encounter';
+              const costly = b.kind === 'statblock' || b.kind === 'encounter' || b.kind === 'sheet';
               if (costly && !confirm(`Delete this ${BLOCK_NOUN[b.kind] || 'block'}? You can undo for a few seconds afterwards.`)) return;
               e.blocks.splice(idx, 1);
               save(); refreshBlocks();
@@ -1010,6 +1035,15 @@ export function render(container, id) {
       if (!readOnly) {
         content.addEventListener('click', (ev) => {
           if (ev.target.closest('a')) return; // let links navigate
+          if (b.kind === 'sheet') {
+            // dots and damage boxes edit in place; the roll bar is left alone
+            if (ev.target.closest('select, .sheet-rollbar')) return;
+            if (handleSheetClick(b, ev.target)) {
+              save();
+              if (!node.classList.contains('editing')) content.innerHTML = blockContentHtml(b, idx);
+              return;
+            }
+          }
           openEditor(b, node);
         });
       }
@@ -1026,6 +1060,10 @@ export function render(container, id) {
           class: 'ghost', title: 'Encounter with XP budget and difficulty math — starts as a GM secret',
           onclick: () => addBlock({ kind: 'encounter', secret: true }),
         }, '+ 💀 Encounter'),
+        el('button', {
+          class: 'ghost', title: 'An interactive character sheet (D&D 5.5e, Vampire V5 or Call of Cthulhu). For a guided build, use Create a character instead.',
+          onclick: pickSheetSystem,
+        }, '+ 🎭 Sheet'),
         // Kept as its own button rather than folded into "+ Text then lock it":
         // a GM-only paragraph is the single most-used thing in the app, and
         // folding it would hide it behind a control you must first discover.
@@ -1039,14 +1077,34 @@ export function render(container, id) {
     }
   }
 
-  function addBlock({ kind, secret = false }) {
+  function addBlock({ kind, secret = false, system = null }) {
     const b = { id: uid(), kind, text: '', secret };
     if (kind === 'statblock') b.stat = defaultStat(e.name);
     if (kind === 'encounter') b.enc = defaultEncounter();
+    if (kind === 'sheet') { b.system = system; b.data = SHEET_SYSTEMS[system].defaults(); }
     e.blocks.push(b);
     save();
     refreshBlocks();
     openEditor(b, blocksWrap.children[e.blocks.length - 1]);
+  }
+
+  // tiny system picker for "+ Sheet" — the wizard at #/create is the guided path
+  function pickSheetSystem() {
+    const dialog = el('div', { class: 'dialog' },
+      el('h3', {}, 'Which game system?'),
+      el('div', { class: 'edition-cards', style: 'grid-template-columns:1fr' },
+        Object.entries(SHEET_SYSTEMS).map(([key, sys]) => el('div', {
+          class: 'edition-card',
+          onclick: () => { overlay.remove(); addBlock({ kind: 'sheet', system: key }); },
+        },
+          el('div', { style: 'font-weight:600' }, sys.label),
+          el('div', { class: 'muted small' }, sys.tagline)))),
+      el('p', { class: 'muted small', style: 'margin:10px 0 0' },
+        'Blank sheet — for a guided, rules-checked build use ',
+        el('a', { href: '#/create', onclick: () => overlay.remove() }, 'Create a character'), '.'));
+    const overlay = el('div', { class: 'overlay' }, dialog);
+    overlay.addEventListener('click', (ev) => { if (ev.target === overlay) overlay.remove(); });
+    document.body.append(overlay);
   }
 
   function moveBlock(idx, dir) {

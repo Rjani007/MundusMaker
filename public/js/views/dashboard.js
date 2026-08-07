@@ -134,6 +134,7 @@ export function render(container) {
       el('div', { class: 'row' }, quickName, quickType,
         el('button', { class: 'primary', onclick: quickCreate }, '+ Create'),
         el('span', { class: 'spacer' }),
+        el('a', { href: '#/create', title: 'Guided character creation: D&D 5.5e, Vampire V5, Call of Cthulhu' }, '🎭 Create a character…'),
         el('a', { href: '#/import', title: 'Import Obsidian/Markdown notes or 5e.tools monsters' }, '⬇ Import…'))),
     recent.length
       ? el('div', { class: 'card' },

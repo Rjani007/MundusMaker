@@ -1,0 +1,138 @@
+{
+  "_meta": {
+    "attribution": "Portions of the materials are the copyrights and trademarks of Paradox Interactive AB, and are used with permission. All rights reserved. For more information please visit worldofdarkness.com. This is an unofficial fan tool under the Dark Pack agreement; it bundles names and creation mechanics only — power descriptions are yours to fill in from your own books or the community wiki.",
+    "wikiBase": "https://vtm.paradoxwikis.com/",
+    "system": "Vampire: The Masquerade 5th Edition"
+  },
+  "attributes": {
+    "physical": ["Strength", "Dexterity", "Stamina"],
+    "social": ["Charisma", "Manipulation", "Composure"],
+    "mental": ["Intelligence", "Wits", "Resolve"]
+  },
+  "attributeSpread": { "4": 1, "3": 3, "2": 4, "1": 1 },
+  "skills": {
+    "physical": ["Athletics", "Brawl", "Craft", "Drive", "Firearms", "Larceny", "Melee", "Stealth", "Survival"],
+    "social": ["Animal Ken", "Etiquette", "Insight", "Intimidation", "Leadership", "Performance", "Persuasion", "Streetwise", "Subterfuge"],
+    "mental": ["Academics", "Awareness", "Finance", "Investigation", "Medicine", "Occult", "Politics", "Science", "Technology"]
+  },
+  "skillDistributions": {
+    "jack": { "label": "Jack of All Trades", "spread": { "3": 1, "2": 8, "1": 10 } },
+    "balanced": { "label": "Balanced", "spread": { "3": 3, "2": 5, "1": 7 } },
+    "specialist": { "label": "Specialist", "spread": { "4": 1, "3": 3, "2": 3, "1": 3 } }
+  },
+  "freeSpecialties": 1,
+  "clans": [
+    { "name": "Brujah", "disciplines": ["Celerity", "Potence", "Presence"], "compulsion": "Rebellion", "wikiUrl": "https://vtm.paradoxwikis.com/Brujah" },
+    { "name": "Gangrel", "disciplines": ["Animalism", "Fortitude", "Protean"], "compulsion": "Feral Impulses", "wikiUrl": "https://vtm.paradoxwikis.com/Gangrel" },
+    { "name": "Malkavian", "disciplines": ["Auspex", "Dominate", "Obfuscate"], "compulsion": "Delusion", "wikiUrl": "https://vtm.paradoxwikis.com/Malkavian" },
+    { "name": "Nosferatu", "disciplines": ["Animalism", "Obfuscate", "Potence"], "compulsion": "Cryptophilia", "wikiUrl": "https://vtm.paradoxwikis.com/Nosferatu" },
+    { "name": "Toreador", "disciplines": ["Auspex", "Celerity", "Presence"], "compulsion": "Obsession", "wikiUrl": "https://vtm.paradoxwikis.com/Toreador" },
+    { "name": "Tremere", "disciplines": ["Auspex", "Blood Sorcery", "Dominate"], "compulsion": "Perfectionism", "wikiUrl": "https://vtm.paradoxwikis.com/Tremere" },
+    { "name": "Ventrue", "disciplines": ["Dominate", "Fortitude", "Presence"], "compulsion": "Arrogance", "wikiUrl": "https://vtm.paradoxwikis.com/Ventrue" },
+    { "name": "Banu Haqim", "disciplines": ["Blood Sorcery", "Celerity", "Obfuscate"], "compulsion": "Judgement", "wikiUrl": "https://vtm.paradoxwikis.com/Banu_Haqim" },
+    { "name": "Hecata", "disciplines": ["Auspex", "Fortitude", "Oblivion"], "compulsion": "Morbidity", "wikiUrl": "https://vtm.paradoxwikis.com/Hecata" },
+    { "name": "Lasombra", "disciplines": ["Dominate", "Oblivion", "Potence"], "compulsion": "Ruthlessness", "wikiUrl": "https://vtm.paradoxwikis.com/Lasombra" },
+    { "name": "The Ministry", "disciplines": ["Obfuscate", "Presence", "Protean"], "compulsion": "Transgression", "wikiUrl": "https://vtm.paradoxwikis.com/The_Ministry" },
+    { "name": "Ravnos", "disciplines": ["Animalism", "Obfuscate", "Presence"], "compulsion": "Tempting Fate", "wikiUrl": "https://vtm.paradoxwikis.com/Ravnos" },
+    { "name": "Salubri", "disciplines": ["Auspex", "Dominate", "Fortitude"], "compulsion": "Affective Empathy", "wikiUrl": "https://vtm.paradoxwikis.com/Salubri" },
+    { "name": "Tzimisce", "disciplines": ["Animalism", "Dominate", "Protean"], "compulsion": "Covetousness", "wikiUrl": "https://vtm.paradoxwikis.com/Tzimisce" },
+    { "name": "Caitiff", "disciplines": [], "compulsion": "", "note": "No in-clan disciplines — choose any two different disciplines for the two starting dots.", "wikiUrl": "https://vtm.paradoxwikis.com/Caitiff" },
+    { "name": "Thin-blood", "disciplines": ["Thin-Blood Alchemy"], "compulsion": "", "note": "Thin-bloods take Thin-Blood Alchemy and a set of thin-blood merits and flaws instead of standard disciplines.", "wikiUrl": "https://vtm.paradoxwikis.com/Thin-blood" }
+  ],
+  "disciplines": [
+    { "name": "Animalism", "wikiUrl": "https://vtm.paradoxwikis.com/Animalism", "powers": [
+      { "name": "Bond Famulus", "level": 1 }, { "name": "Sense the Beast", "level": 1 },
+      { "name": "Feral Whispers", "level": 2 },
+      { "name": "Animal Succulence", "level": 3 }, { "name": "Quell the Beast", "level": 3 }, { "name": "Unliving Hive", "level": 3 },
+      { "name": "Subsume the Spirit", "level": 4 },
+      { "name": "Animal Dominion", "level": 5 }, { "name": "Drawing Out the Beast", "level": 5 } ] },
+    { "name": "Auspex", "wikiUrl": "https://vtm.paradoxwikis.com/Auspex", "powers": [
+      { "name": "Heightened Senses", "level": 1 }, { "name": "Sense the Unseen", "level": 1 },
+      { "name": "Premonition", "level": 2 },
+      { "name": "Scry the Soul", "level": 3 }, { "name": "Share the Senses", "level": 3 },
+      { "name": "Spirit's Touch", "level": 4 },
+      { "name": "Clairvoyance", "level": 5 }, { "name": "Possession", "level": 5 }, { "name": "Telepathy", "level": 5 } ] },
+    { "name": "Blood Sorcery", "wikiUrl": "https://vtm.paradoxwikis.com/Blood_Sorcery", "powers": [
+      { "name": "Corrosive Vitae", "level": 1 }, { "name": "A Taste for Blood", "level": 1 },
+      { "name": "Extinguish Vitae", "level": 2 },
+      { "name": "Blood of Potency", "level": 3 }, { "name": "Scorpion's Touch", "level": 3 },
+      { "name": "Theft of Vitae", "level": 4 },
+      { "name": "Baal's Caress", "level": 5 }, { "name": "Cauldron of Blood", "level": 5 } ] },
+    { "name": "Celerity", "wikiUrl": "https://vtm.paradoxwikis.com/Celerity", "powers": [
+      { "name": "Cat's Grace", "level": 1 }, { "name": "Rapid Reflexes", "level": 1 },
+      { "name": "Fleetness", "level": 2 },
+      { "name": "Blink", "level": 3 }, { "name": "Traversal", "level": 3 },
+      { "name": "Draught of Elegance", "level": 4 }, { "name": "Unerring Aim", "level": 4 },
+      { "name": "Lightning Strike", "level": 5 }, { "name": "Split Second", "level": 5 } ] },
+    { "name": "Dominate", "wikiUrl": "https://vtm.paradoxwikis.com/Dominate", "powers": [
+      { "name": "Cloud Memory", "level": 1 }, { "name": "Compel", "level": 1 },
+      { "name": "Mesmerize", "level": 2 }, { "name": "Dementation", "level": 2 },
+      { "name": "The Forgetful Mind", "level": 3 }, { "name": "Submerged Directive", "level": 3 },
+      { "name": "Rationalize", "level": 4 },
+      { "name": "Mass Manipulation", "level": 5 }, { "name": "Terminal Decree", "level": 5 } ] },
+    { "name": "Fortitude", "wikiUrl": "https://vtm.paradoxwikis.com/Fortitude", "powers": [
+      { "name": "Resilience", "level": 1 }, { "name": "Unswayable Mind", "level": 1 },
+      { "name": "Toughness", "level": 2 }, { "name": "Enduring Beasts", "level": 2 },
+      { "name": "Defy Bane", "level": 3 }, { "name": "Fortify the Inner Facade", "level": 3 },
+      { "name": "Draught of Endurance", "level": 4 },
+      { "name": "Flesh of Marble", "level": 5 }, { "name": "Prowess from Pain", "level": 5 } ] },
+    { "name": "Obfuscate", "wikiUrl": "https://vtm.paradoxwikis.com/Obfuscate", "powers": [
+      { "name": "Cloak of Shadows", "level": 1 }, { "name": "Silence of Death", "level": 1 },
+      { "name": "Unseen Passage", "level": 2 },
+      { "name": "Ghost in the Machine", "level": 3 }, { "name": "Mask of a Thousand Faces", "level": 3 },
+      { "name": "Conceal", "level": 4 }, { "name": "Vanish", "level": 4 },
+      { "name": "Cloak the Gathering", "level": 5 }, { "name": "Impostor's Guise", "level": 5 } ] },
+    { "name": "Oblivion", "wikiUrl": "https://vtm.paradoxwikis.com/Oblivion", "powers": [
+      { "name": "Shadow Cloak", "level": 1 }, { "name": "Oblivion's Sight", "level": 1 },
+      { "name": "Shadow Cast", "level": 2 }, { "name": "Where the Shroud Thins", "level": 2 },
+      { "name": "Aura of Decay", "level": 3 }, { "name": "Shadow Perspective", "level": 3 }, { "name": "Touch of Oblivion", "level": 3 },
+      { "name": "Necrotic Plague", "level": 4 }, { "name": "Stygian Shroud", "level": 4 },
+      { "name": "Shadow Step", "level": 5 }, { "name": "Skuld Fulfilled", "level": 5 } ] },
+    { "name": "Potence", "wikiUrl": "https://vtm.paradoxwikis.com/Potence", "powers": [
+      { "name": "Lethal Body", "level": 1 }, { "name": "Soaring Leap", "level": 1 },
+      { "name": "Prowess", "level": 2 },
+      { "name": "Brutal Feed", "level": 3 }, { "name": "Spark of Rage", "level": 3 }, { "name": "Uncanny Grip", "level": 3 },
+      { "name": "Draught of Might", "level": 4 },
+      { "name": "Earthshock", "level": 5 }, { "name": "Fist of Caine", "level": 5 } ] },
+    { "name": "Presence", "wikiUrl": "https://vtm.paradoxwikis.com/Presence", "powers": [
+      { "name": "Awe", "level": 1 }, { "name": "Daunt", "level": 1 },
+      { "name": "Lingering Kiss", "level": 2 },
+      { "name": "Dread Gaze", "level": 3 }, { "name": "Entrancement", "level": 3 },
+      { "name": "Irresistible Voice", "level": 4 }, { "name": "Summon", "level": 4 },
+      { "name": "Majesty", "level": 5 }, { "name": "Star Magnetism", "level": 5 } ] },
+    { "name": "Protean", "wikiUrl": "https://vtm.paradoxwikis.com/Protean", "powers": [
+      { "name": "Eyes of the Beast", "level": 1 }, { "name": "Weight of the Feather", "level": 1 },
+      { "name": "Feral Weapons", "level": 2 },
+      { "name": "Earth Meld", "level": 3 }, { "name": "Shapechange", "level": 3 },
+      { "name": "Metamorphosis", "level": 4 },
+      { "name": "Mist Form", "level": 5 }, { "name": "The Unfettered Heart", "level": 5 } ] },
+    { "name": "Thin-Blood Alchemy", "wikiUrl": "https://vtm.paradoxwikis.com/Thin-blood_Alchemy", "powers": [
+      { "name": "Far Reach", "level": 1 }, { "name": "Haze", "level": 1 },
+      { "name": "Envelop", "level": 2 },
+      { "name": "Defractionate", "level": 3 }, { "name": "Profane Hieros Gamos", "level": 3 },
+      { "name": "Airborne Momentum", "level": 4 },
+      { "name": "Awaken the Sleeper", "level": 5 } ] }
+  ],
+  "predatorTypes": [
+    { "name": "Alleycat", "wikiUrl": "https://vtm.paradoxwikis.com/Predator_types", "gains": ["Specialty: Intimidation (Stickups) or Brawl (Grappling)", "One dot of Celerity or Potence", "Lose one dot of Humanity", "Three dots of Contacts (criminal)"] },
+    { "name": "Bagger", "wikiUrl": "https://vtm.paradoxwikis.com/Predator_types", "gains": ["Specialty: Larceny (Lock Picking) or Streetwise (Black Market)", "One dot of Blood Sorcery (Tremere/Banu Haqim) or Obfuscate", "Feeding Merit: Iron Gullet (3 dots)", "Enemy Flaw (2 dots)"] },
+    { "name": "Blood Leech", "wikiUrl": "https://vtm.paradoxwikis.com/Predator_types", "gains": ["Specialty: Brawl (Kindred) or Stealth (against Kindred)", "One dot of Celerity or Protean", "Lose one dot of Humanity", "Increase Blood Potency by one", "Dark Secret Flaw: Diablerist, or Shunned Flaw", "Feeding Flaw: Prey Exclusion (mortals)"] },
+    { "name": "Cleaver", "wikiUrl": "https://vtm.paradoxwikis.com/Predator_types", "gains": ["Specialty: Persuasion (Gaslighting) or Subterfuge (Coverups)", "One dot of Dominate or Animalism", "Dark Secret Flaw: Cleaver", "Herd Advantage (2 dots)"] },
+    { "name": "Consensualist", "wikiUrl": "https://vtm.paradoxwikis.com/Predator_types", "gains": ["Specialty: Medicine (Phlebotomy) or Persuasion (Victims)", "One dot of Auspex or Fortitude", "One dot of Humanity", "Dark Secret Flaw: Masquerade Breacher", "Feeding Flaw: Prey Exclusion (non-consenting)"] },
+    { "name": "Farmer", "wikiUrl": "https://vtm.paradoxwikis.com/Predator_types", "gains": ["Specialty: Animal Ken (specific animal) or Survival (Hunting)", "One dot of Animalism or Protean", "One dot of Humanity", "Feeding Flaw: Vegan (2 dots)"] },
+    { "name": "Osiris", "wikiUrl": "https://vtm.paradoxwikis.com/Predator_types", "gains": ["Specialty: Occult (own cult) or Performance (own fame)", "One dot of Blood Sorcery or Presence", "Spend three dots between Fame and Herd", "Spend two dots between Enemies and Mythic Flaws"] },
+    { "name": "Sandman", "wikiUrl": "https://vtm.paradoxwikis.com/Predator_types", "gains": ["Specialty: Medicine (Anesthetics) or Stealth (Break-ins)", "One dot of Auspex or Obfuscate", "One dot of Resources"] },
+    { "name": "Scene Queen", "wikiUrl": "https://vtm.paradoxwikis.com/Predator_types", "gains": ["Specialty: Etiquette (own scene), Leadership (own scene), or Streetwise (own scene)", "One dot of Dominate or Potence", "Fame Advantage (1 dot)", "Contact Advantage (1 dot)", "Influence Flaw: Disliked (outside scene), or Dark Secret Flaw"] },
+    { "name": "Siren", "wikiUrl": "https://vtm.paradoxwikis.com/Predator_types", "gains": ["Specialty: Persuasion (Seduction) or Subterfuge (Seduction)", "One dot of Fortitude or Presence", "Looks Merit: Beautiful (2 dots)", "Enemy Flaw (1 dot, spurned lover or jealous partner)"] }
+  ],
+  "advantagePoints": 7,
+  "flawPoints": 2,
+  "generation": [
+    { "label": "10th generation (rare, potent)", "generation": 10, "bloodPotency": 2 },
+    { "label": "11th generation", "generation": 11, "bloodPotency": 2 },
+    { "label": "12th generation", "generation": 12, "bloodPotency": 1 },
+    { "label": "13th generation (most common)", "generation": 13, "bloodPotency": 1 },
+    { "label": "14th generation (thin margins)", "generation": 14, "bloodPotency": 0 },
+    { "label": "15th–16th generation (thin-blood)", "generation": 15, "bloodPotency": 0 }
+  ]
+}

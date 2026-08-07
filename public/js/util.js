@@ -180,17 +180,35 @@ export function clamp(v, lo, hi) {
   return v < lo ? lo : v > hi ? hi : v;
 }
 
-/** Roll dice notation like "2d6+3". Returns { rolls, mod, total, nat } or null. */
+/**
+ * Roll dice notation. "2d6+3" as always, plus (0.12) a bare "d20" and
+ * keep/drop: "2d20kh1" advantage, "2d20kl1" disadvantage, "4d6dl1" stat rolls.
+ * Returns { rolls, kept, dropped, mod, total, nat } or null. `nat` fires when
+ * exactly one KEPT die is a d20 — which reduces to the old n===1 rule and
+ * extends naturally to advantage/disadvantage.
+ */
 export function rollDice(notation) {
-  const m = String(notation).replace(/\s+/g, '').match(/^(\d{1,3})d(\d{1,4})([+-]\d{1,3})?$/i);
+  const m = String(notation).replace(/\s+/g, '')
+    .match(/^(\d{1,3})?d(\d{1,4})(?:(kh|kl|dh|dl)(\d{1,2}))?([+-]\d{1,3})?$/i);
   if (!m) return null;
-  const n = Number(m[1]), sides = Number(m[2]), mod = Number(m[3] || 0);
+  const n = Number(m[1] || 1), sides = Number(m[2]), mod = Number(m[5] || 0);
+  const op = (m[3] || '').toLowerCase(), opN = Number(m[4] || 0);
   if (n < 1 || sides < 2) return null;
+  if (op && (opN < 1 || opN > n)) return null;
   const rolls = [];
   for (let i = 0; i < n; i++) rolls.push(1 + Math.floor(Math.random() * sides));
-  const total = rolls.reduce((s, r) => s + r, 0) + mod;
-  const nat = n === 1 && sides === 20 && (rolls[0] === 20 || rolls[0] === 1) ? rolls[0] : null;
-  return { rolls, mod, total, nat };
+  let kept = rolls, dropped = [];
+  if (op) {
+    const sorted = [...rolls].map((v, i) => ({ v, i })).sort((a, b) => a.v - b.v);
+    const keepCount = op[0] === 'k' ? opN : n - opN;
+    const chosen = op === 'kh' || op === 'dl' ? sorted.slice(-keepCount) : sorted.slice(0, keepCount);
+    const keepIdx = new Set(chosen.map((x) => x.i));
+    kept = rolls.filter((_, i) => keepIdx.has(i));
+    dropped = rolls.filter((_, i) => !keepIdx.has(i));
+  }
+  const total = kept.reduce((s, r) => s + r, 0) + mod;
+  const nat = kept.length === 1 && sides === 20 && (kept[0] === 20 || kept[0] === 1) ? kept[0] : null;
+  return { rolls, kept, dropped, mod, total, nat };
 }
 
 export function downloadBlob(blob, filename) {

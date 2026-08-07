@@ -18,6 +18,8 @@ import * as exportView from './views/export.js';
 import * as importView from './views/import.js';
 import * as helpView from './views/help.js';
 import * as settingsView from './views/settings.js';
+import * as createView from './views/create.js';
+import { SHEET_SYSTEMS } from './sheets/sheetcore.js';
 import { maybeShowOnboarding } from './views/onboarding.js';
 import { wireLinkPreviews } from './preview.js';
 
@@ -54,6 +56,7 @@ function route() {
     else if (parts[0] === 'import') { nav = ''; ret = importView.render(viewEl); }
     else if (parts[0] === 'help') { nav = 'help'; ret = helpView.render(viewEl); }
     else if (parts[0] === 'settings') { nav = ''; ret = settingsView.render(viewEl); }
+    else if (parts[0] === 'create') { nav = ''; ret = createView.render(viewEl, parts[1]); }
     else ret = dashboard.render(viewEl);
   } catch (err) {
     console.error(err);
@@ -147,9 +150,16 @@ function renderSidebarList() {
       if (k.toLowerCase().includes(search)) return true;
       if (String(v ?? '').toLowerCase().includes(search)) return true;
     }
-    // full-text over blocks (secret blocks only match in GM view)
-    return (e.blocks || []).some((b) =>
-      (state.gm || !b.secret) && (b.text || '').toLowerCase().includes(search));
+    // full-text over blocks (secret blocks only match in GM view);
+    // sheets match on their searchable summary (clan, class, powers, skills…)
+    return (e.blocks || []).some((b) => {
+      if (!state.gm && b.secret) return false;
+      if ((b.text || '').toLowerCase().includes(search)) return true;
+      if (b.kind === 'sheet') {
+        return (SHEET_SYSTEMS[b.system]?.searchText(b.data) || '').toLowerCase().includes(search);
+      }
+      return false;
+    });
   };
 
   const ents = visibleEntities().filter(match);
@@ -181,6 +191,7 @@ function renderSidebarList() {
           e.name,
           e.map ? el('span', { title: 'has a map', style: 'font-size:11px;opacity:.7' }, '🗺') : null,
           (e.blocks || []).some((b) => b.kind === 'statblock') ? el('span', { title: 'has a statblock', style: 'font-size:11px;opacity:.7' }, '⚔') : null,
+          (e.blocks || []).some((b) => b.kind === 'sheet') ? el('span', { title: 'has a character sheet', style: 'font-size:11px;opacity:.7' }, '🎭') : null,
           e.gmOnly ? el('span', { class: 'gm-mark', title: 'GM-only — invisible to players' }, '🔒') : null));
       }
     }
@@ -325,7 +336,10 @@ async function boot() {
     const r = rollDice(die.dataset.dice);
     if (!r) return;
     const mod = r.mod ? ` ${r.mod > 0 ? '+' : '−'} ${Math.abs(r.mod)}` : '';
-    toast(`🎲 ${die.dataset.dice}  →  [${r.rolls.join(', ')}]${mod}  =  ${r.total}${r.nat === 20 ? '  — natural 20!' : r.nat === 1 ? '  — natural 1!' : ''}`, 4000);
+    const shown = r.dropped.length
+      ? `[${r.kept.join(', ')}] (dropped ${r.dropped.join(', ')})`
+      : `[${r.rolls.join(', ')}]`;
+    toast(`🎲 ${die.dataset.dice}  →  ${shown}${mod}  =  ${r.total}${r.nat === 20 ? '  — natural 20!' : r.nat === 1 ? '  — natural 1!' : ''}`, 4000);
   }, true);
 
   window.addEventListener('hashchange', route);

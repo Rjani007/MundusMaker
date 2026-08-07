@@ -1,6 +1,6 @@
 {
   "name": "mundusmaker",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "A free, open-source, fully local worldbuilding wiki for GMs — typed entities, backlinks, graph view, timelines, per-block secrets, player-safe PDF export, and procedural map generators. No cloud, no accounts, no AI.",
   "license": "MIT",
   "type": "commonjs",
@@ -10,6 +10,7 @@
     "icons": "node scripts/build-icons.js",
     "vendor": "node scripts/vendor.js",
     "bestiary": "node scripts/build-bestiary.js",
+    "srd52": "node scripts/build-srd52.js",
     "package": "node scripts/package.js",
     "package:all": "node scripts/package.js all"
   },

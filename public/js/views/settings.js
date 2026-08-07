@@ -55,8 +55,13 @@ export function render(container) {
         'Free and open source under the MIT license. Third-party material bundled with the app:'),
       el('ul', { class: 'muted small', style: 'margin:4px 0 0 18px;padding:0' },
         el('li', {}, 'jsPDF — MIT license (vendored, used for the exported books).'),
-        el('li', {}, 'Monster statblocks from the System Reference Document 5.1, © Wizards of the Coast LLC, ',
-          'licensed under the Creative Commons Attribution 4.0 International License (CC-BY-4.0).')));
+        el('li', {}, 'Monster statblocks from the System Reference Document 5.1, and D&D 2024 character options from the System Reference Document 5.2 — both © Wizards of the Coast LLC, ',
+          'licensed under the Creative Commons Attribution 4.0 International License (CC-BY-4.0).'),
+        el('li', {}, 'The Vampire: The Masquerade creator is unofficial fan material under the World of Darkness Dark Pack. ',
+          'Portions of the materials are the copyrights and trademarks of Paradox Interactive AB, and are used with permission. All rights reserved. ',
+          'For more information please visit ', el('a', { href: 'https://www.worldofdarkness.com', target: '_blank', rel: 'noopener' }, 'worldofdarkness.com'), '.'),
+        el('li', {}, 'The Call of Cthulhu creator is unofficial fan material under Chaosium’s Fan Material Policy. ',
+          'Call of Cthulhu is a trademark of Chaosium Inc. Neither creator bundles any rules text — descriptions are yours to fill in from your own books.')));
   })();
 
   // ---------- backup ----------

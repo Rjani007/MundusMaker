@@ -9,6 +9,7 @@ import { isHistoric, isRecurring, histSortKey, slotSortKey, cmpKey, formatYear, 
 import { mapToJpeg, mapKey } from './maps/mapcore.js';
 import { ABILITIES, abilityMod } from './statblock.js';
 import { computeEncounter } from './encounter.js';
+import { SHEET_SYSTEMS } from './sheets/sheetcore.js';
 import { api } from './api.js';
 
 /** Load an image from the world's assets and re-encode as a bounded JPEG. */
@@ -225,6 +226,24 @@ export async function buildPdf(opts) {
     y += 4;
   }
 
+  // Character sheets print through their system module via this tiny writer
+  // facade — every string still flows through para() and therefore pdfSafe().
+  function writeSheet(b, fallbackName, secretStyle) {
+    const sys = SHEET_SYSTEMS[b.system];
+    const style = Object.keys(secretStyle).length ? secretStyle : { bg: [236, 240, 246], bar: [90, 110, 160] };
+    y += 4;
+    if (!sys) {
+      para(`Character sheet (${b.system || 'unknown system'}) — not printable in this build`, 9, 'italic', [110, 104, 130], style);
+      return;
+    }
+    const w = {
+      line: (text, o = {}) => para(String(text ?? ''), o.bold ? 10.5 : 9.5, o.bold ? 'bold' : 'normal', o.bold ? [40, 50, 90] : [58, 52, 74], style),
+      para: (text) => para(String(text ?? ''), 9, 'normal', [80, 76, 96], { indent: 8, ...style }),
+    };
+    sys.writePdf(w, b.data, fallbackName);
+    y += 4;
+  }
+
   // ---------- entities by type ----------
   for (const [typeKey, t] of groups) {
     if (!opts.typeKeys.has(typeKey)) continue;
@@ -283,7 +302,7 @@ export async function buildPdf(opts) {
 
       // skip headings whose whole section is empty (fresh template scaffolds)
       const shownBlocks = (e.blocks || []).filter((b) => opts.gm || !b.secret);
-      const blockHasContent = (b) => b.kind === 'statblock' || b.kind === 'encounter' || b.text?.trim();
+      const blockHasContent = (b) => b.kind === 'statblock' || b.kind === 'encounter' || b.kind === 'sheet' || b.text?.trim();
       const printable = shownBlocks.filter((b, i) => {
         if (b.kind !== 'heading') return true;
         for (let j = i + 1; j < shownBlocks.length && shownBlocks[j].kind !== 'heading'; j++) {
@@ -308,6 +327,14 @@ export async function buildPdf(opts) {
             writeLines(['GM SECRET'], 7, 'bold', [138, 95, 194], secretStyle);
           }
           writeEncounter(b, secretStyle);
+          continue;
+        }
+        if (b.kind === 'sheet') {
+          if (b.secret && opts.gm) {
+            ensure(14);
+            writeLines(['GM SECRET'], 7, 'bold', [138, 95, 194], secretStyle);
+          }
+          writeSheet(b, e.name, secretStyle);
           continue;
         }
         const text = mdToPlain(b.text).trim();
