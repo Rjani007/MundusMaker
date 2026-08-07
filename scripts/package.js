@@ -19,8 +19,13 @@ const DIST = path.join(ROOT, 'dist');
 const CACHE = path.join(DIST, 'cache');
 const APP_VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
 
+// On Windows, always use the system bsdtar — a Git-for-Windows tar earlier in
+// PATH cannot handle drive-letter paths like D:\ ("Cannot connect to D").
+const TAR = process.platform === 'win32' ? 'C:\\Windows\\System32\\tar.exe' : 'tar';
+
 const TARGETS = {
-  'windows-x64': { nodeSuffix: 'win-x64.zip', nodeBin: 'node.exe', runtimePath: ['runtime', 'node.exe'], archive: 'zip' },
+  // the runtime ships AS MundusMaker.exe so Task Manager shows the app, not "node"
+  'windows-x64': { nodeSuffix: 'win-x64.zip', nodeBin: 'node.exe', runtimePath: ['runtime', 'MundusMaker.exe'], archive: 'zip' },
   'macos-arm64': { nodeSuffix: 'darwin-arm64.tar.gz', nodeBin: 'bin/node', runtimePath: ['runtime', 'bin', 'node'], archive: 'tar.gz' },
   'macos-x64': { nodeSuffix: 'darwin-x64.tar.gz', nodeBin: 'bin/node', runtimePath: ['runtime', 'bin', 'node'], archive: 'tar.gz' },
   'linux-x64': { nodeSuffix: 'linux-x64.tar.gz', nodeBin: 'bin/node', runtimePath: ['runtime', 'bin', 'node'], archive: 'tar.gz' },
@@ -30,6 +35,7 @@ const TARGETS = {
 const APP_FILES = [
   'server.js', 'package.json', 'LICENSE', 'README.md',
   'Start-MundusMaker.bat', 'Start-MundusMaker.command', 'start-mundusmaker.sh',
+  'Install-MundusMaker.ps1', 'Install-MundusMaker.bat', 'MundusMaker-Tray.ps1',
   'public', 'sample',
 ];
 
@@ -86,7 +92,7 @@ async function build(target, nodeVersion) {
   const work = path.join(DIST, 'work', target);
   fs.rmSync(work, { recursive: true, force: true });
   fs.mkdirSync(work, { recursive: true });
-  execFileSync('tar', ['-xf', cached, '-C', work]);
+  execFileSync(TAR, ['-xf', cached, '-C', work]);
   const extractedRoot = path.join(work, fs.readdirSync(work)[0]);
   const nodeBinary = path.join(extractedRoot, ...spec.nodeBin.split('/'));
   if (!fs.existsSync(nodeBinary)) throw new Error(`node binary not found at ${nodeBinary}`);
@@ -113,11 +119,11 @@ async function build(target, nodeVersion) {
   if (spec.archive === 'zip') {
     archive = path.join(DIST, `${outName}.zip`);
     fs.rmSync(archive, { force: true });
-    execFileSync('tar', ['-a', '-cf', archive, '-C', stageRoot, outName]);
+    execFileSync(TAR, ['-a', '-cf', archive, '-C', stageRoot, outName]);
   } else {
     archive = path.join(DIST, `${outName}.tar.gz`);
     fs.rmSync(archive, { force: true });
-    execFileSync('tar', ['-czf', archive, '-C', stageRoot, outName]);
+    execFileSync(TAR, ['-czf', archive, '-C', stageRoot, outName]);
     if (process.platform === 'win32') {
       console.log('note: building a unix target on Windows cannot preserve the exec bit;');
       console.log('      users may need to run  chmod +x runtime/bin/node  once.');
@@ -131,15 +137,28 @@ async function build(target, nodeVersion) {
 }
 
 (async () => {
-  const arg = process.argv[2] || 'windows-x64';
-  const targets = arg === 'all' ? Object.keys(TARGETS) : [arg];
+  // args: [target|all]…  [--node vX.Y.Z]   (pin the runtime for reproducible releases)
+  const args = process.argv.slice(2);
+  let pinned = null;
+  const names = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--node') pinned = args[++i];
+    else names.push(args[i]);
+  }
+  if (pinned && !/^v\d+\.\d+\.\d+$/.test(pinned)) {
+    console.error(`--node expects a version like v22.14.0, got "${pinned}"`);
+    process.exit(1);
+  }
+  const arg = names[0] || 'windows-x64';
+  const targets = arg === 'all' ? Object.keys(TARGETS) : (names.length ? names : [arg]);
   for (const t of targets) {
     if (!TARGETS[t]) {
       console.error(`unknown target "${t}" — use one of: ${Object.keys(TARGETS).join(', ')}, all`);
       process.exit(1);
     }
   }
-  const nodeVersion = await latestLtsVersion();
+  const nodeVersion = pinned || await latestLtsVersion();
+  console.log(`runtime: Node ${nodeVersion}${pinned ? ' (pinned)' : ' (latest LTS)'}`);
   for (const t of targets) await build(t, nodeVersion);
   console.log('\nDone. Share the archive — unzip, double-click the Start-MundusMaker launcher, play.');
 })().catch((err) => {

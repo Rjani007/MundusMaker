@@ -3,6 +3,16 @@ title MundusMaker
 cd /d "%~dp0"
 
 rem Prefer the bundled runtime (one-click download), fall back to installed Node.
+rem 0.10+ ships the runtime as MundusMaker.exe; runtime\node.exe covers older unzips.
+if exist "%~dp0runtime\MundusMaker.exe" (
+  echo.
+  echo  Starting MundusMaker... your browser will open in a moment.
+  echo  Keep this window open while you use it. Close it to stop.
+  echo.
+  "%~dp0runtime\MundusMaker.exe" server.js
+  if errorlevel 1 pause
+  exit /b 0
+)
 if exist "%~dp0runtime\node.exe" (
   echo.
   echo  Starting MundusMaker... your browser will open in a moment.

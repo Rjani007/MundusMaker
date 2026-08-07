@@ -1,7 +1,7 @@
-// World dashboard: name/description, stats, recent entries, world management,
-// backup/restore.
+// World dashboard: name/description, stats, recent entries, world management.
+// Backup/restore and the data-folder card moved to #/settings in 0.10.
 
-import { el, toast, downloadBlob } from '../util.js';
+import { el, toast } from '../util.js';
 import { state, types, typeOf, visibleEntities, scheduleWorldSave, createEntity, refreshWorlds } from '../state.js';
 import { snippetFor } from '../render.js';
 import { api } from '../api.js';
@@ -100,41 +100,6 @@ export function render(container) {
       el('a', { href: '#/calendar' }, '📅 Calendar'),
       el('span', { class: 'muted small' }, 'Months and their lengths, special days, ages, today’s date.')));
 
-  // ---------- sync across devices ----------
-  const syncWrap = el('div', {}, el('span', { class: 'muted small' }, 'Loading…'));
-  (async () => {
-    let status;
-    try { status = await api.status(); } catch { syncWrap.textContent = 'Status unavailable.'; return; }
-    const pathInput = el('input', {
-      placeholder: status.platform === 'win32' ? 'e.g. C:\\Users\\you\\Dropbox\\MundusMaker' : 'e.g. /Users/you/Dropbox/MundusMaker',
-      style: 'flex:1;min-width:0',
-    });
-    const moveBtn = el('button', {
-      onclick: async () => {
-        const target = pathInput.value.trim();
-        if (!target) { pathInput.focus(); return; }
-        if (!confirm(`Copy your worlds into:\n\n${target}\n\nand make it the data folder from the next start? Your current data stays where it is as a fallback.`)) return;
-        try {
-          const res = await api.setDataDir(target, true);
-          syncNote.textContent = `✓ Copied ${res.copied} world(s) to ${res.dataDir}. Restart MundusMaker (close the black window, start it again) to finish.`;
-          syncNote.style.color = 'var(--ok)';
-        } catch (err) {
-          toast('Could not set data folder: ' + err.message, 5000);
-        }
-      },
-    }, 'Copy data there & use it');
-    const syncNote = el('div', { class: 'small', style: 'margin-top:6px;color:var(--muted)' });
-    syncWrap.innerHTML = '';
-    syncWrap.append(
-      el('div', { class: 'small' }, 'Your worlds live in: ', el('code', {}, status.dataDir),
-        el('span', { class: 'muted' }, ` (set via ${status.configuredVia})`)),
-      el('p', { class: 'muted small', style: 'margin:10px 0 6px' },
-        'To sync between devices: point the data folder at a folder that Dropbox, Google Drive, OneDrive or Syncthing already syncs. Do the same on your other device (edit ',
-        el('code', {}, 'mundusmaker.config.json'), ' next to the app, or use the box below). Only edit on one device at a time — the last save wins.'),
-      el('div', { class: 'row' }, pathInput, moveBtn),
-      syncNote);
-  })();
-
   container.append(el('div', { class: 'page' },
     nameInput,
     el('div', { class: 'card world-desc', style: 'margin-top:14px' },
@@ -168,36 +133,7 @@ export function render(container) {
       el('h3', {}, 'Your worlds'),
       worldsWrap),
     el('div', { class: 'card' },
-      el('h3', {}, 'Sync across devices'),
-      syncWrap),
-    el('div', { class: 'card' },
-      el('h3', {}, 'Backup'),
       el('div', { class: 'row' },
-        el('button', {
-          onclick: async () => {
-            const data = await api.backup();
-            downloadBlob(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }),
-              `${(w.name || 'world').replace(/\W+/g, '-').toLowerCase()}-backup.json`);
-            toast('Backup downloaded');
-          },
-        }, 'Download backup (.json)'),
-        el('button', {
-          onclick: () => {
-            const input = el('input', { type: 'file', accept: '.json' });
-            input.addEventListener('change', async () => {
-              const file = input.files[0];
-              if (!file) return;
-              if (!confirm('Restoring replaces ALL entries in the CURRENT world with the backup. Continue?')) return;
-              try {
-                const payload = JSON.parse(await file.text());
-                await api.restore(payload);
-                location.reload();
-              } catch (err) {
-                toast('Restore failed: ' + err.message);
-              }
-            });
-            input.click();
-          },
-        }, 'Restore from backup…'),
-        el('span', { class: 'muted small' }, 'Each world also lives as plain JSON files in the data folder — copy it anywhere, or put it in git.')))));
+        el('a', { href: '#/settings' }, '⚙ App settings'),
+        el('span', { class: 'muted small' }, 'Data folder & device sync, backups, about.')))));
 }

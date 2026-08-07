@@ -17,6 +17,8 @@ import * as mapeditor from './views/mapeditor.js';
 import * as exportView from './views/export.js';
 import * as importView from './views/import.js';
 import * as helpView from './views/help.js';
+import * as settingsView from './views/settings.js';
+import { maybeShowOnboarding } from './views/onboarding.js';
 import { wireLinkPreviews } from './preview.js';
 
 const viewEl = document.getElementById('view');
@@ -51,6 +53,7 @@ function route() {
     else if (parts[0] === 'export') { nav = 'export'; ret = exportView.render(viewEl); }
     else if (parts[0] === 'import') { nav = ''; ret = importView.render(viewEl); }
     else if (parts[0] === 'help') { nav = 'help'; ret = helpView.render(viewEl); }
+    else if (parts[0] === 'settings') { nav = ''; ret = settingsView.render(viewEl); }
     else ret = dashboard.render(viewEl);
   } catch (err) {
     console.error(err);
@@ -326,6 +329,7 @@ async function boot() {
   }, true);
 
   window.addEventListener('hashchange', route);
+  maybeShowOnboarding(); // fire-and-forget; never blocks boot
   window.addEventListener('keydown', (ev) => {
     if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'k') {
       ev.preventDefault();
