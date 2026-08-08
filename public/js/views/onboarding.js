@@ -14,24 +14,25 @@ export async function maybeShowOnboarding() {
     {
       title: '🌍 Welcome to MundusMaker',
       body: [
-        el('p', {}, 'A worldbuilding wiki for game masters that runs entirely on this machine — no cloud, no account, no AI.'),
-        el('p', { class: 'muted' }, 'Your worlds are plain JSON files in ', el('code', {}, dataDir),
-          '. Copy that folder and you have copied everything.'),
+        el('p', {}, 'A worldbuilding wiki for game masters that lives entirely on this computer. No account, no cloud, no AI, nobody reading over your shoulder.'),
+        el('p', { class: 'muted' }, 'Your worlds are plain files in ', el('code', {}, dataDir),
+          '. Copy that folder and you have a complete backup of everything you ever wrote.'),
       ],
     },
     {
       title: '🔒 Secrets stay secret',
       body: [
-        el('p', {}, 'The GM toggle in the top bar switches between your view and what players would see.'),
-        el('p', { class: 'muted' }, 'Any block, relation or map marker can be marked 🔒 secret, and whole entries can be GM-only. ',
-          'Exports come in two editions — the player book redacts every one of them.'),
+        el('p', {}, 'The toggle in the top bar flips between your view and what your players would see. Check it before you share anything.'),
+        el('p', { class: 'muted' }, 'Lock any paragraph, relationship or map pin with the 🔒. Whole entries can be GM-only. ',
+          'The player handbook strips every locked thing on export, and it counts them so you can be sure.'),
       ],
     },
     {
-      title: '📌 Make it feel installed',
+      title: '📌 Make yourself at home',
       body: [
-        el('p', {}, 'In Edge or Chrome, click the install icon at the right end of the address bar to give MundusMaker its own window and Start-menu entry.'),
-        el('p', { class: 'muted' }, 'Everything autosaves as you type. The Help page has a five-minute tour when you want it.'),
+        el('p', {}, 'Everything autosaves as you type. The ✓ in the top bar tells you it landed.'),
+        el('p', { class: 'muted' }, 'If you\'d rather have MundusMaker as its own window with a Start Menu entry, Edge and Chrome can install it: the little icon at the right end of the address bar. ',
+          'And when you have five minutes to spare, the Help tab has the tour.'),
       ],
     },
   ];

@@ -10,7 +10,7 @@ import {
 } from './sheetlib.js';
 
 export const label = 'Call of Cthulhu 7e';
-export const tagline = 'Percentile investigators, sanity, and the Mythos.';
+export const tagline = 'Percentile dice, a day job, and a sanity score to lose.';
 
 let cached = null;
 export async function loadData() {
@@ -237,7 +237,7 @@ const formulaLabel = (occ) => `${occ.points.base[0]} ×${occ.points.base[1]}` +
   (occ.points.plus ? ` + ${occ.points.plus.options.map(([k, m]) => `${k}×${m}`).join(' or ')}` : '');
 
 export const wizard = {
-  intro: 'A guided 7th-edition investigator: characteristics, age, occupation points, personal interests, backstory.',
+  intro: 'An investigator by the 7th-edition book: roll the characteristics, pick a livelihood, spend the points, write down who they were before all this. The sanity looks after itself, briefly.',
   steps: [
     {
       key: 'basics', title: 'Occupation',
@@ -312,7 +312,7 @@ export const wizard = {
           },
         }, '🎲 Roll characteristics');
         wrap.append(el('div', { class: 'row' }, rollAll,
-          el('span', { class: 'muted small' }, `or type your own (point-pool variant: ${ctx.data.pointPool} across all eight)`)),
+          el('span', { class: 'muted small' }, `or type your own — the point-pool variant gives you ${ctx.data.pointPool} to divide across all eight`)),
           grid, log);
         redraw();
         return wrap;
@@ -359,9 +359,10 @@ export const wizard = {
           note.style.color = spent === points ? 'var(--ok)' : spent > points ? 'var(--danger)' : 'var(--muted)';
         };
 
+        const article = /^[aeiou]/i.test(occ.name) ? 'An' : 'A';
         const wrap = el('div', {},
           el('p', { class: 'small muted' },
-            `${occ.name}: ${points} points (${formulaLabel(occ)}). Spend them on the skills below; Credit Rating must land between ${occ.creditRating[0]} and ${occ.creditRating[1]}.`));
+            `${article} ${occ.name.toLowerCase()} gets ${points} points to spend (${formulaLabel(occ)}). Credit Rating comes out of the same pot, and it has to land between ${occ.creditRating[0]} and ${occ.creditRating[1]}. Even doom has a budget.`));
 
         // choice selects first
         occ.skills.forEach((s, idx) => {

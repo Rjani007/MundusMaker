@@ -20,7 +20,7 @@ export function render(container, systemKey) {
 function renderPicker(container) {
   container.append(el('div', { class: 'page' },
     el('h1', {}, 'Create a character'),
-    el('p', { class: 'muted' }, 'A guided, rules-legal character build. The result is a normal entry with an interactive sheet block — dice, trackers and all.'),
+    el('p', { class: 'muted' }, 'Pick a game and the builder walks you through the whole character, checking the rules as it goes. What comes out is an ordinary entry with a playable sheet on it.'),
     el('div', { class: 'edition-cards', style: 'grid-template-columns:1fr' },
       Object.entries(SHEET_SYSTEMS).map(([key, sys]) => el('a', {
         class: 'edition-card', href: `#/create/${key}`, style: 'display:block;text-decoration:none;color:inherit',
@@ -28,7 +28,7 @@ function renderPicker(container) {
         el('div', { style: 'font-weight:600;font-size:17px' }, sys.label),
         el('div', { class: 'muted small' }, sys.tagline)))),
     el('p', { class: 'muted small' },
-      'You can also add a blank sheet to any entry with the “+ Sheet” button in its editor.')));
+      'Already know exactly what you want? Any entry can carry a blank sheet instead: open it and press + 🎭 Sheet.')));
 }
 
 function renderWizard(container, systemKey, sys) {

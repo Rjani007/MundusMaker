@@ -9,7 +9,7 @@ import {
 } from './sheetlib.js';
 
 export const label = 'Vampire: The Masquerade 5e';
-export const tagline = 'Dot pools, hunger dice, and the Beast — a full V5 sheet.';
+export const tagline = 'The V5 sheet: dots, hunger, and the Beast underneath.';
 
 let cached = null;
 export async function loadData() {
@@ -131,7 +131,7 @@ export function html(data) {
     ${convictions ? sectionHtml('Convictions & touchstones', convictions) : ''}
     ${d.xp?.total ? sectionHtml('Experience', `<div class="small">${d.xp.spent} / ${d.xp.total} XP spent</div>`) : ''}
     ${d.notes ? sectionHtml('Notes', `<div class="small">${esc(d.notes).replace(/\n/g, '<br>')}</div>`) : ''}
-    <div class="sheet-attrib muted">Unofficial Dark Pack fan material — dots are click-editable in GM view.</div>
+    <div class="sheet-attrib muted">Unofficial Dark Pack fan material. Dots are click-editable in GM view.</div>
   </div>`;
 }
 
@@ -241,7 +241,7 @@ const spreadLabel = (spread) => Object.entries(spread).sort((a, b) => b[0] - a[0
   .map(([v, n]) => `${n}× at ${v}`).join(', ');
 
 export const wizard = {
-  intro: 'A guided V5 embrace: clan, dots, disciplines, predator type, convictions. Power descriptions stay yours to paste in — reference links go to the community wiki.',
+  intro: 'An Embrace, step by step: clan, attributes, skills, disciplines, how you hunt, what still tethers you to your Humanity. The app knows the names and the math; the power text comes from your own books, one paste away.',
   steps: [
     {
       key: 'clan', title: 'Clan',
@@ -326,7 +326,7 @@ export const wizard = {
           : ctx.data.disciplines.map((d) => d.name); // Caitiff: anything goes
         draft.discDots ??= [options[0], options[1] || options[0]];
         const wrap = el('div', {},
-          el('p', { class: 'small muted' }, 'Two starting dots among your clan disciplines — both in one (rating 2) or split across two.'));
+          el('p', { class: 'small muted' }, 'You wake with two dots of your clan\'s disciplines. Put both in one for a deeper power, or split them for breadth.'));
         const mkSel = (i) => {
           const sel = el('select', {}, options.map((o) => el('option', { value: o }, o)));
           sel.value = draft.discDots[i];
@@ -384,7 +384,7 @@ export const wizard = {
               el('ul', { class: 'muted small', style: 'margin:4px 0 0 16px;padding:0' },
                 p.gains.map((g) => el('li', {}, g)))))),
           el('p', { class: 'small muted', style: 'margin-top:8px' },
-            'The listed picks are noted on the finished sheet — apply the dots by clicking them on the sheet afterwards.'));
+            'These picks get written into the finished sheet\'s notes. Apply the dots afterwards by clicking them on the sheet.'));
       },
       validate: (draft) => draft.predator ? null : 'Pick how you hunt.',
     },
@@ -392,7 +392,7 @@ export const wizard = {
       key: 'convictions', title: 'Convictions',
       render(draft) {
         draft.convictions ??= [{ text: '', touchstone: '' }];
-        const wrap = el('div', {}, el('p', { class: 'small muted' }, 'One to three convictions, each tied to a living touchstone.'));
+        const wrap = el('div', {}, el('p', { class: 'small muted' }, 'One to three things you still believe, each anchored to a living mortal. Pick ones that can be threatened.'));
         const list = el('div', {});
         const redraw = () => {
           list.innerHTML = '';
@@ -438,7 +438,7 @@ export const wizard = {
         };
         redraw();
         refresh();
-        return el('div', {}, el('p', { class: 'small muted' }, 'Spend 7 dots on advantages (backgrounds and merits) and take 2 dots of flaws. Your predator type may add more afterwards.'), note, list);
+        return el('div', {}, el('p', { class: 'small muted' }, 'Seven dots of advantages, two dots of flaws. The book says so, and this wizard will hold you to it. Your predator type may pile more on afterwards.'), note, list);
       },
       validate(draft) {
         const adv = (draft.advantages || []).filter((a) => !a.flaw).reduce((s, a) => s + (a.dots || 0), 0);

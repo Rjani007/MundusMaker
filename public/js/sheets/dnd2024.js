@@ -9,7 +9,7 @@ import {
 } from './sheetlib.js';
 
 export const label = 'D&D 5.5e (2024)';
-export const tagline = 'The new fifth edition — full SRD 5.2 content built in.';
+export const tagline = 'The 2024 rules, with the whole SRD in the box.';
 
 // ---------- SRD 5.2 data (lazy, cached) ----------
 
@@ -324,7 +324,7 @@ function pickCards(items, get, isSel, onPick) {
 }
 
 export const wizard = {
-  intro: 'A guided level-1 character using the 2024 rules, with every option from the freely licensed SRD 5.2.',
+  intro: 'A level-1 character by the 2024 book: species, class, abilities, background, skills, gear, spells. Every option here ships with the app.',
   steps: [
     {
       key: 'species', title: 'Species',
@@ -495,9 +495,9 @@ export const wizard = {
         area.value = draft.equipmentText;
         area.addEventListener('input', () => { draft.equipmentText = area.value; });
         return el('div', {},
-          el('p', { class: 'small muted' }, 'Your class starting equipment (edit freely — one item per line ends up on the sheet):'),
+          el('p', { class: 'small muted' }, 'What your class starts with. Edit it freely; each line becomes an item on the sheet.'),
           area,
-          draft.background?.equipment ? el('p', { class: 'small muted' }, `Background adds: ${draft.background.equipment}`) : null);
+          draft.background?.equipment ? el('p', { class: 'small muted' }, `Your background adds: ${draft.background.equipment}`) : null);
       },
       validate: () => null,
     },
