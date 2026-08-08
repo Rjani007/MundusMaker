@@ -42,8 +42,8 @@ export function render(container) {
       el('strong', {}, '+ 💀 Encounter'), ' blocks budget XP against your party and rate the fight Easy → Deadly.'),
 
     h('🗺 Maps'),
-    p('Attach a world, town, or dungeon map to any entry (or make one from the Maps tab). Maps are generated from a seed — hit 🎲 until you like one, then edit by hand: ',
-      'raise/lower terrain on world maps, paint floors and doors on dungeons (rooms-and-corridors or natural caves), pick town layouts (coastal harbor, planned city, riverside…), set the terrain (grassland, desert, snow, marsh…) and street style (dirt, cobblestone, flagstone).'),
+    p('Attach a map to any entry (or make one from the Maps tab) at any scale: world, region, town, building interior, or dungeon. Maps are generated from a seed — hit 🎲 until you like one, then edit by hand: ',
+      'raise/lower terrain on world and region maps (the new Atlas style adds climate, lakes, nations and named settlements), paint floors, doors, windows and stairs on dungeons and buildings (rooms, caves, crypts, mines or sewers — dungeons can go several levels deep), pick town layouts (coastal harbor, planned city, riverside…) with optional named wards, and set terrain and street styles.'),
     p('Then make it yours: 🏰 ', el('strong', {}, 'Place'), ' stamps houses, castles, cities, forests, ruins and more; ✏️ ',
       el('strong', {}, 'Draw'), ' sketches roads, rivers, walls, travel routes and borders — end a border stroke where it started and it closes into a tinted territory (that\'s how you mark countries). ',
       'Markers, labels and a compass rose round it out. Anything can be 🔒 secret (the trap — or the true border — stays off the player map), and anything placed can link to an entry: double-click it to jump there. ',

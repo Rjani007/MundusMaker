@@ -374,14 +374,19 @@ export async function buildPdf(opts) {
           // numbered badges + printed key when any visible marker/stamp has a name or link
           const keyMarkers = mapKey(e.map, { gm: opts.gm });
           const numbered = keyMarkers.some((mk) => mk.label || mk.to);
-          // 2× by default: maps print at ~270 DPI instead of ~135
-          const img = mapToJpeg(e.map, { gm: opts.gm, numbered, scale: opts.mapScale || 2 });
-          const maxW = CW, maxH = 330;
-          const scale = Math.min(maxW / img.width, maxH / img.height);
-          const w = img.width * scale, h = img.height * scale;
-          ensure(h + 16);
-          doc.addImage(img.dataUrl, 'JPEG', M + (CW - w) / 2, y, w, h);
-          y += h + 6;
+          // multi-level dungeons print one image per floor; the key stays global
+          const nLevels = e.map.kind === 'dungeon' ? Math.max(1, Math.min(5, e.map.params?.levels || 1)) : 1;
+          for (let lvl = 0; lvl < nLevels; lvl++) {
+            // 2× by default: maps print at ~270 DPI instead of ~135
+            const img = mapToJpeg(e.map, { gm: opts.gm, numbered, scale: opts.mapScale || 2, level: lvl });
+            const maxW = CW, maxH = 330;
+            const scale = Math.min(maxW / img.width, maxH / img.height);
+            const w = img.width * scale, h = img.height * scale;
+            ensure(h + 16);
+            doc.addImage(img.dataUrl, 'JPEG', M + (CW - w) / 2, y, w, h);
+            y += h + 6;
+            if (nLevels > 1) para(`Level ${lvl + 1}`, 8.5, 'italic', [130, 124, 150]);
+          }
           para(`Map of ${e.name}${opts.gm ? '' : ' (player version)'}`, 8.5, 'italic', [130, 124, 150]);
           if (numbered) {
             y += 2;

@@ -5,18 +5,23 @@
 import { makeRng } from '../util.js';
 
 export const CELL = 22;
-export const FLOOR = 1, SOLID = 0, DOOR = 2;
+export const FLOOR = 1, SOLID = 0, DOOR = 2, STAIR_DOWN = 3, STAIR_UP = 4;
 
 export function defaultDungeonParams() {
-  return { cols: 42, rows: 27, rooms: 9, loops: 0.25, style: 'rooms' };
+  return { cols: 42, rows: 27, rooms: 9, loops: 0.25, style: 'rooms', levels: 1 };
 }
 
-export const DUNGEON_STYLES = { rooms: 'Rooms & corridors', caves: 'Natural caves' };
+export const DUNGEON_STYLES = {
+  rooms: 'Rooms & corridors', caves: 'Natural caves',
+  crypt: 'Crypt', mine: 'Mine', sewer: 'Sewers',
+};
 
 export function dungeonSize(map) {
   const p = { ...defaultDungeonParams(), ...(map.params || {}) };
   return [p.cols * CELL, p.rows * CELL];
 }
+
+export const dungeonLevels = (map) => Math.max(1, Math.min(5, map.params?.levels || 1));
 
 // Cellular-automata caves: random rock, smooth it, then keep the big pockets
 // and join them with rough tunnels. Its own rng stream — the 'rooms' path must
@@ -94,12 +99,144 @@ function generateCaves(p, seed) {
   return { grid, cols, rows };
 }
 
-/** Generate the cell grid from seed + params. */
-export function generateDungeonGrid(map) {
-  const p = { ...defaultDungeonParams(), ...(map.params || {}) };
-  if (p.style === 'caves') return generateCaves(p, map.seed);
+// Crypt: a central processional spine, symmetric burial chambers with niches,
+// and a grand tomb at the far end. Own stream — opt-in style, never the default.
+function generateCrypt(p, seedStr) {
   const { cols, rows } = p;
-  const rng = makeRng(map.seed);
+  const rng = makeRng(seedStr + ':crypt');
+  const grid = new Uint8Array(cols * rows);
+  const midY = (rows / 2) | 0;
+  const spineEnd = cols - 8;
+  for (let x = 2; x <= spineEnd; x++) grid[midY * cols + x] = FLOOR;
+  const step = rng.int(6, 8);
+  for (let x = 5; x < spineEnd - 3; x += step) {
+    for (const side of [-1, 1]) {
+      if (rng.chance(0.2)) continue;
+      const w = rng.int(3, 5), h = rng.int(3, 4), gap = rng.int(1, 2);
+      const y0 = side < 0 ? midY - gap - h : midY + gap + 1;
+      if (y0 < 2 || y0 + h > rows - 2) continue;
+      for (let dy = 1; dy <= gap; dy++) grid[(midY + side * dy) * cols + x] = dy === gap ? DOOR : FLOOR;
+      const x0 = x - ((w / 2) | 0);
+      for (let yy = y0; yy < y0 + h; yy++) {
+        for (let xx = x0; xx < x0 + w; xx++) {
+          if (xx > 1 && xx < cols - 2) grid[yy * cols + xx] = FLOOR;
+        }
+      }
+      // burial niches off the chamber's far wall
+      const nichY = side < 0 ? y0 - 1 : y0 + h;
+      if (nichY > 0 && nichY < rows - 1) {
+        for (let xx = x0; xx < x0 + w; xx += 2) {
+          if (rng.chance(0.7) && xx > 1 && xx < cols - 2) grid[nichY * cols + xx] = FLOOR;
+        }
+      }
+    }
+  }
+  // the grand tomb
+  const tw = rng.int(5, 7), th = rng.int(5, 7);
+  const ty = Math.max(2, midY - ((th / 2) | 0));
+  grid[midY * cols + spineEnd + 1] = DOOR;
+  for (let yy = ty; yy < Math.min(rows - 2, ty + th); yy++) {
+    for (let xx = spineEnd + 2; xx < Math.min(cols - 2, spineEnd + 2 + tw); xx++) grid[yy * cols + xx] = FLOOR;
+  }
+  return { grid, cols, rows };
+}
+
+// Mine: drifts random-walking from the adit, branching, with dug-out galleries.
+function generateMine(p, seedStr) {
+  const { cols, rows } = p;
+  const rng = makeRng(seedStr + ':mine');
+  const grid = new Uint8Array(cols * rows);
+  const carve = (x, y) => {
+    if (x > 0 && y > 0 && x < cols - 1 && y < rows - 1) grid[y * cols + x] = FLOOR;
+  };
+  const gallery = (x, y, r) => {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (dx * dx + dy * dy <= r * r + 1) carve(x + dx, y + dy);
+      }
+    }
+  };
+  const drifts = [[1, rng.int((rows / 3) | 0, (2 * rows / 3) | 0)]];
+  gallery(2, drifts[0][1], 1); // the adit
+  let guard = 0;
+  while (drifts.length && guard++ < 400) {
+    const d = drifts.pop();
+    let [x, y] = d;
+    while (x < cols - 3) {
+      carve(x, y);
+      if (rng.chance(0.35)) carve(x, y + (rng.chance(0.5) ? 1 : -1));
+      x++;
+      if (rng.chance(0.3)) y += rng.chance(0.5) ? 1 : -1;
+      y = Math.max(2, Math.min(rows - 3, y));
+      if (rng.chance(0.05)) gallery(x, y, rng.int(1, 2));
+      if (rng.chance(0.06) && drifts.length < 4) {
+        // a branch heads off vertically before resuming the dig
+        let by = y;
+        const dir = rng.chance(0.5) ? 1 : -1;
+        const len = rng.int(4, 9);
+        for (let i = 0; i < len; i++) {
+          by += dir;
+          if (by < 2 || by > rows - 3) break;
+          carve(x, by);
+          if (rng.chance(0.25)) carve(x + 1, by);
+        }
+        if (rng.chance(0.5)) gallery(x, Math.max(2, Math.min(rows - 3, by)), rng.int(1, 2));
+      }
+    }
+  }
+  return { grid, cols, rows };
+}
+
+// Sewers: a wide main gallery, parallel side channels, junction chambers.
+function generateSewer(p, seedStr) {
+  const { cols, rows } = p;
+  const rng = makeRng(seedStr + ':sewer');
+  const grid = new Uint8Array(cols * rows);
+  const midY = (rows / 2) | 0;
+  for (let x = 1; x < cols - 1; x++) {
+    for (let dy = -1; dy <= 1; dy++) grid[(midY + dy) * cols + x] = FLOOR;
+  }
+  const xs = [];
+  for (let x = rng.int(4, 7); x < cols - 4; x += rng.int(5, 9)) xs.push(x);
+  for (const x of xs) {
+    const up = rng.chance(0.8), down = rng.chance(0.8);
+    const wide = rng.chance(0.35) ? 1 : 0;
+    if (up) {
+      const yEnd = rng.int(2, midY - 3);
+      for (let y = yEnd; y < midY; y++) {
+        for (let dx = 0; dx <= wide; dx++) grid[y * cols + x + dx] = FLOOR;
+      }
+      if (rng.chance(0.5)) { // junction chamber at the dead end
+        for (let yy = Math.max(1, yEnd - 2); yy <= yEnd + 1; yy++) {
+          for (let xx = Math.max(1, x - 2); xx <= Math.min(cols - 2, x + 2 + wide); xx++) grid[yy * cols + xx] = FLOOR;
+        }
+      }
+    }
+    if (down) {
+      const yEnd = rng.int(midY + 3, rows - 3);
+      for (let y = midY; y <= yEnd; y++) {
+        for (let dx = 0; dx <= wide; dx++) grid[y * cols + x + dx] = FLOOR;
+      }
+      if (rng.chance(0.5)) {
+        for (let yy = yEnd - 1; yy <= Math.min(rows - 2, yEnd + 2); yy++) {
+          for (let xx = Math.max(1, x - 2); xx <= Math.min(cols - 2, x + 2 + wide); xx++) grid[yy * cols + xx] = FLOOR;
+        }
+      }
+    }
+  }
+  return { grid, cols, rows };
+}
+
+/** Generate one level's grid from seed + params. Level 0 consumes exactly what it always has. */
+export function generateDungeonGrid(map, level = 0) {
+  const p = { ...defaultDungeonParams(), ...(map.params || {}) };
+  const seedStr = level ? `${map.seed}:L${level}` : map.seed;
+  if (p.style === 'caves') return generateCaves(p, seedStr);
+  if (p.style === 'crypt') return generateCrypt(p, seedStr);
+  if (p.style === 'mine') return generateMine(p, seedStr);
+  if (p.style === 'sewer') return generateSewer(p, seedStr);
+  const { cols, rows } = p;
+  const rng = makeRng(seedStr);
   const grid = new Uint8Array(cols * rows);
 
   // place non-overlapping rooms
@@ -171,29 +308,82 @@ export function generateDungeonGrid(map) {
   return { grid, cols, rows };
 }
 
-/** Get the working grid: user-edited if present, else generated from seed. */
-export function dungeonGrid(map) {
-  const p = { ...defaultDungeonParams(), ...(map.params || {}) };
-  if (map.grid) {
-    const rows = map.grid.split('\n');
-    const grid = new Uint8Array(p.cols * p.rows);
-    for (let y = 0; y < Math.min(rows.length, p.rows); y++) {
-      for (let x = 0; x < Math.min(rows[y].length, p.cols); x++) {
-        grid[y * p.cols + x] = rows[y][x] === '#' ? SOLID : rows[y][x] === 'D' ? DOOR : rows[y][x] === '.' ? FLOOR : SOLID;
+const CHAR_CODE = { '#': SOLID, '.': FLOOR, D: DOOR, '>': STAIR_DOWN, '<': STAIR_UP };
+
+function parseGrid(str, p) {
+  const rows = str.split('\n');
+  const grid = new Uint8Array(p.cols * p.rows);
+  for (let y = 0; y < Math.min(rows.length, p.rows); y++) {
+    for (let x = 0; x < Math.min(rows[y].length, p.cols); x++) {
+      grid[y * p.cols + x] = CHAR_CODE[rows[y][x]] ?? SOLID; // unknown chars stay walls (fwd compat)
+    }
+  }
+  return { grid, cols: p.cols, rows: p.rows };
+}
+
+/**
+ * Carve stair pairs between freshly generated neighbouring levels. Levels the
+ * user has painted (stored strings) are never written to — their stairs are
+ * whatever the user painted, via the stair tools.
+ */
+function carveStairs(all, generated, map, cols, rows) {
+  const rng = makeRng(map.seed + ':stairs');
+  for (let n = 0; n < all.length - 1; n++) {
+    if (!generated[n] || !generated[n + 1]) continue;
+    const a = all[n].grid, b = all[n + 1].grid;
+    const candidates = [];
+    for (let i = 0; i < a.length; i++) if (a[i] === FLOOR && b[i] === FLOOR) candidates.push(i);
+    let c;
+    if (candidates.length) {
+      c = candidates[rng.int(0, candidates.length - 1)];
+    } else {
+      const floors = [];
+      for (let i = 0; i < a.length; i++) if (a[i] === FLOOR) floors.push(i);
+      if (!floors.length) continue;
+      c = floors[rng.int(0, floors.length - 1)];
+      const x = c % cols, y = (c / cols) | 0; // open a landing below
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx, ny = y + dy;
+          if (nx > 0 && ny > 0 && nx < cols - 1 && ny < rows - 1) b[ny * cols + nx] = FLOOR;
+        }
       }
     }
-    return { grid, cols: p.cols, rows: p.rows };
+    a[c] = STAIR_DOWN;
+    b[c] = STAIR_UP;
   }
-  return generateDungeonGrid(map);
+}
+
+/**
+ * Get one level's working grid: user-edited if stored, else generated.
+ * Storage contract: map.grid is level 1 exactly as it always was; deeper
+ * levels live in map.grids[n] (index 0 unused/null). Old builds keep reading
+ * map.grid and simply ignore the rest.
+ */
+export function dungeonGrid(map, level = 0) {
+  const p = { ...defaultDungeonParams(), ...(map.params || {}) };
+  const levels = dungeonLevels(map);
+  if (levels === 1) {
+    if (map.grid) return parseGrid(map.grid, p);
+    return generateDungeonGrid(map);
+  }
+  const stored = (n) => (n === 0 ? map.grid : map.grids?.[n]);
+  const all = [], generated = [];
+  for (let n = 0; n < levels; n++) {
+    if (stored(n)) { all.push(parseGrid(stored(n), p)); generated.push(false); }
+    else { all.push(generateDungeonGrid(map, n)); generated.push(true); }
+  }
+  carveStairs(all, generated, map, p.cols, p.rows);
+  return all[Math.max(0, Math.min(level, levels - 1))];
 }
 
 export function gridToString(grid, cols, rows) {
+  const CODE_CHAR = { [SOLID]: '#', [FLOOR]: '.', [DOOR]: 'D', [STAIR_DOWN]: '>', [STAIR_UP]: '<' };
   const lines = [];
   for (let y = 0; y < rows; y++) {
     let line = '';
     for (let x = 0; x < cols; x++) {
-      const v = grid[y * cols + x];
-      line += v === FLOOR ? '.' : v === DOOR ? 'D' : '#';
+      line += CODE_CHAR[grid[y * cols + x]] ?? '#';
     }
     lines.push(line);
   }
@@ -204,10 +394,12 @@ export function gridToString(grid, cols, rows) {
 function numberRooms(grid, cols, rows) {
   const seen = new Uint8Array(cols * rows);
   const areas = [];
+  // stairs count as walkable floor here — a stair in a room must not split it
+  const open = (v) => v === FLOOR || v === STAIR_DOWN || v === STAIR_UP;
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
       const i = y * cols + x;
-      if (grid[i] !== FLOOR || seen[i]) continue;
+      if (!open(grid[i]) || seen[i]) continue;
       const cells = [];
       const stack = [[x, y]];
       seen[i] = 1;
@@ -218,7 +410,7 @@ function numberRooms(grid, cols, rows) {
           const nx = px + dx, ny = py + dy;
           if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
           const ni = ny * cols + nx;
-          if (grid[ni] === FLOOR && !seen[ni]) { seen[ni] = 1; stack.push([nx, ny]); }
+          if (open(grid[ni]) && !seen[ni]) { seen[ni] = 1; stack.push([nx, ny]); }
         }
       }
       // treat compact blobs as "rooms", skip skinny corridors
@@ -251,16 +443,41 @@ export function renderDungeonBase(map, model, scale = 1) {
 
   const at = (x, y) => (x < 0 || y < 0 || x >= cols || y >= rows) ? SOLID : grid[y * cols + x];
 
-  // floors — hashed per-cell shading so large floors don't read as flat slabs
+  // floors — hashed per-cell shading so large floors don't read as flat slabs.
+  // New styles tint the stone; 'rooms' and 'caves' keep their exact colors.
+  const style = map.params?.style || 'rooms';
+  const floorHsl = style === 'crypt' ? [232, 10, 72] : style === 'mine' ? [27, 26, 70] : style === 'sewer' ? [158, 12, 66] : [41, 33, 78];
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
       const v = grid[y * cols + x];
       if (v === SOLID) continue;
       const shade = (Math.imul(x, 73856093) ^ Math.imul(y, 19349663)) >>> 0;
-      ctx.fillStyle = `hsl(41, 33%, ${78 + (shade % 5)}%)`;
+      ctx.fillStyle = `hsl(${floorHsl[0]}, ${floorHsl[1]}%, ${floorHsl[2] + (shade % 5)}%)`;
       ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
       ctx.strokeStyle = 'rgba(90, 75, 55, 0.25)';
       ctx.strokeRect(x * CELL + 0.5, y * CELL + 0.5, CELL - 1, CELL - 1);
+    }
+  }
+
+  // sewers get their central water channel, joining up with open neighbours
+  if (style === 'sewer') {
+    ctx.strokeStyle = 'rgba(38, 84, 74, 0.65)';
+    ctx.lineWidth = 7;
+    ctx.lineCap = 'round';
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        if (at(x, y) === SOLID || at(x, y) === DOOR) continue;
+        const cx = (x + 0.5) * CELL, cy = (y + 0.5) * CELL;
+        for (const [dx, dy] of [[1, 0], [0, 1]]) {
+          const n = at(x + dx, y + dy);
+          if (n !== SOLID && n !== DOOR) {
+            ctx.beginPath();
+            ctx.moveTo(cx, cy);
+            ctx.lineTo(cx + dx * CELL, cy + dy * CELL);
+            ctx.stroke();
+          }
+        }
+      }
     }
   }
 
@@ -297,6 +514,30 @@ export function renderDungeonBase(map, model, scale = 1) {
         ctx.fillRect(px + CELL / 2 - 3, py + 4, 6, CELL - 8);
         ctx.strokeRect(px + CELL / 2 - 3, py + 4, 6, CELL - 8);
       }
+    }
+  }
+
+  // stairs: classic shrinking-tread glyph; > descends (darker), < ascends
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const v = grid[y * cols + x];
+      if (v !== STAIR_DOWN && v !== STAIR_UP) continue;
+      const px = x * CELL, py = y * CELL;
+      const down = v === STAIR_DOWN;
+      ctx.strokeStyle = down ? '#3a250f' : '#6b5232';
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 4; i++) {
+        const inset = 3 + i * 2.4;
+        ctx.beginPath();
+        ctx.moveTo(px + inset, py + 4 + i * (CELL - 8) / 3.2);
+        ctx.lineTo(px + CELL - inset, py + 4 + i * (CELL - 8) / 3.2);
+        ctx.stroke();
+      }
+      ctx.font = `bold 9px Georgia, serif`;
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(down ? '▼' : '▲', px + CELL / 2, py + CELL - 5);
     }
   }
 

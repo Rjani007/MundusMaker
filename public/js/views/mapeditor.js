@@ -1,19 +1,16 @@
 // Full-screen map editor: seeded generation + hand editing.
-//   world:   raise/lower terrain brush (stored as strokes → survives re-render)
-//   town:    regenerate with different size/density/walls/river
-//   dungeon: paint floor/wall/door cells (stored grid overrides the seed)
-//   all:     draggable markers (with GM-secret flag) and text labels
+// The per-kind parts (param rows, paint tools, brush vs grid painting, the
+// reset-edits button) all come from the kind's declarative entry in MAP_KINDS
+// — this file renders them generically and never branches on map.kind.
+//   all kinds: draggable markers/stamps/labels/paths with GM-secret flags
 
 import { el, toast, debounce, downloadBlob, clamp } from '../util.js';
 import { state, getEntity, visibleEntities, scheduleSave } from '../state.js';
 import {
   MAP_KINDS, newMarker, newLabel, MARKER_SHAPES, MARKER_COLORS,
-  newStamp, STAMP_KINDS, STAMP_COLORS, newPath, PATH_STYLES,
+  newStamp, STAMP_KINDS, STAMP_COLORS, FURNITURE_STAMPS, newPath, PATH_STYLES,
   drawOverlay, renderMap,
 } from '../maps/mapcore.js';
-import { applyStrokeToGrid, renderWorldBase, buildWorldModel } from '../maps/world.js';
-import { TOWN_LAYOUTS, TOWN_TERRAINS, TOWN_PAVINGS } from '../maps/town.js';
-import { CELL, FLOOR, SOLID, DOOR, DUNGEON_STYLES, dungeonGrid, gridToString, renderDungeonBase } from '../maps/dungeon.js';
 import { api } from '../api.js';
 
 export function render(container, id) {
@@ -36,7 +33,9 @@ export function render(container, id) {
   let tool = 'move';
   let brush = { r: 0.045, strength: 0.09 };
   let markerOpts = { shape: 'dot', color: MARKER_COLORS[0], secret: false };
-  let stampOpts = { kind: 'house', color: '', size: 1, secret: false }; // '' = kind default
+  // building maps offer furniture; everything else offers structures
+  const stampChoices = kind.stampKinds || Object.keys(STAMP_KINDS).filter((k) => !FURNITURE_STAMPS.includes(k));
+  let stampOpts = { kind: stampChoices[0], color: '', size: 1, secret: false }; // '' = kind default
   let drawOpts = { style: 'road', color: '', width: 0, secret: false }; // 0/'' = style default
   let labelSize = 24;
   let selected = null;
@@ -45,16 +44,20 @@ export function render(container, id) {
   let model = null;
   let base = null;
   let W = 0, H = 0;
+  let level = 0; // current floor of a multi-level kind; 0 for everything else
 
   const canvas = el('canvas');
   const ctx = canvas.getContext('2d');
 
   function rebuild() {
-    model = kind.buildModel(map);
+    const count = kind.levelCount ? kind.levelCount(map) : 1;
+    if (level >= count) level = count - 1;
+    model = kind.buildModel(map, level);
     base = kind.renderBase(map, model);
     [W, H] = kind.size(map);
     canvas.width = W;
     canvas.height = H;
+    refreshLevelChips?.();
     redraw();
   }
 
@@ -65,9 +68,23 @@ export function render(container, id) {
     requestAnimationFrame(() => {
       rafPending = false;
       ctx.drawImage(base, 0, 0);
-      drawOverlay(ctx, map, W, H, { gm: state.gm, selected });
+      drawOverlay(ctx, map, W, H, { gm: state.gm, selected, level });
     });
   }
+
+  // floor chips for multi-level kinds (dungeons); hidden at 1 level
+  const levelChips = el('div', { class: 'tool-row', style: 'margin-bottom:6px' });
+  var refreshLevelChips = () => {
+    const count = kind.levelCount ? kind.levelCount(map) : 1;
+    levelChips.style.display = count > 1 ? '' : 'none';
+    levelChips.innerHTML = '';
+    for (let i = 0; i < count; i++) {
+      levelChips.append(el('button', {
+        class: i === level ? 'on' : '', title: `Show level ${i + 1}`,
+        onclick: () => { level = i; selected = null; rebuild(); refreshLists(); },
+      }, `L${i + 1}`));
+    }
+  };
   rebuild();
 
   // ---------- pointer interaction ----------
@@ -94,26 +111,29 @@ export function render(container, id) {
     return best;
   }
 
+  const onLevel = (o) => (o.level || 0) === level;
+
   function hitOverlay(p) {
     for (let i = (map.markers || []).length - 1; i >= 0; i--) {
       const mk = map.markers[i];
-      if (mk.secret && !state.gm) continue;
+      if ((mk.secret && !state.gm) || !onLevel(mk)) continue;
       if (Math.hypot(mk.x * W - p.x, mk.y * H - p.y) < 14) return { obj: mk, list: 'markers' };
     }
     for (let i = (map.stamps || []).length - 1; i >= 0; i--) {
       const s = map.stamps[i];
-      if (s.secret && !state.gm) continue;
+      if ((s.secret && !state.gm) || !onLevel(s)) continue;
       if (Math.hypot(s.x * W - p.x, s.y * H - p.y) < 16 * (s.size || 1)) return { obj: s, list: 'stamps' };
     }
     for (let i = (map.labels || []).length - 1; i >= 0; i--) {
       const lb = map.labels[i];
+      if (!onLevel(lb)) continue;
       ctx.font = `italic ${lb.size}px Georgia, serif`;
       const hw = ctx.measureText(lb.text).width / 2 + 8;
       if (Math.abs(lb.x * W - p.x) < hw && Math.abs(lb.y * H - p.y) < lb.size * 0.75) return { obj: lb, list: 'labels' };
     }
     for (let i = (map.paths || []).length - 1; i >= 0; i--) {
       const path = map.paths[i];
-      if (path.secret && !state.gm) continue;
+      if ((path.secret && !state.gm) || !onLevel(path)) continue;
       if (distToPath(p, path) < 8) return { obj: path, list: 'paths' };
     }
     return null;
@@ -121,29 +141,26 @@ export function render(container, id) {
 
   let dragging = null, painting = false, lastPaint = null;
 
-  function paintWorld(p) {
+  // 'brush' kinds append normalized strokes and re-apply them to the model
+  function paintBrush(p) {
     const stroke = {
       x: p.x / W, y: p.y / H, r: brush.r,
-      d: (tool === 'raise' ? 1 : -1) * brush.strength,
+      d: (tool === 'lower' ? -1 : 1) * brush.strength,
     };
     if (lastPaint && Math.hypot(lastPaint.x - stroke.x, lastPaint.y - stroke.y) < brush.r * 0.35) return;
     lastPaint = stroke;
     (map.strokes ??= []).push(stroke);
-    applyStrokeToGrid(model.height, stroke);
-    base = renderWorldBase(map, model);
+    kind.applyStroke(model, stroke);
+    base = kind.renderBase(map, model);
     redraw();
     save();
   }
 
-  function paintDungeon(p) {
-    const cx = Math.floor(p.x / CELL), cy = Math.floor(p.y / CELL);
-    if (cx < 0 || cy < 0 || cx >= model.cols || cy >= model.rows) return;
-    const val = tool === 'floor' ? FLOOR : tool === 'wall' ? SOLID : DOOR;
-    const i = cy * model.cols + cx;
-    if (model.grid[i] === val) return;
-    model.grid[i] = val;
-    map.grid = gridToString(model.grid, model.cols, model.rows);
-    base = renderDungeonBase(map, model);
+  // 'grid' kinds paint cells; the kind serializes its own map.grid
+  function paintGrid(p) {
+    const cx = Math.floor(p.x / kind.cellSize), cy = Math.floor(p.y / kind.cellSize);
+    if (!kind.paintCell(map, model, cx, cy, tool)) return;
+    base = kind.renderBase(map, model);
     redraw();
     save();
   }
@@ -164,6 +181,7 @@ export function render(container, id) {
         kind: stampOpts.kind, size: stampOpts.size, secret: stampOpts.secret,
         color: stampOpts.color || undefined,
       });
+      if (level) s.level = level;
       (map.stamps ??= []).push(s);
       selected = s.id;
       save(); redraw(); refreshLists();
@@ -173,10 +191,12 @@ export function render(container, id) {
         color: drawOpts.color || undefined,
         width: drawOpts.width || undefined,
       });
+      if (level) drawingPath.level = level;
       drawingPath.pts.push([clamp(p.x / W, 0, 1), clamp(p.y / H, 0, 1)]);
       (map.paths ??= []).push(drawingPath);
     } else if (tool === 'marker') {
       const mk = newMarker(p.x / W, p.y / H, markerOpts);
+      if (level) mk.level = level;
       (map.markers ??= []).push(mk);
       selected = mk.id;
       save(); redraw(); refreshLists();
@@ -184,14 +204,15 @@ export function render(container, id) {
       const text = prompt('Label text:');
       if (text?.trim()) {
         const lb = newLabel(p.x / W, p.y / H, text.trim(), labelSize);
+        if (level) lb.level = level;
         (map.labels ??= []).push(lb);
         selected = lb.id;
         save(); redraw(); refreshLists();
       }
-    } else if (tool === 'raise' || tool === 'lower') {
-      painting = true; lastPaint = null; paintWorld(p);
-    } else if (tool === 'floor' || tool === 'wall' || tool === 'door') {
-      painting = true; paintDungeon(p);
+    } else if ((kind.tools || []).some((t) => t.name === tool)) {
+      painting = true; lastPaint = null;
+      if (kind.paint === 'brush') paintBrush(p);
+      else if (kind.paint === 'grid') paintGrid(p);
     }
   });
   canvas.addEventListener('pointermove', (ev) => {
@@ -215,8 +236,8 @@ export function render(container, id) {
         redraw();
       }
     } else if (painting) {
-      if (tool === 'raise' || tool === 'lower') paintWorld(p);
-      else paintDungeon(p);
+      if (kind.paint === 'brush') paintBrush(p);
+      else if (kind.paint === 'grid') paintGrid(p);
     }
   });
   canvas.addEventListener('pointerup', () => {
@@ -278,7 +299,7 @@ export function render(container, id) {
         canvas.style.cursor = name === 'move' ? 'default' : 'crosshair';
         markerOptsRow.style.display = name === 'marker' ? '' : 'none';
         labelOptsRow.style.display = name === 'label' ? '' : 'none';
-        brushOptsRow.style.display = (name === 'raise' || name === 'lower') ? '' : 'none';
+        brushOptsRow.style.display = (kind.paint === 'brush' && (kind.tools || []).some((t) => t.name === name)) ? '' : 'none';
         stampOptsRow.style.display = name === 'stamp' ? '' : 'none';
         drawOptsRow.style.display = name === 'draw' ? '' : 'none';
       },
@@ -296,104 +317,72 @@ export function render(container, id) {
   const p = map.params;
 
   function confirmDiscardGrid() {
-    if (map.kind === 'dungeon' && map.grid) {
-      if (!confirm('This regenerates the dungeon layout and discards your painted edits. Continue?')) return false;
+    if (kind.gridKind && (map.grid || (map.grids || []).some(Boolean))) {
+      if (!confirm('This regenerates the layout and discards your painted edits. Continue?')) return false;
       map.grid = null;
+      map.grids = null;
     }
     return true;
   }
 
   const seedInput = el('input', { type: 'text', value: map.seed, style: 'width:110px', oninput: (ev) => { map.seed = ev.target.value; } });
 
+  // generic param rows from the kind's declarative schema (see mapcore.js)
   const paramSection = el('div', {});
-  if (map.kind === 'world') {
-    paramSection.append(
-      paramRow('Sea level', slider(p.water ?? 0.5, 0.36, 0.64, 0.01, (v) => { p.water = v; rebuild(); save(); })),
-      paramRow('Zoom out', slider(p.scale ?? 3, 1.5, 6, 0.25, (v) => { p.scale = v; rebuild(); save(); })),
-      paramRow('Rivers', slider(p.rivers ?? 6, 0, 14, 1, (v) => { p.rivers = v; rebuild(); save(); })),
-      paramRow('Island', el('input', { type: 'checkbox', checked: !!p.island, onchange: (ev) => { p.island = ev.target.checked; rebuild(); save(); } })));
-  } else if (map.kind === 'town') {
-    // river is implied by riverside and replaced by the sea for coastal
-    const riverRow = paramRow('River', el('input', {
-      type: 'checkbox', checked: !!p.river,
-      onchange: (ev) => { p.river = ev.target.checked; rebuild(); save(); },
-    }));
-    const syncRiverRow = () => {
-      const layout = p.layout || 'auto';
-      riverRow.style.display = (layout === 'coastal' || layout === 'riverside') ? 'none' : '';
-    };
-    paramSection.append(
-      paramRow('Layout', el('select', {
-        title: 'The overall shape of the settlement. “Surprise me” picks one from the seed.',
-        onchange: (ev) => { p.layout = ev.target.value; syncRiverRow(); rebuild(); save(); },
-      }, Object.entries(TOWN_LAYOUTS).map(([v, l]) =>
-        el('option', { value: v, selected: v === (p.layout || 'auto') }, l)))),
-      paramRow('Size', el('select', {
-        onchange: (ev) => { p.size = Number(ev.target.value); rebuild(); save(); },
-      }, [['1', 'Hamlet'], ['2', 'Village'], ['3', 'Town'], ['4', 'City'], ['5', 'Metropolis']].map(([v, l]) =>
-        el('option', { value: v, selected: Number(v) === (p.size ?? 2) }, l)))),
-      paramRow('Density', slider(p.density ?? 1, 0.4, 1.6, 0.1, (v) => { p.density = v; rebuild(); save(); })),
-      // maps from before themes existed default to their original look
-      paramRow('Terrain', el('select', {
-        title: 'The land the town sits in — colors only, the town itself doesn’t change. “Surprise me” picks from the seed.',
-        onchange: (ev) => { p.terrain = ev.target.value; rebuild(); save(); },
-      }, Object.entries(TOWN_TERRAINS).map(([v, l]) =>
-        el('option', { value: v, selected: v === (p.terrain ?? 'parchment') }, l)))),
-      paramRow('Streets', el('select', {
-        title: 'Dirt lanes, cobblestones, or grand flagstone avenues. “Auto” paves by settlement size.',
-        onchange: (ev) => { p.paving = ev.target.value; rebuild(); save(); },
-      }, Object.entries(TOWN_PAVINGS).map(([v, l]) =>
-        el('option', { value: v, selected: v === (p.paving ?? 'dirt') }, l)))),
-      paramRow('Walls', el('input', { type: 'checkbox', checked: !!p.walls, onchange: (ev) => { p.walls = ev.target.checked; rebuild(); save(); } })),
-      riverRow);
-    syncRiverRow();
-  } else if (map.kind === 'dungeon') {
-    const numInput = (key, min, max) => el('input', {
-      type: 'number', value: p[key], min, max, style: 'width:70px',
-      onchange: (ev) => {
-        if (!confirmDiscardGrid()) { ev.target.value = p[key]; return; }
-        p[key] = clamp(Number(ev.target.value), min, max);
-        ev.target.value = p[key];
-        rebuild(); save();
-      },
-    });
-    const roomsRow = paramRow('Rooms', slider(p.rooms ?? 9, 3, 18, 1, (v) => {
-      if (!confirmDiscardGrid()) return;
-      p.rooms = v; rebuild(); save();
-    }));
-    const loopsRow = paramRow('Loops', slider(p.loops ?? 0.25, 0, 1, 0.05, (v) => {
-      if (!confirmDiscardGrid()) return;
-      p.loops = v; rebuild(); save();
-    }));
-    const syncStyleRows = () => {
-      const caves = (p.style || 'rooms') === 'caves';
-      roomsRow.style.display = caves ? 'none' : '';
-      loopsRow.style.display = caves ? 'none' : '';
-    };
-    paramSection.append(
-      paramRow('Style', el('select', {
-        title: 'Built rooms joined by corridors, or natural caverns',
+  const paramRowEls = [];
+  const syncParamRows = () => {
+    for (const { spec, row } of paramRowEls) {
+      row.style.display = !spec.show || spec.show(p) ? '' : 'none';
+    }
+  };
+  for (const spec of kind.params || []) {
+    const cur = () => p[spec.key] ?? spec.absent;
+    const changed = () => { syncParamRows(); rebuild(); save(); };
+    let input;
+    if (spec.type === 'slider') {
+      input = slider(cur(), spec.min, spec.max, spec.step, (v) => {
+        if (spec.confirmGrid && !confirmDiscardGrid()) return;
+        p[spec.key] = v; changed();
+      });
+    } else if (spec.type === 'checkbox') {
+      input = el('input', {
+        type: 'checkbox', checked: !!cur(),
         onchange: (ev) => {
-          if (!confirmDiscardGrid()) { ev.target.value = p.style || 'rooms'; return; }
-          p.style = ev.target.value;
-          syncStyleRows(); rebuild(); save();
+          if (spec.confirmGrid && !confirmDiscardGrid()) { ev.target.checked = !!cur(); return; }
+          p[spec.key] = ev.target.checked; changed();
         },
-      }, Object.entries(DUNGEON_STYLES).map(([v, l]) =>
-        el('option', { value: v, selected: v === (p.style || 'rooms') }, l)))),
-      paramRow('Columns', numInput('cols', 16, 70)),
-      paramRow('Rows', numInput('rows', 12, 50)),
-      roomsRow, loopsRow);
-    syncStyleRows();
+      });
+    } else if (spec.type === 'number') {
+      input = el('input', {
+        type: 'number', min: spec.min, max: spec.max, value: cur(), style: 'width:70px',
+        onchange: (ev) => {
+          if (spec.confirmGrid && !confirmDiscardGrid()) { ev.target.value = cur(); return; }
+          p[spec.key] = clamp(Number(ev.target.value), spec.min, spec.max);
+          ev.target.value = p[spec.key];
+          changed();
+        },
+      });
+    } else { // select
+      const options = typeof spec.options === 'function' ? spec.options() : spec.options;
+      input = el('select', {
+        onchange: (ev) => {
+          if (spec.confirmGrid && !confirmDiscardGrid()) { ev.target.value = String(cur()); return; }
+          p[spec.key] = spec.numeric ? Number(ev.target.value) : ev.target.value;
+          changed();
+        },
+      }, Object.entries(options).map(([v, l]) =>
+        el('option', { value: v, selected: String(v) === String(cur()) }, l)));
+    }
+    if (spec.title) input.title = spec.title;
+    const row = paramRow(spec.label, input);
+    paramRowEls.push({ spec, row });
+    paramSection.append(row);
   }
+  syncParamRows();
 
-  // tools per kind
+  // tools per kind, from the registry
   const toolRow = el('div', { class: 'tool-row' }, toolBtn('move', '✋ Move', 'Select and drag markers/labels'));
-  if (map.kind === 'world') {
-    toolRow.append(toolBtn('raise', '⛰ Raise', 'Brush: raise terrain'), toolBtn('lower', '🌊 Lower', 'Brush: lower terrain'));
-  }
-  if (map.kind === 'dungeon') {
-    toolRow.append(toolBtn('floor', '⬜ Floor'), toolBtn('wall', '⬛ Wall'), toolBtn('door', '🚪 Door'));
-  }
+  for (const t of kind.tools || []) toolRow.append(toolBtn(t.name, t.label, t.title));
   toolRow.append(
     toolBtn('stamp', '🏰 Place', 'Place a building or landmark: houses, castles, cities, forests…'),
     toolBtn('draw', '✏️ Draw', 'Draw roads, rivers, borders, travel routes and walls'),
@@ -448,7 +437,7 @@ export function render(container, id) {
 
   const stampOptsRow = el('div', { style: 'display:none' },
     paramRow('Stamp', el('select', { onchange: (ev) => { stampOpts.kind = ev.target.value; } },
-      Object.entries(STAMP_KINDS).map(([v, l]) => el('option', { value: v, selected: v === stampOpts.kind }, l)))),
+      stampChoices.map((v) => el('option', { value: v, selected: v === stampOpts.kind }, STAMP_KINDS[v])))),
     paramRow('Size', slider(stampOpts.size, 0.6, 2.4, 0.1, (v) => { stampOpts.size = v; })),
     paramRow('Color', swatchRow(STAMP_COLORS, () => stampOpts.color, (c) => { stampOpts.color = c; })),
     paramRow('🔒 Secret', el('input', {
@@ -477,7 +466,7 @@ export function render(container, id) {
     // canvas. drawOverlay and hitOverlay already filter on `secret`; these lists
     // did not, so the panel printed secret marker labels directly underneath its
     // own "secret markers hidden" notice. Same convention as hitOverlay.
-    const shown = (list) => (list || []).filter((o) => state.gm || !o.secret);
+    const shown = (list) => (list || []).filter((o) => (state.gm || !o.secret) && onLevel(o));
     const linkables = visibleEntities()
       .filter((x) => x.id !== e.id)
       .sort((a, b) => a.name.localeCompare(b.name));
@@ -535,10 +524,10 @@ export function render(container, id) {
       }
       listsWrap.append(sl);
     }
-    if (map.labels?.length) {
+    if ((map.labels || []).filter(onLevel).length) {
       listsWrap.append(el('h3', {}, 'Labels'));
       const ll = el('div', { class: 'marker-list' });
-      for (const lb of map.labels) {
+      for (const lb of (map.labels || []).filter(onLevel)) {
         ll.append(el('div', { class: 'mk-row', style: selected === lb.id ? 'outline:1px dashed #7fd7ff;border-radius:4px' : '' },
           el('input', {
             type: 'text', value: lb.text,
@@ -622,24 +611,18 @@ export function render(container, id) {
         },
       }, '↻')),
     paramSection,
-    map.kind === 'world' && map.strokes?.length ? el('button', {
+    kind.clearEdits?.has(map) ? el('button', {
       class: 'ghost small', onclick: () => {
-        if (!confirm('Undo all terrain brush edits?')) return;
-        map.strokes = [];
+        if (!confirm(kind.clearEdits.confirm)) return;
+        kind.clearEdits.run(map);
         rebuild(); save();
       },
-    }, 'Clear terrain edits') : el('span'),
-    map.kind === 'dungeon' && map.grid ? el('button', {
-      class: 'ghost small', onclick: () => {
-        if (!confirm('Discard painted edits and return to the generated layout?')) return;
-        map.grid = null;
-        rebuild(); save();
-      },
-    }, 'Reset painted edits') : el('span'),
+    }, kind.clearEdits.label) : el('span'),
     readOnly ? el('span') : paramRow('Compass', el('input', {
       type: 'checkbox', checked: !!map.compass, title: 'Draw a compass rose in the corner',
       onchange: (ev) => { map.compass = ev.target.checked; save(); redraw(); },
     })),
+    levelChips,
     el('h3', {}, 'Tools'),
     readOnly ? el('div', { class: 'muted small' }, 'Editing disabled in player preview.') : toolRow,
     brushOptsRow, markerOptsRow, labelOptsRow, stampOptsRow, drawOptsRow,

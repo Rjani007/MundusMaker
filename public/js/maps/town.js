@@ -7,6 +7,7 @@
 // Everything is deterministic from seed + params; labels/markers live elsewhere.
 
 import { makeRng, makeNoise2D } from '../util.js';
+import { nameFor } from '../names.js';
 
 export const TOWN_W = 900;
 export const TOWN_H = 640;
@@ -24,9 +25,78 @@ export const TOWN_LAYOUTS = {
 export function defaultTownParams() {
   // terrain/paving 'auto' applies to NEW maps only — resolveTownTheme falls
   // back to parchment/dirt when the params are absent, so maps made before
-  // themes existed keep rendering exactly as they always have.
-  return { size: 2, density: 1, walls: true, river: false, layout: 'auto', terrain: 'auto', paving: 'auto' };
+  // themes existed keep rendering exactly as they always have. wards likewise:
+  // absent means off, so pre-0.13 towns stay pixel-identical.
+  return { size: 2, density: 1, walls: true, river: false, layout: 'auto', terrain: 'auto', paving: 'auto', wards: true };
 }
+
+// ---------- wards (0.13) ----------
+// A pure post-filter over the FINISHED model: cluster the buildings, hull each
+// cluster, name it from its own stream. Nothing here draws from the main
+// generator rng and nothing writes to the model — existing towns cannot move.
+
+function convexHull(pts) {
+  if (pts.length < 3) return pts.slice();
+  const s = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lower = [];
+  for (const p of s) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+    lower.push(p);
+  }
+  const upper = [];
+  for (const p of [...s].reverse()) {
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+    upper.push(p);
+  }
+  return [...lower.slice(0, -1), ...upper.slice(0, -1)];
+}
+
+export function computeWards(model, seed) {
+  const blds = model.buildings || [];
+  if (blds.length < 14) return []; // hamlets don't have quarters
+  const k = Math.max(2, Math.min(6, 1 + (model.size || 2)));
+  const rng = makeRng(seed + ':wards');
+  let centroids = [];
+  for (let i = 0; i < k; i++) {
+    const b = blds[Math.floor((i * blds.length) / k)];
+    centroids.push([b.x, b.y]);
+  }
+  const assign = new Array(blds.length).fill(0);
+  for (let iter = 0; iter < 8; iter++) {
+    for (let i = 0; i < blds.length; i++) {
+      let best = 0, bd = Infinity;
+      centroids.forEach((c, ci) => {
+        const d = (blds[i].x - c[0]) ** 2 + (blds[i].y - c[1]) ** 2;
+        if (d < bd) { bd = d; best = ci; }
+      });
+      assign[i] = best;
+    }
+    centroids = centroids.map((c, ci) => {
+      const mine = blds.filter((_, i) => assign[i] === ci);
+      if (!mine.length) return c;
+      return [
+        mine.reduce((s, b) => s + b.x, 0) / mine.length,
+        mine.reduce((s, b) => s + b.y, 0) / mine.length,
+      ];
+    });
+  }
+  const wards = [];
+  for (let ci = 0; ci < k; ci++) {
+    const mine = blds.filter((_, i) => assign[i] === ci);
+    // names draw in centroid order for determinism, even when a ward is skipped
+    const name = nameFor(rng, 'ward');
+    if (mine.length < 5) continue;
+    const hull = convexHull(mine.map((b) => [b.x, b.y]));
+    if (hull.length < 3) continue;
+    const cx = centroids[ci][0], cy = centroids[ci][1];
+    const poly = hull.map(([x, y]) => [cx + (x - cx) * 1.2, cy + (y - cy) * 1.2]);
+    wards.push({ poly, cx, cy, name });
+  }
+  return wards;
+}
+
+const WARD_TINTS = ['224,114,74', '74,134,224', '90,158,111', '155,89,208', '212,167,44', '201,93,143'];
 
 function pickAutoLayout(seed) {
   const r = makeRng(seed + ':layout')();
@@ -1021,6 +1091,31 @@ export function renderTownBase(map, model, scale = 1) {
   if (m.plazaLabel) {
     ctx.fillStyle = th.label;
     ctx.fillText(m.plazaLabel, m.plaza.x, m.plaza.y + 4);
+  }
+
+  // wards — opt-in (absent = off), a pure overlay derived from the model
+  if (map.params?.wards) {
+    const wards = computeWards(m, map.seed);
+    wards.forEach((w, i) => {
+      const tint = WARD_TINTS[i % WARD_TINTS.length];
+      ctx.beginPath();
+      ctx.moveTo(w.poly[0][0], w.poly[0][1]);
+      for (let j = 1; j < w.poly.length; j++) ctx.lineTo(w.poly[j][0], w.poly[j][1]);
+      ctx.closePath();
+      ctx.fillStyle = `rgba(${tint}, 0.07)`;
+      ctx.fill();
+      ctx.strokeStyle = `rgba(${tint}, 0.55)`;
+      ctx.setLineDash([6, 4]);
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.font = 'italic bold 13px Georgia, serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = th.label;
+      ctx.globalAlpha = 0.85;
+      ctx.fillText(w.name.toUpperCase(), w.cx, w.cy - 2);
+      ctx.globalAlpha = 1;
+    });
   }
 
   // border
