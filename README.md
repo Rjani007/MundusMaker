@@ -17,6 +17,21 @@ double-click `Start-MundusMaker.bat`. Your browser opens by itself. Keep the
 black window open while you play, close it when you're done. That build has
 everything inside it, nothing to install.
 
+Want it to feel installed? Three optional upgrades, pick any:
+
+- **Install as an app.** In Edge or Chrome, click the install icon at the
+  right end of the address bar — MundusMaker gets its own window and a Start
+  Menu entry, no browser chrome.
+- **`Install-MundusMaker.bat`** copies the app to your programs folder and
+  makes Start Menu and desktop shortcuts with the proper icon. Its
+  uninstaller never touches your worlds.
+- **`MundusMaker-Tray.ps1`** runs the server hidden behind a tray icon
+  (right-click for Open / Data folder / Exit) instead of a console window.
+
+Upgrading from an old Loreweave? Unzip the new build anywhere and open the
+Import page — it finds your old install and copies your worlds in, leaving
+the original untouched.
+
 Running from source instead needs Node.js (free, from [nodejs.org](https://nodejs.org),
 the LTS button). Then:
 
@@ -77,16 +92,41 @@ Things that get used constantly at the table:
 - **Session logs.** Write a recap after each game and link the people and
   places involved. Backlinks are automatic, so every NPC quietly accumulates
   a list of the sessions they appeared in.
+- **Character sheets & creators.** Guided, rules-checked character creation
+  for **D&D 5.5e (2024 rules)** — every class, species, background, feat and
+  spell from the freely licensed SRD 5.2 is built in — plus **Vampire: The
+  Masquerade 5e** and **Call of Cthulhu 7e**, whose wizards enforce the real
+  creation math (attribute spreads, occupation points, derived stats) while
+  power descriptions stay yours to paste in from your own books. The result
+  is a living sheet on a normal entry: click dots to change ratings, click a
+  skill to roll it — V5 pools with hunger dice and messy criticals, CoC
+  percentile rolls with success bands (Shift adds a bonus die), D&D checks
+  with advantage on Shift. Sheets can be secret, and they print in the book.
+- **The Library.** Browse the bundled SRD monsters, spells and equipment —
+  or import your own 5e.tools files once and use them in every world — and
+  add anything to the current world with one click.
 
-Maps are generated from a seed and then edited by hand. World maps let you
-paint terrain up and down. Towns come in several shapes (harbor towns, river
-towns, planned cities, crossroads villages, or classic walled market towns)
-and sizes from hamlet to metropolis, with farmland and orchards along the
-roads out of town. They also come in five terrains — parchment, grassland,
-desert, snowbound, marshland — and three street styles, from dirt lanes to
-cobblestones to grand flagstone avenues. Switching terrain just re-inks the
-map: the town itself doesn't move. Dungeons come as built rooms-and-corridors
-or natural caves, on a grid where you paint floors, walls and doors.
+Maps are generated from a seed and then edited by hand, at five scales:
+
+- **World maps** now come in an Atlas style: shaped continents, climate that
+  follows latitude and rain shadow, coastline ink, rivers that pool into
+  lakes, mountain ridges, and — if you want them — nations with borders,
+  capitals and auto-named settlements. (Maps made in older versions keep
+  their exact original look; the styles never touch each other.) Paint
+  terrain up and down with the brush either way.
+- **Region maps** are the classic campaign-province view: one barony's worth
+  of terrain with named settlements joined by roads, landmarks like ruins
+  and shrines, and an optional travel hex grid.
+- **Towns** come in five shapes (harbor, riverside, planned grid, crossroads,
+  market town) and sizes from hamlet to metropolis, five terrains, three
+  street styles — and now optional named wards that tint the quarters.
+- **Building interiors** are battle-scale floor plans: taverns, inns, keeps,
+  temples, shops and houses, generated furnished (tables, beds, altars,
+  barrels) on a square grid where you paint floors, walls, doors and windows.
+- **Dungeons** come as rooms-and-corridors, natural caves, crypts, mines or
+  sewers — and can now go up to five levels deep, with stairs carved between
+  floors and a level switcher in the editor. Each level prints separately in
+  the PDF.
 
 On top of the generated map you place and draw your own things. The Place
 tool stamps houses, castles, cities, temples, forests, mountains, ruins and
@@ -117,8 +157,14 @@ MundusMaker keeps your dates exactly as you wrote them and quietly mentions the
 ones that now hang past the end — it will not silently rewrite your history.
 
 There's also a graph view of how everything connects, portraits on any entry,
-search over everything including your quick-facts fields (Ctrl+K), and an
-import page that reads Obsidian/Markdown folders and 5e.tools bestiary files.
+and search over everything including your quick-facts fields (Ctrl+K).
+
+The Import page is the escape hatch from wherever your campaign lives now:
+Obsidian/Markdown folders (images and portraits come along), CSV tables with
+column mapping, World Anvil article exports, Foundry VTT journals and actors
+(D&D 5e actors arrive with full statblocks), 5e.tools files, backups — and a
+scanner that finds old Loreweave/MundusMaker installs on your disk and copies
+their worlds in without touching the originals.
 
 ## The PDF export
 
@@ -139,16 +185,18 @@ data/
       exports/            PDFs and PNGs you've generated
       .history/           last 10 versions of each entry (⏳ History button)
   .snapshots/             automatic daily backups, last 7 per world
+  .library/               imported compendium packs, shared by all worlds
   .trash/                 deleted worlds and entries end up here, not gone
 ```
 
-Copy the folder, put it in git, whatever you like. The dashboard also has
-one-click backup and restore for a single world.
+Copy the folder, put it in git, whatever you like. Settings (the ⚙ in the
+top bar) has one-click backup for a single world — with an option to embed
+its images — and restore lives on the Import page behind a typed confirm.
 
 To sync between computers, point the data folder at something that already
-syncs (Dropbox, Google Drive, Syncthing...) using the Sync card on the
-dashboard, and do the same on the other machine. Edit on one device at a
-time; the last save wins.
+syncs (Dropbox, Google Drive, Syncthing...) using the card in Settings, and
+do the same on the other machine. Edit on one device at a time; the last
+save wins.
 
 If you want a new entry type, add it to that world's `world.json`:
 
@@ -177,8 +225,10 @@ vendored library is jsPDF for the exports. Clone it, run `node server.js`,
 edit, refresh.
 
 Useful scripts: `npm run package` builds the one-click zip (downloads a Node
-runtime and bundles it), `npm run bestiary` regenerates the SRD bestiary,
-`npm run vendor` refreshes jsPDF.
+runtime and bundles it; `-- --node vX.Y.Z` pins the runtime, `package:all`
+builds every platform), `npm run bestiary` regenerates the SRD 5.1 bestiary,
+`npm run srd52` regenerates the SRD 5.2 character-creation pack, `npm run
+icons` regenerates the icon set, `npm run vendor` refreshes jsPDF.
 
 The server binds to 127.0.0.1 only, so nothing is ever reachable from the
 network.
@@ -187,8 +237,19 @@ network.
 
 MIT. Use it, fork it, run your table with it.
 
-The bundled monsters come from the System Reference Document 5.1 by Wizards
-of the Coast LLC, used under the
+The bundled monsters come from the System Reference Document 5.1, and the
+D&D 5.5e character options from the System Reference Document 5.2 — both by
+Wizards of the Coast LLC, used under the
 [Creative Commons Attribution 4.0 license](https://creativecommons.org/licenses/by/4.0/legalcode).
-The bestiary script deliberately keeps only SRD content, because the rest of
+The build scripts deliberately keep only SRD content, because the rest of
 the source material isn't redistributable.
+
+The Vampire: The Masquerade creator is unofficial fan material under the
+World of Darkness [Dark Pack](https://www.worldofdarkness.com/dark-pack)
+agreement — portions of the materials are the copyrights and trademarks of
+Paradox Interactive AB, and are used with permission; all rights reserved.
+The Call of Cthulhu creator is unofficial fan material under
+[Chaosium's Fan Material Policy](https://www.chaosium.com/fan-material-policy/);
+Call of Cthulhu is a trademark of Chaosium Inc. Neither creator bundles any
+rules text — sheet structure, name lists and creation math only, with power
+descriptions left for you to fill in from your own books.
