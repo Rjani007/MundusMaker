@@ -13,7 +13,7 @@ import { slotsOf, formatDate, formatYear, isHistoric, isRecurring } from '../cal
 import { newMap, MAP_KINDS, renderThumbnail } from '../maps/mapcore.js';
 import { defaultStat, statblockHtml, ABILITIES } from '../statblock.js';
 import { defaultEncounter, computeEncounter, DIFFICULTY_COLORS } from '../encounter.js';
-import { monsterToStat, loadBundledBestiary } from '../importers.js';
+import { monsterToStat, loadAllMonsters } from '../importers.js';
 import { SHEET_SYSTEMS, handleSheetClick } from '../sheets/sheetcore.js';
 import { api } from '../api.js';
 
@@ -858,24 +858,25 @@ export function render(container, id) {
     // start from a bundled SRD monster (e.g. base a guard captain on "Veteran")
     const bestiaryWrap = el('div', { style: 'margin-bottom:8px' });
     bestiaryWrap.append(el('button', {
-      class: 'ghost small', title: 'Copy stats from one of the 322 bundled SRD monsters — your custom name is kept',
+      class: 'ghost small', title: 'Copy stats from the bundled SRD monsters or any imported library pack — your custom name is kept',
       onclick: async (ev) => {
         ev.preventDefault();
-        let data;
-        try { data = await loadBundledBestiary(); } catch { toast('Bundled bestiary not available'); return; }
+        let monsters;
+        try { monsters = await loadAllMonsters(); } catch { toast('Bestiary not available'); return; }
+        if (!monsters.length) { toast('Bestiary not available'); return; }
         bestiaryWrap.innerHTML = '';
         const results = el('div', { class: 'wl-autocomplete', style: 'max-width:100%' });
         const search = el('input', {
-          placeholder: 'Search 322 SRD monsters…', style: 'width:100%',
+          placeholder: `Search ${monsters.length} monsters…`, style: 'width:100%',
           oninput: () => {
             const q = search.value.trim().toLowerCase();
             results.innerHTML = '';
             if (!q) return;
-            for (const mon of data.monster.filter((m) => m.name.toLowerCase().includes(q)).slice(0, 9)) {
+            for (const mon of monsters.filter((m) => m.name.toLowerCase().includes(q)).slice(0, 9)) {
               const cr = typeof mon.cr === 'object' ? mon.cr?.cr : mon.cr;
               const item = el('div', { class: 'ac-item' },
                 el('span', {}, mon.name),
-                el('span', { class: 'muted small', style: 'margin-left:auto' }, `CR ${cr ?? '?'}`));
+                el('span', { class: 'muted small', style: 'margin-left:auto' }, `CR ${cr ?? '?'}${mon._pack && mon._pack !== 'SRD' ? ` · ${mon._pack}` : ''}`));
               item.addEventListener('pointerdown', (pev) => {
                 pev.preventDefault();
                 const keepName = s.name?.trim();

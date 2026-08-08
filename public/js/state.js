@@ -56,6 +56,8 @@ export async function loadAll() {
   const builtins = {
     npc: { label: 'NPC', plural: 'NPCs', color: '#d9913f', fields: ['Role', 'Species', 'Disposition', 'Found at'] },
     session: { label: 'Session', plural: 'Sessions', color: '#4ab8a8', fields: ['Played on', 'Players'] },
+    // 0.14: spells imported from the compendium library file here
+    spell: { label: 'Spell', plural: 'Spells', color: '#9b59d0', fields: ['Level', 'School', 'Casting time', 'Range', 'Duration', 'Classes'] },
   };
   let addedTypes = false;
   for (const [key, def] of Object.entries(builtins)) {

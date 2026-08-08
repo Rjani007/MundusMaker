@@ -19,6 +19,7 @@ import * as importView from './views/import.js';
 import * as helpView from './views/help.js';
 import * as settingsView from './views/settings.js';
 import * as createView from './views/create.js';
+import * as libraryView from './views/library.js';
 import { SHEET_SYSTEMS } from './sheets/sheetcore.js';
 import { maybeShowOnboarding } from './views/onboarding.js';
 import { wireLinkPreviews } from './preview.js';
@@ -57,6 +58,7 @@ function route() {
     else if (parts[0] === 'help') { nav = 'help'; ret = helpView.render(viewEl); }
     else if (parts[0] === 'settings') { nav = ''; ret = settingsView.render(viewEl); }
     else if (parts[0] === 'create') { nav = ''; ret = createView.render(viewEl, parts[1]); }
+    else if (parts[0] === 'library') { nav = 'library'; ret = libraryView.render(viewEl); }
     else ret = dashboard.render(viewEl);
   } catch (err) {
     console.error(err);

@@ -51,6 +51,12 @@ export const api = {
   backup: (withAssets) => req('GET', w('/backup') + (withAssets ? '?assets=1' : '')),
   restore: (payload) => req('POST', w('/restore'), payload),
 
+  // compendium library (cross-world packs)
+  library: () => req('GET', '/api/library'),
+  libraryPack: (id) => req('GET', `/api/library/${encodeURIComponent(id)}`),
+  importLibraryPack: (name, data) => req('POST', '/api/library', { name, data }),
+  deleteLibraryPack: (id) => req('DELETE', `/api/library/${encodeURIComponent(id)}`),
+
   // migration from older installs (Loreweave/TomeWeaver era)
   scanInstalls: () => req('GET', '/api/scan-installs'),
   scanPath: (p) => req('POST', '/api/scan-path', { path: p }),

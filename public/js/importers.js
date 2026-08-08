@@ -1,8 +1,10 @@
-// Importers: Obsidian/Markdown folders and 5e.tools bestiary JSON.
-// Both run fully in the browser — files never leave the machine.
+// Importers: Obsidian/Markdown folders, CSV, 5e.tools JSON (bestiaries,
+// spells, items), World Anvil article exports and Foundry VTT journals/actors.
+// Everything runs fully in the browser — files never leave the machine.
 
 import { uid } from './util.js';
 import { xpForCr } from './encounter.js';
+import { api } from './api.js';
 
 // ---------- Markdown / Obsidian ----------
 
@@ -212,4 +214,292 @@ export function monsterToStat(mon) {
       ...section(mon.legendary, 'Legendary: '),
     ],
   };
+}
+
+// ---------- compendium library (0.14) ----------
+
+let libraryMonstersCache = null;
+/** Bundled SRD bestiary + every imported pack's monsters, tagged with a source. Cached. */
+export async function loadAllMonsters() {
+  if (libraryMonstersCache) return libraryMonstersCache;
+  const out = [];
+  try {
+    const bundled = await loadBundledBestiary();
+    out.push(...bundled.monster.map((m) => ({ ...m, _pack: 'SRD' })));
+  } catch { /* bundled file missing — packs may still exist */ }
+  try {
+    for (const meta of await api.library()) {
+      if (!meta.kinds?.includes('monster')) continue;
+      const pack = await api.libraryPack(meta.id);
+      out.push(...(pack.monster || []).map((m) => ({ ...m, _pack: meta.name })));
+    }
+  } catch { /* server without library routes */ }
+  libraryMonstersCache = out;
+  return out;
+}
+export function invalidateLibraryCache() { libraryMonstersCache = null; }
+
+const SCHOOL_NAMES = { A: 'Abjuration', C: 'Conjuration', D: 'Divination', E: 'Enchantment', V: 'Evocation', I: 'Illusion', N: 'Necromancy', T: 'Transmutation' };
+
+/** Normalize a spell — raw 5etools shape OR the bundled srd52 shape — to one display form. */
+export function normalizeSpell(s) {
+  if (s.castingTime !== undefined || typeof s.school === 'string' && s.school.length > 2) {
+    // bundled srd52/spells.json shape — already formatted
+    return { ...s, source: s.source || 'SRD 5.2' };
+  }
+  const t = s.time?.[0];
+  const r = s.range;
+  const dur = s.duration?.[0];
+  const rangeStr = !r ? '' : r.type === 'point'
+    ? (r.distance?.type === 'self' ? 'Self' : r.distance?.type === 'touch' ? 'Touch'
+      : `${r.distance?.amount ?? ''} ${r.distance?.type ?? ''}`.trim())
+    : `Self (${r.distance?.amount ?? ''}-${r.distance?.type ?? ''} ${r.type})`;
+  const durStr = !dur ? '' : dur.type === 'instant' ? 'Instantaneous'
+    : dur.type === 'special' ? 'Special'
+    : dur.type === 'permanent' ? 'Until dispelled'
+    : `${dur.concentration ? 'Concentration, up to ' : ''}${dur.duration?.amount ?? ''} ${dur.duration?.type ?? ''}${(dur.duration?.amount ?? 1) === 1 ? '' : 's'}`;
+  return {
+    name: s.name,
+    level: s.level ?? 0,
+    school: SCHOOL_NAMES[s.school] || s.school || '',
+    castingTime: t ? `${t.number} ${t.unit}` : '',
+    ritual: !!s.meta?.ritual,
+    range: rangeStr,
+    components: [s.components?.v && 'V', s.components?.s && 'S',
+      s.components?.m && `M (${typeof s.components.m === 'string' ? clean5eTags(s.components.m) : clean5eTags(s.components.m?.text || '')})`].filter(Boolean).join(', '),
+    duration: durStr,
+    concentration: !!dur?.concentration,
+    classes: (s.classes?.fromClassList || []).map((c) => c.name),
+    text: joinEntriesBlocks(s.entries),
+    higherLevel: s.entriesHigherLevel ? joinEntriesBlocks(s.entriesHigherLevel) : '',
+    source: s.source || '',
+  };
+}
+
+/** Like joinEntries but keeps paragraph breaks — for spell/item body text. */
+function joinEntriesBlocks(entries) {
+  const out = [];
+  for (const e of entries || []) {
+    if (typeof e === 'string') out.push(clean5eTags(e));
+    else if (e?.items) out.push(e.items.map((i) => '• ' + (typeof i === 'string' ? clean5eTags(i) : clean5eTags(i?.name || ''))).join('\n'));
+    else if (e?.entries) out.push((e.name ? `**${clean5eTags(e.name)}.** ` : '') + joinEntriesBlocks(e.entries));
+  }
+  return out.join('\n\n');
+}
+
+const spellLevelStr = (lvl) => lvl === 0 ? 'Cantrip' : `Level ${lvl}`;
+
+/** Build a MundusMaker entity from a normalized spell. */
+export function spellToEntity(sp, newEntity) {
+  const e = newEntity(sp.name, 'spell');
+  e.fields = {
+    'Level': spellLevelStr(sp.level) + (sp.ritual ? ' (ritual)' : ''),
+    'School': sp.school,
+    'Casting time': sp.castingTime,
+    'Range': sp.range,
+    'Duration': sp.duration,
+    'Classes': (sp.classes || []).join(', '),
+  };
+  for (const k of Object.keys(e.fields)) if (!e.fields[k]) delete e.fields[k];
+  e.tags = ['spell', sp.level === 0 ? 'cantrip' : `level-${sp.level}`, sp.school.toLowerCase()].filter(Boolean);
+  e.blocks = [
+    sp.components ? { id: uid(), kind: 'text', text: `*Components:* ${sp.components}`, secret: false } : null,
+    { id: uid(), kind: 'text', text: sp.text || '', secret: false },
+    sp.higherLevel ? { id: uid(), kind: 'text', text: `**At higher levels.** ${sp.higherLevel}`, secret: false } : null,
+  ].filter(Boolean);
+  return e;
+}
+
+/** Normalize an item — raw 5etools shape OR the bundled srd52 equipment shape. */
+export function normalizeItem(it) {
+  if (it.category !== undefined) {
+    // bundled srd52/equipment.json shape
+    return {
+      name: it.name, kind: it.category, rarity: '', attune: '',
+      cost: it.cost || '', weight: it.weight || 0,
+      damage: it.damage || '', ac: it.ac, text: '', source: 'SRD 5.2',
+      properties: it.properties || [],
+    };
+  }
+  const costStr = !it.value ? '' : it.value >= 100 ? `${it.value / 100} gp` : it.value >= 10 ? `${it.value / 10} sp` : `${it.value} cp`;
+  const TYPE_NAMES = {
+    M: 'melee weapon', R: 'ranged weapon', A: 'ammunition', LA: 'light armor',
+    MA: 'medium armor', HA: 'heavy armor', S: 'shield', G: 'adventuring gear',
+    P: 'potion', SC: 'scroll', RD: 'rod', RG: 'ring', WD: 'wand', ST: 'staff', T: 'tools',
+  };
+  const rawType = String(it.type || '').split('|')[0];
+  return {
+    name: it.name,
+    kind: it.wondrous ? 'wondrous item' : TYPE_NAMES[rawType] || rawType || 'item',
+    rarity: it.rarity && it.rarity !== 'none' ? it.rarity : '',
+    attune: it.reqAttune === true ? 'requires attunement' : typeof it.reqAttune === 'string' ? `requires attunement ${clean5eTags(it.reqAttune)}` : '',
+    cost: costStr,
+    weight: it.weight || 0,
+    damage: it.dmg1 ? `${it.dmg1} ${({ B: 'bludgeoning', P: 'piercing', S: 'slashing' })[it.dmgType] || ''}`.trim() : '',
+    ac: it.ac,
+    text: joinEntriesBlocks(it.entries),
+    source: it.source || '',
+    properties: [],
+  };
+}
+
+/** Build a MundusMaker entity from a normalized item. */
+export function itemToEntity(it, newEntity) {
+  const e = newEntity(it.name, 'item');
+  e.fields = { 'Kind': it.kind, 'Rarity': it.rarity };
+  if (it.attune) e.fields['Attunement'] = it.attune;
+  if (it.cost) e.fields['Cost'] = it.cost;
+  if (it.weight) e.fields['Weight'] = `${it.weight} lb.`;
+  if (it.damage) e.fields['Damage'] = it.damage;
+  if (it.ac) e.fields['AC'] = String(it.ac);
+  for (const k of Object.keys(e.fields)) if (!e.fields[k]) delete e.fields[k];
+  e.tags = ['item', it.rarity || null].filter(Boolean).map((t) => t.toLowerCase());
+  e.blocks = [{ id: uid(), kind: 'text', text: it.text || '', secret: false }];
+  return e;
+}
+
+// ---------- HTML → blocks (World Anvil, Foundry journals) ----------
+
+/** Convert exported HTML into MundusMaker blocks. Headings become heading
+ *  blocks, blockquotes quotes, lists dashed lines; everything else is text. */
+export function htmlToBlocks(html) {
+  const doc = new DOMParser().parseFromString(String(html || ''), 'text/html');
+  doc.querySelectorAll('script, style').forEach((n) => n.remove());
+  const blocks = [];
+  let buf = [];
+  const flush = () => {
+    const t = buf.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    if (t) blocks.push({ id: uid(), kind: 'text', text: t, secret: false });
+    buf = [];
+  };
+  const walk = (node) => {
+    for (const child of node.childNodes) {
+      if (child.nodeType === Node.TEXT_NODE) {
+        const t = child.textContent.trim();
+        if (t) buf.push(t);
+        continue;
+      }
+      if (child.nodeType !== Node.ELEMENT_NODE) continue;
+      const tag = child.tagName.toLowerCase();
+      if (/^h[1-6]$/.test(tag)) {
+        flush();
+        const t = child.textContent.trim();
+        if (t) blocks.push({ id: uid(), kind: 'heading', text: t, secret: false });
+      } else if (tag === 'blockquote') {
+        flush();
+        const t = child.textContent.trim();
+        if (t) blocks.push({ id: uid(), kind: 'quote', text: t, secret: false });
+      } else if (tag === 'li') {
+        buf.push('- ' + child.textContent.trim());
+      } else if (tag === 'p' || tag === 'div' || tag === 'section' || tag === 'article') {
+        walk(child);
+        buf.push('');
+      } else if (tag === 'br') {
+        buf.push('');
+      } else if (tag === 'table') {
+        buf.push('(table omitted)');
+      } else {
+        walk(child);
+      }
+    }
+  };
+  walk(doc.body);
+  flush();
+  if (!blocks.length) blocks.push({ id: uid(), kind: 'text', text: '', secret: false });
+  return blocks;
+}
+
+// ---------- World Anvil ----------
+
+const WA_TYPE_MAP = {
+  person: 'npc', character: 'npc', location: 'location', settlement: 'location',
+  geography: 'location', landmark: 'location', building: 'location',
+  organization: 'faction', ethnicity: 'faction', item: 'item', vehicle: 'item',
+  species: 'creature', condition: 'note', article: 'note', spell: 'spell',
+  myth: 'note', ritual: 'note', document: 'note', law: 'note',
+};
+
+/** Parse a World Anvil export (a JSON array of articles, or {articles: []},
+ *  or a single article object). Returns [{name, type, html, tags}]. */
+export function parseWorldAnvil(data) {
+  const arts = Array.isArray(data) ? data : Array.isArray(data?.articles) ? data.articles
+    : data?.title || data?.name ? [data] : Object.values(data || {}).filter((x) => x?.title || x?.name);
+  return arts.map((a) => {
+    const template = String(a.template || a.entityClass || a.templateType || '').toLowerCase().replace(/article$/, '');
+    return {
+      name: String(a.title || a.name || '').trim(),
+      type: WA_TYPE_MAP[template] || 'note',
+      html: a.content_parsed || a.contentParsed || a.content || a.fullcontent || '',
+      tags: typeof a.tags === 'string' ? a.tags.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean)
+        : Array.isArray(a.tags) ? a.tags.map((t) => String(t).toLowerCase()) : [],
+    };
+  }).filter((a) => a.name);
+}
+
+// ---------- Foundry VTT ----------
+
+/** Parse Foundry export text: one JSON document, an array, or NeDB .db (JSON lines). */
+export function parseFoundryText(text) {
+  const t = String(text).trim();
+  try {
+    const parsed = JSON.parse(t);
+    return Array.isArray(parsed) ? parsed : [parsed];
+  } catch { /* fall through to JSON-lines */ }
+  const docs = [];
+  for (const line of t.split('\n')) {
+    const l = line.trim();
+    if (!l) continue;
+    try { docs.push(JSON.parse(l)); } catch { /* skip corrupt line */ }
+  }
+  return docs;
+}
+
+/** One Foundry journal (v10+ pages or classic content) → blocks. */
+export function foundryJournalToBlocks(doc) {
+  const blocks = [];
+  if (Array.isArray(doc.pages)) {
+    for (const page of doc.pages) {
+      if (page.name && doc.pages.length > 1) blocks.push({ id: uid(), kind: 'heading', text: page.name, secret: false });
+      const html = page.text?.content || page.text?.markdown || '';
+      if (html) blocks.push(...htmlToBlocks(html));
+    }
+  } else if (doc.content) {
+    blocks.push(...htmlToBlocks(doc.content));
+  }
+  return blocks.length ? blocks : [{ id: uid(), kind: 'text', text: '', secret: false }];
+}
+
+/** A dnd5e-system Foundry actor → statblock (best effort; other systems → null). */
+export function foundryActorToStat(doc) {
+  const sys = doc.system || doc.data;
+  const ab = sys?.abilities;
+  if (!ab?.str) return null;
+  const attr = sys.attributes || {};
+  const details = sys.details || {};
+  const vitals = [];
+  if (details.cr != null) vitals.push({ k: 'Challenge', v: `${details.cr} (${xpForCr(String(details.cr)).toLocaleString()} XP)` });
+  const traits = (doc.items || [])
+    .filter((it) => ['feat'].includes(it.type))
+    .map((it) => ({ name: it.name, text: htmlToPlainText(it.system?.description?.value || '') }))
+    .filter((t) => t.name);
+  const actions = (doc.items || [])
+    .filter((it) => ['weapon'].includes(it.type))
+    .map((it) => ({ name: it.name, text: htmlToPlainText(it.system?.description?.value || '') }));
+  return {
+    name: doc.name,
+    meta: [details.type?.value || details.type, details.alignment].filter(Boolean).join(', '),
+    ac: String(attr.ac?.flat ?? attr.ac?.value ?? ''),
+    hp: String(attr.hp?.max ?? attr.hp?.value ?? ''),
+    speed: attr.movement ? Object.entries(attr.movement)
+      .filter(([k, v]) => typeof v === 'number' && v > 0 && k !== 'units')
+      .map(([k, v]) => `${k === 'walk' ? '' : k + ' '}${v} ft.`).join(', ') : '',
+    str: ab.str?.value ?? 10, dex: ab.dex?.value ?? 10, con: ab.con?.value ?? 10,
+    int: ab.int?.value ?? 10, wis: ab.wis?.value ?? 10, cha: ab.cha?.value ?? 10,
+    vitals, traits, actions,
+  };
+}
+
+function htmlToPlainText(html) {
+  const doc = new DOMParser().parseFromString(String(html || ''), 'text/html');
+  return doc.body.textContent.replace(/\s+/g, ' ').trim();
 }

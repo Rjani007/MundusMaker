@@ -7,7 +7,10 @@
 
 import { el, uid, toast } from '../util.js';
 import { state, types, newEntity, saveEntity, findByName, refreshWorlds } from '../state.js';
-import { parseFrontmatter, mdToBlocks, parseCsv, monsterToStat, loadBundledBestiary } from '../importers.js';
+import {
+  parseFrontmatter, mdToBlocks, parseCsv, monsterToStat, loadBundledBestiary,
+  parseWorldAnvil, htmlToBlocks, parseFoundryText, foundryJournalToBlocks, foundryActorToStat,
+} from '../importers.js';
 import { crFromStat } from '../encounter.js';
 import { api } from '../api.js';
 
@@ -175,8 +178,110 @@ function csvImporter() {
   };
 }
 
-// Registry — Phase E adds World Anvil / Foundry entries here.
-const IMPORTERS = [markdownImporter, csvImporter];
+// ---------- World Anvil ----------
+
+function worldAnvilImporter() {
+  let staged = [];
+  return {
+    id: 'worldanvil',
+    title: 'World Anvil export',
+    desc: () => el('p', { class: 'muted small' },
+      'Escaping a subscription? Pick your exported article JSON (one file or several). ',
+      'Articles become entries: people → NPCs, settlements → locations, organizations → factions, and so on. ',
+      'Formatting is converted best-effort; images stay behind (World Anvil hosts them).'),
+    pick: { kind: 'file', accept: '.json', multiple: true },
+    typeDefault: 'note',
+    async stage(files) {
+      staged = [];
+      for (const f of files) {
+        try { staged.push(...parseWorldAnvil(JSON.parse(await f.text()))); }
+        catch { /* count the file as unreadable below */ }
+      }
+      if (!staged.length) return { summary: 'No articles found — export articles as JSON from World Anvil and pick those files.', ready: false };
+      const byType = {};
+      for (const a of staged) byType[a.type] = (byType[a.type] || 0) + 1;
+      return {
+        summary: `${staged.length} article${staged.length === 1 ? '' : 's'}: ` +
+          Object.entries(byType).map(([t, n]) => `${n} ${t}`).join(', ') + '.',
+        ready: true,
+      };
+    },
+    async commit({ typeKey }) {
+      let imported = 0, skipped = 0;
+      for (const a of staged) {
+        if (!a.name || findByName(a.name)) { skipped++; continue; }
+        const e = newEntity(a.name, types()[a.type] ? a.type : typeKey);
+        e.blocks = htmlToBlocks(a.html);
+        e.tags = a.tags.slice(0, 6);
+        await saveEntity(e);
+        imported++;
+      }
+      staged = [];
+      return { done: `Done: imported ${imported}, skipped ${skipped} (already existed or unnamed).` };
+    },
+  };
+}
+
+// ---------- Foundry VTT ----------
+
+function foundryImporter() {
+  let journals = [], actors = [], other = 0;
+  return {
+    id: 'foundry',
+    title: 'Foundry VTT journals & actors',
+    desc: () => el('p', { class: 'muted small' },
+      'Pick exported journal or actor JSON (right-click → Export Data in Foundry), or a compendium .db file. ',
+      'Journals become entries with their pages as sections; D&D 5e actors bring a full statblock, other systems come as notes.'),
+    pick: { kind: 'file', accept: '.json,.db', multiple: true },
+    typeDefault: 'note',
+    async stage(files) {
+      journals = []; actors = []; other = 0;
+      for (const f of files) {
+        for (const doc of parseFoundryText(await f.text())) {
+          if (!doc?.name) { other++; continue; }
+          if (Array.isArray(doc.pages) || typeof doc.content === 'string') journals.push(doc);
+          else if (doc.system?.abilities || doc.data?.abilities || doc.type === 'npc' || doc.type === 'character') actors.push(doc);
+          else other++;
+        }
+      }
+      if (!journals.length && !actors.length) {
+        return { summary: 'Nothing usable found — export journals or actors from Foundry as JSON.', ready: false };
+      }
+      return {
+        summary: `${journals.length} journal${journals.length === 1 ? '' : 's'}, ${actors.length} actor${actors.length === 1 ? '' : 's'}${other ? `, ${other} other document${other === 1 ? '' : 's'} skipped` : ''}.`,
+        ready: true,
+      };
+    },
+    async commit({ typeKey }) {
+      let imported = 0, skipped = 0;
+      for (const doc of journals) {
+        if (findByName(doc.name)) { skipped++; continue; }
+        const e = newEntity(doc.name, typeKey);
+        e.blocks = foundryJournalToBlocks(doc);
+        await saveEntity(e);
+        imported++;
+      }
+      for (const doc of actors) {
+        if (findByName(doc.name)) { skipped++; continue; }
+        const stat = foundryActorToStat(doc);
+        const e = newEntity(doc.name, types().npc ? 'npc' : typeKey);
+        if (stat) {
+          e.blocks = [{ id: uid(), kind: 'statblock', text: '', secret: false, stat }];
+        } else {
+          const bio = doc.system?.details?.biography?.value || '';
+          e.blocks = bio ? htmlToBlocks(bio) : [{ id: uid(), kind: 'text', text: '', secret: false }];
+        }
+        await saveEntity(e);
+        imported++;
+      }
+      journals = []; actors = [];
+      return { done: `Done: imported ${imported}, skipped ${skipped} (already existed). Non-D&D actors arrive without statblocks.` };
+    },
+  };
+}
+
+// Registry — stage() parses and previews, commit() writes entities.
+const IMPORTERS = [markdownImporter, csvImporter, worldAnvilImporter, foundryImporter];
 
 // ---------- generic card over a registry entry ----------
 
@@ -188,7 +293,9 @@ function importerCard(spec) {
       el('option', { value: key, selected: key === spec.typeDefault }, t.label)));
   const input = el('input', {
     type: 'file', style: 'display:none',
-    ...(spec.pick.kind === 'folder' ? { webkitdirectory: true, multiple: true } : { accept: spec.pick.accept || '' }),
+    ...(spec.pick.kind === 'folder'
+      ? { webkitdirectory: true, multiple: true }
+      : { accept: spec.pick.accept || '', ...(spec.pick.multiple ? { multiple: true } : {}) }),
   });
   let ready = false;
 

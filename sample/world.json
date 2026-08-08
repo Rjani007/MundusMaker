@@ -14,6 +14,7 @@
     "item": { "label": "Item", "plural": "Items", "color": "#d4a72c", "fields": ["Kind", "Owner", "Rarity"] },
     "event": { "label": "Event", "plural": "Events", "color": "#c95d8f", "fields": ["Outcome"] },
     "creature": { "label": "Creature", "plural": "Creatures", "color": "#5aa7c9", "fields": ["Habitat", "Threat"] },
+    "spell": { "label": "Spell", "plural": "Spells", "color": "#9b59d0", "fields": ["Level", "School", "Casting time", "Range", "Duration", "Classes"] },
     "session": { "label": "Session", "plural": "Sessions", "color": "#4ab8a8", "fields": ["Played on", "Players"] },
     "note": { "label": "Note", "plural": "Notes", "color": "#8a8f98", "fields": [] }
   }

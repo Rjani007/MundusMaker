@@ -103,6 +103,7 @@ function defaultTypes() {
     item: { label: 'Item', plural: 'Items', color: '#d4a72c', fields: ['Kind', 'Owner', 'Rarity'] },
     event: { label: 'Event', plural: 'Events', color: '#c95d8f', fields: ['Outcome'] },
     creature: { label: 'Creature', plural: 'Creatures', color: '#5aa7c9', fields: ['Habitat', 'Threat'] },
+    spell: { label: 'Spell', plural: 'Spells', color: '#9b59d0', fields: ['Level', 'School', 'Casting time', 'Range', 'Duration', 'Classes'] },
     session: { label: 'Session', plural: 'Sessions', color: '#4ab8a8', fields: ['Played on', 'Players'] },
     note: { label: 'Note', plural: 'Notes', color: '#8a8f98', fields: [] },
   };
@@ -296,6 +297,39 @@ function listEntities(dir) {
   return out;
 }
 
+// ---------- compendium library (shared across worlds) ----------
+// Imported 5etools packs live in DATA_DIR/.library/<packId>/{meta.json,pack.json}
+// — outside worlds/ so world backups and snapshots stay lean; packs are
+// re-importable from the user's own files, so they are not treasure.
+
+const LIBRARY_DIR = () => path.join(DATA_DIR, '.library');
+
+// whitelists mirror scripts/build-bestiary.js — payloads stay lean and legal
+const PACK_KEEP = {
+  monster: ['name', 'size', 'type', 'alignment', 'ac', 'hp', 'speed',
+    'str', 'dex', 'con', 'int', 'wis', 'cha',
+    'save', 'skill', 'senses', 'passive', 'languages', 'cr',
+    'vulnerable', 'resist', 'immune', 'conditionImmune',
+    'trait', 'action', 'bonus', 'reaction', 'legendary', 'spellcasting', 'source'],
+  spell: ['name', 'level', 'school', 'time', 'range', 'components', 'duration',
+    'entries', 'entriesHigherLevel', 'meta', 'classes', 'source'],
+  item: ['name', 'type', 'rarity', 'value', 'weight', 'reqAttune', 'wondrous',
+    'entries', 'dmg1', 'dmg2', 'dmgType', 'property', 'ac', 'source'],
+};
+
+function listLibrary() {
+  const dir = LIBRARY_DIR();
+  if (!fs.existsSync(dir)) return [];
+  const out = [];
+  for (const d of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (!d.isDirectory()) continue;
+    try {
+      out.push(JSON.parse(fs.readFileSync(path.join(dir, d.name, 'meta.json'), 'utf8')));
+    } catch { /* unreadable pack — skip */ }
+  }
+  return out;
+}
+
 // ---------- migration from older installs ----------
 // Strictly read-only detection. The migrate route COPIES worlds in and never
 // writes to, moves, or deletes anything at the source.
@@ -416,6 +450,57 @@ async function handleApi(req, res, pathname) {
     fs.mkdirSync(trash, { recursive: true });
     fs.renameSync(dir, path.join(trash, `${wid}-${Date.now()}`));
     return sendJson(res, 200, { ok: true, note: 'moved to data/.trash, not erased' });
+  }
+
+  // --- compendium library ---
+  if (pathname === '/api/library' && method === 'GET') {
+    return sendJson(res, 200, listLibrary());
+  }
+  if (pathname === '/api/library' && method === 'POST') {
+    const body = JSON.parse((await readBody(req, 50 * 1024 * 1024)).toString('utf8'));
+    const data = body.data || {};
+    const trimmed = {};
+    const counts = {};
+    for (const [kind, keep] of Object.entries(PACK_KEEP)) {
+      const arr = Array.isArray(data[kind]) ? data[kind] : [];
+      const rows = arr.filter((x) => x?.name && !x._copy).map((x) => {
+        const out = {};
+        for (const k of keep) if (x[k] !== undefined) out[k] = x[k];
+        return out;
+      });
+      if (rows.length) { trimmed[kind] = rows; counts[kind] = rows.length; }
+    }
+    if (!Object.keys(trimmed).length) {
+      return sendJson(res, 400, { error: 'no monsters, spells or items found in that file' });
+    }
+    let id = slugify(String(body.name || 'pack'));
+    let i = 2;
+    while (fs.existsSync(path.join(LIBRARY_DIR(), id))) id = `${slugify(String(body.name || 'pack'))}-${i++}`;
+    const meta = {
+      mundusmakerPack: 1, id, name: String(body.name || id).slice(0, 80),
+      kinds: Object.keys(trimmed), counts, imported: new Date().toISOString(),
+    };
+    const dir = path.join(LIBRARY_DIR(), id);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify(meta, null, 2));
+    fs.writeFileSync(path.join(dir, 'pack.json'), JSON.stringify({ ...meta, ...trimmed }));
+    return sendJson(res, 200, meta);
+  }
+  const libMatch = pathname.match(/^\/api\/library\/([^/]+)$/);
+  if (libMatch) {
+    const id = decodeURIComponent(libMatch[1]);
+    if (!SAFE_ID.test(id)) return sendJson(res, 400, { error: 'invalid pack id' });
+    const dir = path.join(LIBRARY_DIR(), id);
+    if (!fs.existsSync(path.join(dir, 'pack.json'))) return sendJson(res, 404, { error: 'pack not found' });
+    if (method === 'GET') {
+      return sendJson(res, 200, JSON.parse(fs.readFileSync(path.join(dir, 'pack.json'), 'utf8')));
+    }
+    if (method === 'DELETE') {
+      const trash = path.join(DATA_DIR, '.trash');
+      fs.mkdirSync(trash, { recursive: true });
+      fs.renameSync(dir, path.join(trash, `pack-${id}-${Date.now()}`));
+      return sendJson(res, 200, { ok: true, note: 'moved to data/.trash' });
+    }
   }
 
   // --- migration from older installs (Loreweave / TomeWeaver / MundusMaker) ---
