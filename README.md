@@ -17,20 +17,18 @@ double-click `Start-MundusMaker.bat`. Your browser opens by itself. Keep the
 black window open while you play, close it when you're done. That build has
 everything inside it, nothing to install.
 
-Want it to feel installed? Three optional upgrades, pick any:
-
-- **Install as an app.** In Edge or Chrome, click the install icon at the
-  right end of the address bar — MundusMaker gets its own window and a Start
-  Menu entry, no browser chrome.
-- **`Install-MundusMaker.bat`** copies the app to your programs folder and
-  makes Start Menu and desktop shortcuts with the proper icon. Its
-  uninstaller never touches your worlds.
-- **`MundusMaker-Tray.ps1`** runs the server hidden behind a tray icon
-  (right-click for Open / Data folder / Exit) instead of a console window.
+If you'd rather it didn't live in a browser tab: Edge and Chrome have an
+install icon at the right end of the address bar, and clicking it gives
+MundusMaker its own window and a Start Menu entry. There's also an
+`Install-MundusMaker.bat` that copies the app somewhere permanent and makes
+proper shortcuts (its uninstaller leaves your worlds alone), and a
+`MundusMaker-Tray.ps1` that tucks the server behind a tray icon instead of a
+console window. All of that is optional. The zip and the bat file are enough
+to play.
 
 Upgrading from an old Loreweave? Unzip the new build anywhere and open the
-Import page — it finds your old install and copies your worlds in, leaving
-the original untouched.
+Import page. It finds your old install and copies your worlds across, and it
+never touches the original, so you can always go back.
 
 Running from source instead needs Node.js (free, from [nodejs.org](https://nodejs.org),
 the LTS button). Then:
@@ -92,41 +90,48 @@ Things that get used constantly at the table:
 - **Session logs.** Write a recap after each game and link the people and
   places involved. Backlinks are automatic, so every NPC quietly accumulates
   a list of the sessions they appeared in.
-- **Character sheets & creators.** Guided, rules-checked character creation
-  for **D&D 5.5e (2024 rules)** — every class, species, background, feat and
-  spell from the freely licensed SRD 5.2 is built in — plus **Vampire: The
-  Masquerade 5e** and **Call of Cthulhu 7e**, whose wizards enforce the real
-  creation math (attribute spreads, occupation points, derived stats) while
-  power descriptions stay yours to paste in from your own books. The result
-  is a living sheet on a normal entry: click dots to change ratings, click a
-  skill to roll it — V5 pools with hunger dice and messy criticals, CoC
-  percentile rolls with success bands (Shift adds a bonus die), D&D checks
-  with advantage on Shift. Sheets can be secret, and they print in the book.
-- **The Library.** Browse the bundled SRD monsters, spells and equipment —
-  or import your own 5e.tools files once and use them in every world — and
-  add anything to the current world with one click.
+- **Character creators.** A step-by-step builder walks you through a whole
+  character for D&D 5.5e (the 2024 rules), Vampire: The Masquerade, or Call
+  of Cthulhu, and it does the math with you: a point buy that has to add up
+  to 27, occupation points that have to be spent, attribute spreads the
+  rulebook would sign off on. The D&D options ship with the app, courtesy of
+  the freely licensed SRD. For Vampire and Cthulhu the app knows the names
+  and the numbers, and the power text is yours to paste in from your own
+  books, because those words aren't free to bundle. What comes out is a
+  sheet living on an ordinary entry: dots you click to change, skills that
+  roll themselves when you click them, hunger dice doing their ugly thing.
+  Hold Shift for advantage or a bonus die. A sheet can be a GM secret like
+  anything else, and it prints in the book.
+- **The Library.** All the bundled monsters, spells and gear in one place,
+  plus any 5e.tools files you import. A pack is imported once and every
+  world can use it. Find the thing, click Add to world, done.
 
-Maps are generated from a seed and then edited by hand, at five scales:
+Maps are generated from a seed and then edited by hand, and there are five
+scales of them now.
 
-- **World maps** now come in an Atlas style: shaped continents, climate that
-  follows latitude and rain shadow, coastline ink, rivers that pool into
-  lakes, mountain ridges, and — if you want them — nations with borders,
-  capitals and auto-named settlements. (Maps made in older versions keep
-  their exact original look; the styles never touch each other.) Paint
-  terrain up and down with the brush either way.
-- **Region maps** are the classic campaign-province view: one barony's worth
-  of terrain with named settlements joined by roads, landmarks like ruins
-  and shrines, and an optional travel hex grid.
-- **Towns** come in five shapes (harbor, riverside, planned grid, crossroads,
-  market town) and sizes from hamlet to metropolis, five terrains, three
-  street styles — and now optional named wards that tint the quarters.
-- **Building interiors** are battle-scale floor plans: taverns, inns, keeps,
-  temples, shops and houses, generated furnished (tables, beds, altars,
-  barrels) on a square grid where you paint floors, walls, doors and windows.
-- **Dungeons** come as rooms-and-corridors, natural caves, crypts, mines or
-  sewers — and can now go up to five levels deep, with stairs carved between
-  floors and a level switcher in the editor. Each level prints separately in
-  the PDF.
+World maps got a proper cartographer. The new Atlas style shapes real
+continents, runs the climate off latitude and rain shadow, inks the
+coastlines, lets rivers pool into lakes where the land traps them, and will
+carve the world into nations with borders, capitals and named settlements if
+you ask it to. Anything you made in an older version keeps the painted look
+it was made with; the styles never touch each other. The terrain brush works
+in both.
+
+Region maps are the middle scale that was always missing: one province, its
+settlements joined by roads, ruins and shrines out in the hills, and a hex
+grid if your table counts travel that way.
+
+Towns still come in five shapes and sizes from hamlet to metropolis, and can
+now name their own quarters. The Copper End, the Shambles, wherever your
+players keep getting stabbed.
+
+Building maps are floor plans at fight scale. Taverns, inns, keeps, temples,
+shops, houses, furnished down to the barrels in the storeroom, on a square
+grid where you paint floors, walls, doors and windows.
+
+Dungeons can be built rooms, natural caves, crypts, mines or sewers, and can
+run five levels deep. Stairs join the floors, the editor has a level
+switcher, and the PDF prints every level on its own page.
 
 On top of the generated map you place and draw your own things. The Place
 tool stamps houses, castles, cities, temples, forests, mountains, ruins and
@@ -159,12 +164,14 @@ ones that now hang past the end — it will not silently rewrite your history.
 There's also a graph view of how everything connects, portraits on any entry,
 and search over everything including your quick-facts fields (Ctrl+K).
 
-The Import page is the escape hatch from wherever your campaign lives now:
-Obsidian/Markdown folders (images and portraits come along), CSV tables with
-column mapping, World Anvil article exports, Foundry VTT journals and actors
-(D&D 5e actors arrive with full statblocks), 5e.tools files, backups — and a
-scanner that finds old Loreweave/MundusMaker installs on your disk and copies
-their worlds in without touching the originals.
+The Import page reads whatever your campaign lives in now: a folder of
+Obsidian or Markdown notes (the images come along, and a picture named after
+a note becomes its portrait), CSV tables if your world is secretly a
+spreadsheet, World Anvil article exports, Foundry VTT journals and actors
+(D&D 5e actors arrive with their statblocks intact), 5e.tools files, and old
+backups. It can also scan your disk for a previous Loreweave install and
+copy its worlds in. The old install is never touched, so there's no jumping
+without a net.
 
 ## The PDF export
 
@@ -190,8 +197,9 @@ data/
 ```
 
 Copy the folder, put it in git, whatever you like. Settings (the ⚙ in the
-top bar) has one-click backup for a single world — with an option to embed
-its images — and restore lives on the Import page behind a typed confirm.
+top bar) backs a single world up to one JSON file, with its images if you
+tick the box. Restoring lives on the Import page and asks you to type the
+world's name first, because it replaces what's there.
 
 To sync between computers, point the data folder at something that already
 syncs (Dropbox, Google Drive, Syncthing...) using the card in Settings, and
@@ -246,10 +254,10 @@ the source material isn't redistributable.
 
 The Vampire: The Masquerade creator is unofficial fan material under the
 World of Darkness [Dark Pack](https://www.worldofdarkness.com/dark-pack)
-agreement — portions of the materials are the copyrights and trademarks of
+agreement. Portions of the materials are the copyrights and trademarks of
 Paradox Interactive AB, and are used with permission; all rights reserved.
 The Call of Cthulhu creator is unofficial fan material under
 [Chaosium's Fan Material Policy](https://www.chaosium.com/fan-material-policy/);
-Call of Cthulhu is a trademark of Chaosium Inc. Neither creator bundles any
-rules text — sheet structure, name lists and creation math only, with power
-descriptions left for you to fill in from your own books.
+Call of Cthulhu is a trademark of Chaosium Inc. Neither creator ships any
+rules text. The app knows the sheet structure, the names and the creation
+math; the words stay in your books, where they're licensed to be.

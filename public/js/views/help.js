@@ -42,13 +42,25 @@ export function render(container) {
       el('strong', {}, '+ 💀 Encounter'), ' blocks budget XP against your party and rate the fight Easy → Deadly.'),
 
     h('🗺 Maps'),
-    p('Attach a map to any entry (or make one from the Maps tab) at any scale: world, region, town, building interior, or dungeon. Maps are generated from a seed — hit 🎲 until you like one, then edit by hand: ',
-      'raise/lower terrain on world and region maps (the new Atlas style adds climate, lakes, nations and named settlements), paint floors, doors, windows and stairs on dungeons and buildings (rooms, caves, crypts, mines or sewers — dungeons can go several levels deep), pick town layouts (coastal harbor, planned city, riverside…) with optional named wards, and set terrain and street styles.'),
+    p('Attach a map to any entry, or make one from the Maps tab. Five scales: world, region, town, building, dungeon. ',
+      'Every map grows from a seed. Hit 🎲 until you like the bones of it, then fix it by hand.'),
+    p('World and region maps have a terrain brush. New world maps come in the Atlas look, with climate, lakes, and named towns, and they\'ll draw nations with borders if you ask; maps you made before keep the style they were made in. ',
+      'Region maps are one province: settlements joined by roads, ruins in the hills, a hex grid if you count travel that way. ',
+      'Towns pick a shape (harbor, riverside, planned grid…) and can name their own quarters. ',
+      'Buildings are floor plans with the furniture already in them. ',
+      'Dungeons come as rooms, caves, crypts, mines or sewers, run up to five levels deep, and you paint floors, walls, doors and stairs straight onto the grid.'),
     p('Then make it yours: 🏰 ', el('strong', {}, 'Place'), ' stamps houses, castles, cities, forests, ruins and more; ✏️ ',
       el('strong', {}, 'Draw'), ' sketches roads, rivers, walls, travel routes and borders — end a border stroke where it started and it closes into a tinted territory (that\'s how you mark countries). ',
       'Markers, labels and a compass rose round it out. Anything can be 🔒 secret (the trap — or the true border — stays off the player map), and anything placed can link to an entry: double-click it to jump there. ',
       'Linked/named things become a numbered key under the map in PDF exports. ',
       'Exporting a PNG? Pick a resolution up to 4× — maps re-render sharp for printing instead of just being stretched.'),
+
+    h('🎭 Player characters'),
+    p(el('strong', {}, 'Create a character'), ' (on the dashboard, or the Characters page) walks you through a full build for D&D 5.5e, Vampire: The Masquerade, or Call of Cthulhu. ',
+      'It does the math with you: a point buy that actually adds up to 27, occupation points that actually get spent, attribute spreads the rulebook would sign off on. ',
+      'The D&D options ship with the app. For Vampire and Cthulhu the app knows the names and the numbers, and the power text is yours to paste in from your own books; every power links to its wiki page so it\'s a short trip.'),
+    p('What you get is a sheet on an ordinary entry. Click the dots to change a rating. Click a skill to roll it, and hold ', kbd('Shift'), ' for advantage or a bonus die. ',
+      'Hunger dice do their ugly thing on their own. The whole sheet can be 🔒 secret, and it prints in the book.'),
 
     h('📅 Calendar, timeline & sessions'),
     p('Give any entry a date ("+ Add to timeline") and it appears in chronological order. The ', el('strong', {}, 'Calendar'),
@@ -63,14 +75,20 @@ export function render(container) {
     p('The Export tab builds a PDF of your world: the ', el('strong', {}, 'player edition'),
       ' strips every secret (it tells you exactly how many), the GM edition keeps them highlighted. Maps and portraits are included.'),
 
+    h('📦 The Library'),
+    p('The Library tab holds every bundled monster, spell and piece of gear, plus anything you import from your own 5e.tools files. ',
+      'A pack is imported once and every world can use it. Find the thing, click ', el('strong', {}, 'Add to world'), ', done.'),
+
     h('⬇ Bring your existing world'),
-    p('The Import page (dashboard → Import…) reads a folder of Obsidian/Markdown notes, the bundled SRD bestiary, or a bestiary JSON from a local 5e.tools download.'),
+    p('The Import page reads whatever your campaign lives in now: a folder of Obsidian or Markdown notes (images come along), CSV tables, ',
+      'World Anvil article exports, Foundry VTT journals and actors, 5e.tools files, and old backups. ',
+      'It can also scan your disk for a previous Loreweave or MundusMaker install and copy its worlds in. The old install is not touched; you can go back any time.'),
 
     h('💾 Your data & backups'),
     p('Worlds are folders of readable JSON in the ', kbd('data'), ' folder next to the app. MundusMaker keeps a daily snapshot of each world (last 7, in ',
       kbd('data/.snapshots'), ') and deleted things go to ', kbd('data/.trash'), ' instead of vanishing. ',
       'Every entry also keeps its own history: the ⏳ History button on an entry lists the last 10 versions and restores any of them (the current state is saved first, so restoring is always safe). ',
-      'To sync between devices, point the data folder at Dropbox/Drive/Syncthing from the dashboard\'s Sync card. One-click JSON backups live there too.'),
+      'Backups and device sync live in Settings, the ⚙ in the top bar. Point the data folder at Dropbox, Drive or Syncthing there and do the same on your other machine.'),
 
     h('🔤 Words this app uses'),
     p(el('strong', {}, 'Wiki-link'), ' — ', kbd('[[Name]]'), ' inside any text block. It jumps to that entry, or offers to create it. ',
@@ -81,5 +99,6 @@ export function render(container) {
     p(kbd('Ctrl+K'), ' search · ', kbd('Ctrl+S'), ' save now · ', kbd('Esc'), ' close/finish editing · click any dice to roll it.'),
 
     el('p', { class: 'muted small', style: 'margin-top:24px' },
-      'MundusMaker is free and open source (MIT). Bundled monsters are from the SRD 5.1 by Wizards of the Coast LLC, CC-BY-4.0.')));
+      'MundusMaker is free and open source (MIT). Bundled monsters and D&D character options are from the SRD (5.1 and 5.2) by Wizards of the Coast LLC, CC-BY-4.0. ',
+      'The Vampire and Cthulhu creators are unofficial fan tools with no rules text inside — the full notices are in Settings → About.')));
 }
