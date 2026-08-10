@@ -55,6 +55,7 @@ export const api = {
   library: () => req('GET', '/api/library'),
   libraryPack: (id) => req('GET', `/api/library/${encodeURIComponent(id)}`),
   importLibraryPack: (name, data) => req('POST', '/api/library', { name, data }),
+  download5etoolsPack: (options) => req('POST', '/api/library/download-5etools', options),
   deleteLibraryPack: (id) => req('DELETE', `/api/library/${encodeURIComponent(id)}`),
 
   // migration from older installs (Loreweave/TomeWeaver era)

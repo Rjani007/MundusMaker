@@ -45,6 +45,23 @@ const TAVERN_OBJECTS = ['Flagon', 'Kettle', 'Crown', 'Anchor', 'Candle', 'Barrel
 
 const FEATURES = ['Folly', 'Rest', 'Watch', 'Fall', 'Crossing', 'Barrow', 'Spire', 'Gate', 'Throne', 'Sorrow', 'Leap', 'Cairn', 'Hollow', 'Needle'];
 
+// Person names are explicit pools rather than reusing place-name roots. They
+// are intentionally setting-neutral and broad enough for a hurried GM to roll
+// several people at the same table without the results feeling related.
+const PERSON_GIVEN = [
+  'Aderyn', 'Amara', 'Ansel', 'Aric', 'Bela', 'Bran', 'Cassia', 'Corin',
+  'Dara', 'Del', 'Eira', 'Elian', 'Esme', 'Fenn', 'Galen', 'Hana', 'Ilya',
+  'Iris', 'Jori', 'Kael', 'Kessa', 'Lio', 'Liora', 'Mara', 'Merek', 'Nia',
+  'Niko', 'Orla', 'Perrin', 'Ravi', 'Ren', 'Sabine', 'Sable', 'Tamsin',
+  'Tarin', 'Una', 'Vesper', 'Wren', 'Yara', 'Zev',
+];
+const PERSON_FAMILY = [
+  'Ashdown', 'Blackreed', 'Brightwater', 'Cask', 'Dawnmere', 'Emberlain',
+  'Fairweather', 'Fenwick', 'Grey', 'Hallow', 'Hearth', 'Ironwood', 'Kestrel',
+  'Lark', 'Marrow', 'Moss', 'North', 'Oak', 'Pike', 'Quill', 'Reeve', 'Rook',
+  'Sable', 'Salt', 'Stone', 'Thorne', 'Vale', 'Vell', 'Ward', 'Wilder',
+];
+
 function settlement(rng) {
   const name = joined(rng, SETTLEMENT_SUFFIXES);
   return rng.chance(0.12) ? rng.pick(COMPASS) + ' ' + name : name;
@@ -89,6 +106,10 @@ function landmark(rng) {
   return rng.pick(FEATURES) + ' of ' + root(rng);
 }
 
+function person(rng) {
+  return `${rng.pick(PERSON_GIVEN)} ${rng.pick(PERSON_FAMILY)}`;
+}
+
 /** One name in the given style. `rng` is a makeRng instance owned by the caller. */
 export function nameFor(rng, style) {
   switch (style) {
@@ -98,6 +119,23 @@ export function nameFor(rng, style) {
     case 'ward': return ward(rng);
     case 'tavern': return tavern(rng);
     case 'landmark': return landmark(rng);
+    case 'person': return person(rng);
     default: return root(rng);
   }
+}
+
+/** A deliberately non-deterministic suggestion for buttons in editable UI. */
+export function randomName(style = 'person') {
+  const rng = () => Math.random();
+  rng.pick = (arr) => arr[Math.floor(rng() * arr.length)];
+  rng.chance = (p) => rng() < p;
+  return nameFor(rng, style);
+}
+
+/** Best first guess for a name button beside an entity field. */
+export function nameStyleForType(type) {
+  if (type === 'character' || type === 'npc') return 'person';
+  if (type === 'location') return 'settlement';
+  if (type === 'faction') return 'nation';
+  return 'landmark';
 }

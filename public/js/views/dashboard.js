@@ -6,6 +6,8 @@ import { state, types, typeOf, visibleEntities, scheduleWorldSave, createEntity,
 import { snippetFor } from '../render.js';
 import { api } from '../api.js';
 import { switchTo } from '../main.js';
+import { advanceDate, daysUntilAnnual, formatDate, isRecurring } from '../calendar.js';
+import { nameStyleForType, randomName } from '../names.js';
 
 // One cheap scan per app load, and only while the user still has nothing but
 // the sample world — an upgrader's first boot is exactly when it helps.
@@ -66,9 +68,54 @@ export function render(container) {
 
   const recent = [...ents].sort((a, b) => (b.updated || '').localeCompare(a.updated || '')).slice(0, 8);
 
+  // ---------- campaign clock ----------
+  // Holidays are ordinary recurring entities, so visibleEntities() already
+  // applies the same gmOnly rule as every other dashboard surface.
+  const clockWrap = el('div', {});
+  function refreshClock() {
+    const cal = w.calendar || {};
+    const today = cal.todayDate;
+    const dateText = formatDate(today, cal, w.era) || cal.today || '';
+    const upcoming = ents
+      .filter((entry) => isRecurring(entry.date))
+      .map((entry) => ({ entry, days: daysUntilAnnual(today, entry.date, cal) }))
+      .filter((x) => Number.isFinite(x.days))
+      .sort((a, b) => a.days - b.days || a.entry.name.localeCompare(b.entry.name))[0];
+    clockWrap.innerHTML = '';
+    clockWrap.append(el('div', { class: 'row', style: 'align-items:center' },
+      el('div', { style: 'flex:1;min-width:0' },
+        el('div', {}, dateText ? ['Today is ', el('strong', {}, dateText)] : el('span', { class: 'muted' }, 'Today is not set yet.')),
+        upcoming ? el('div', { class: 'muted small', style: 'margin-top:4px' },
+          el('a', { href: `#/e/${upcoming.entry.id}` }, upcoming.entry.name),
+          upcoming.days === 0 ? ' is today' : ` in ${upcoming.days} day${upcoming.days === 1 ? '' : 's'}`)
+          : el('div', { class: 'muted small', style: 'margin-top:4px' },
+            'Recurring events appear here as the next holiday.')),
+      state.gm ? el('button', {
+        class: 'primary small', disabled: !advanceDate(today, cal, 0),
+        title: today ? 'Move the structured campaign date forward one day' : 'Set a structured date in Calendar first',
+        onclick: () => {
+          const next = advanceDate(cal.todayDate, cal, 1);
+          if (!next) { toast('Set a valid structured date in Calendar first.'); return; }
+          cal.todayDate = next;
+          cal.today = formatDate(next, cal, w.era);
+          saveWorldSoon();
+          refreshClock();
+        },
+      }, 'Advance a day') : null,
+      el('a', { href: '#/calendar', class: 'small' }, dateText ? 'Calendar' : 'Set date')));
+  }
+  refreshClock();
+
   const quickName = el('input', { placeholder: 'New entry name…', style: 'flex:1' });
+  const quickStyle = el('select', { title: 'Kind of name to roll' },
+    [['person', 'person'], ['settlement', 'settlement'], ['tavern', 'tavern'], ['ward', 'ward'],
+      ['nation', 'nation'], ['region', 'region'], ['landmark', 'landmark']]
+      .map(([value, label]) => el('option', { value }, label)));
   const quickType = el('select', {},
     Object.entries(types()).map(([key, t]) => el('option', { value: key }, t.label)));
+  const syncQuickStyle = () => { quickStyle.value = nameStyleForType(quickType.value); };
+  quickType.addEventListener('change', syncQuickStyle);
+  syncQuickStyle();
   const quickCreate = async () => {
     const name = quickName.value.trim();
     if (!name) return;
@@ -92,11 +139,11 @@ export function render(container) {
         isCurrent || state.worlds.length <= 1 ? null : el('button', {
           class: 'ghost danger small',
           onclick: async () => {
-            if (!confirm(`Delete the world “${world.name}” (${world.entities} entries)?\n\nIt is moved to the data folder's .trash — recoverable by hand, but gone from MundusMaker.`)) return;
+            if (!confirm(`Delete the world “${world.name}” (${world.entities} entries)?\n\nIt is moved to the data folder's .trash and can be restored from Settings → Trash & snapshots.`)) return;
             await api.deleteWorld(world.id);
             await refreshWorlds();
             refreshWorldList();
-            toast(`“${world.name}” moved to .trash`);
+            toast(`“${world.name}” moved to .trash; restore it from Settings`, 6000);
           },
         }, 'Delete')));
     }
@@ -110,6 +157,7 @@ export function render(container) {
     newName.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') create(); });
     worldsWrap.append(el('div', { class: 'row', style: 'margin-top:10px' },
       newName,
+      el('button', { class: 'ghost', title: 'Roll a nation-style world name', onclick: () => { newName.value = randomName('nation'); newName.focus(); } }, '🎲'),
       el('button', { onclick: create }, '+ Create world')));
   }
   refreshWorldList();
@@ -117,12 +165,15 @@ export function render(container) {
   // The calendar editor moved to its own page (#/calendar) — months, lengths,
   // special days, ages and today's date no longer fit in a dashboard card.
   const calendarCard = el('div', { class: 'card' },
-    el('div', { class: 'row' },
-      el('a', { href: '#/calendar' }, '📅 Calendar'),
-      el('span', { class: 'muted small' }, 'Months and their lengths, special days, ages, today’s date.')));
+    el('h3', {}, '📅 Campaign clock'),
+    clockWrap);
 
   const page = el('div', { class: 'page' },
-    nameInput,
+    el('div', { class: 'row' }, nameInput,
+      state.gm ? el('button', {
+        class: 'ghost', title: 'Roll a nation-style world name',
+        onclick: () => { nameInput.value = randomName('nation'); w.name = nameInput.value; saveWorldSoon(); },
+      }, '🎲') : null),
     el('div', { class: 'card world-desc', style: 'margin-top:14px' },
       el('h3', {}, 'About this world'),
       desc,
@@ -131,7 +182,11 @@ export function render(container) {
     stats,
     el('div', { class: 'card' },
       el('h3', {}, 'Create'),
-      el('div', { class: 'row' }, quickName, quickType,
+      el('div', { class: 'row' }, quickName,
+        el('button', {
+          class: 'ghost', title: 'Roll a name using the selected style',
+          onclick: () => { quickName.value = randomName(quickStyle.value); quickName.focus(); },
+        }, '🎲'), quickStyle, quickType,
         el('button', { class: 'primary', onclick: quickCreate }, '+ Create'),
         el('span', { class: 'spacer' }),
         el('a', { href: '#/create', title: 'Guided character creation: D&D 5.5e, Vampire V5, Call of Cthulhu' }, '🎭 Create a character…'),

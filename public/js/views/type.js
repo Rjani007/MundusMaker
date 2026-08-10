@@ -4,6 +4,7 @@
 
 import { el, helpTip } from '../util.js';
 import { state, types, typeOf, visibleEntities, createEntity } from '../state.js';
+import { nameStyleForType, randomName } from '../names.js';
 
 // Same grey state.js falls back to, so an orphan type's dot matches everywhere.
 const ORPHAN = { color: '#8a8f98', fields: [] };
@@ -92,6 +93,7 @@ export function render(container, rawKey) {
           e.map ? el('span', { title: 'has a map' }, '🗺') : null,
           (e.blocks || []).some((b) => b.kind === 'statblock') ? el('span', { title: 'has a statblock' }, '⚔') : null,
           (e.blocks || []).some((b) => b.kind === 'sheet') ? el('span', { title: 'has a character sheet' }, '🎭') : null,
+          (e.blocks || []).some((b) => b.kind === 'table') ? el('span', { title: 'has a rollable table' }, '🎲') : null,
           e.gmOnly ? el('span', { title: 'GM-only — invisible to players' }, '🔒') : null))));
     tableWrap.append(el('table', { class: 'type-table' }, el('thead', {}, head), body));
   }
@@ -113,6 +115,10 @@ export function render(container, rawKey) {
     ? el('div', { class: 'card' },
         el('h3', {}, `New ${t.label}`),
         el('div', { class: 'row' }, nameInput,
+          el('button', {
+            class: 'ghost', title: 'Suggest a fitting name',
+            onclick: () => { nameInput.value = randomName(nameStyleForType(key)); nameInput.focus(); },
+          }, '🎲'),
           el('button', { class: 'primary', onclick: createOne }, '+ Create'),
           key === 'character' ? el('a', { href: '#/create', title: 'Guided, rules-checked character build with an interactive sheet' }, '🎭 …or use the character creator') : null))
     : el('div', { class: 'notice' },

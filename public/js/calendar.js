@@ -214,3 +214,54 @@ export function formatDate(date, cal, era) {
   if (date.day) s += `.${String(date.day).padStart(2, '0')}`;
   return s + suffix;
 }
+
+/**
+ * Resolve a concrete date to its zero-based day within the year. This is for
+ * date arithmetic only; chronology sorting deliberately continues to use slot
+ * ordinals so changing month lengths can never reorder historical entries.
+ */
+function concreteDay(date, cal) {
+  if (!date || !Number.isFinite(date.year)) return null;
+  const slots = slotsOf(cal);
+  const index = date.special
+    ? slots.findIndex((s) => s.kind === 'special' && s.id === date.special)
+    : slots.findIndex((s) => s.kind === 'month' && s.month === date.month);
+  if (index < 0) return null;
+  const day = Number.isFinite(date.day) ? Math.trunc(date.day) : 1;
+  if (day < 1 || day > slots[index].days) return null; // NO-CLAMP: decline invalid dates
+  const before = slots.slice(0, index).reduce((sum, slot) => sum + slot.days, 0);
+  return { slots, index, day, ordinal: before + day - 1 };
+}
+
+/** Advance a valid structured date without ever normalising an invalid one. */
+export function advanceDate(date, cal, amount = 1) {
+  const pos = concreteDay(date, cal);
+  const steps = Math.trunc(Number(amount));
+  if (!pos || !Number.isFinite(steps) || steps < 0) return null;
+  let year = date.year;
+  let index = pos.index;
+  let day = pos.day;
+  for (let left = steps; left > 0; left--) {
+    day++;
+    if (day <= pos.slots[index].days) continue;
+    day = 1;
+    index++;
+    if (index >= pos.slots.length) { index = 0; year++; }
+  }
+  const slot = pos.slots[index];
+  return slot.kind === 'special'
+    ? { year, special: slot.id, day }
+    : { year, month: slot.month, day };
+}
+
+/** Days from a structured current date to the next occurrence of an annual date. */
+export function daysUntilAnnual(today, annual, cal) {
+  if (!isRecurring(annual)) return null;
+  const now = concreteDay(today, cal);
+  if (!now) return null;
+  const target = concreteDay({ ...annual, year: today.year }, cal);
+  if (!target) return null;
+  const yearDays = now.slots.reduce((sum, slot) => sum + slot.days, 0);
+  const delta = target.ordinal - now.ordinal;
+  return delta >= 0 ? delta : delta + yearDays;
+}

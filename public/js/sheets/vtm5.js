@@ -2,7 +2,8 @@
 // Data pack (public/systems/vtm5.json) carries names and creation math only —
 // power descriptions are user-pasted, with reference links to the wiki.
 
-import { el, esc } from '../util.js';
+import { el, esc, makeRng } from '../util.js';
+import { nameFor } from '../names.js';
 import {
   dotsHtml, trackHtml, rollBtn, kvHtml, sectionHtml,
   frow, textInput, numInput, areaInput, listEdit,
@@ -35,6 +36,118 @@ const SKILL_GROUPS = {
 const ALL_SKILLS = Object.values(SKILL_GROUPS).flat();
 const cap = (s) => s[0].toUpperCase() + s.slice(1);
 
+export const XP_SPEND_TYPES = {
+  attribute: { label: 'Attribute', multiplier: 5, rating: true },
+  skill: { label: 'Skill', multiplier: 3, rating: true },
+  clanDiscipline: { label: 'In-clan discipline', multiplier: 5, rating: true },
+  otherDiscipline: { label: 'Out-of-clan discipline', multiplier: 7, rating: true },
+  caitiffDiscipline: { label: 'Caitiff discipline', multiplier: 6, rating: true },
+  bloodPotency: { label: 'Blood Potency', multiplier: 10, rating: true },
+  specialty: { label: 'Specialty', fixed: 3 },
+  advantage: { label: 'Advantage dot', fixed: 3 },
+  ritual: { label: 'Blood Sorcery ritual', multiplier: 3, level: true },
+  formula: { label: 'Thin-blood formula', multiplier: 3, level: true },
+  manual: { label: 'Other / storyteller-approved', manual: true },
+};
+
+export function xpSpendCost(kind, rating = 1, manualCost = 0) {
+  const rule = XP_SPEND_TYPES[kind];
+  if (!rule) throw new Error('Choose an XP spend type.');
+  if (rule.manual) return Math.max(1, Math.floor(Number(manualCost) || 0));
+  if (rule.fixed) return rule.fixed;
+  const next = Math.max(1, Math.floor(Number(rating) || 1));
+  return next * rule.multiplier;
+}
+
+const lower = (s) => String(s || '').trim().toLowerCase();
+const personName = () => nameFor(makeRng(`vtm-wizard:${Date.now()}:${Math.random()}`), 'person');
+function findKey(items, wanted) {
+  return items.find((item) => lower(item) === lower(wanted));
+}
+
+/** Record and apply one V5 XP purchase. One rating dot is bought per entry. */
+export function spendXp(data, spec) {
+  const kind = spec?.kind;
+  const rule = XP_SPEND_TYPES[kind];
+  if (!rule) throw new Error('Choose what the XP buys.');
+  data.xp ??= { total: 0, spent: 0, ledger: [] };
+  data.xp.ledger ??= [];
+
+  let target = String(spec.target || '').trim();
+  let before = null, after = null;
+  if (kind === 'attribute') {
+    data.attributes ??= {};
+    const key = findKey(ALL_ATTRS, target);
+    if (!key) throw new Error('Enter an attribute name from the sheet.');
+    before = Number(data.attributes?.[key] || 0); after = before + 1; target = cap(key);
+    if (after > 5) throw new Error(`${target} is already at 5.`);
+  } else if (kind === 'skill') {
+    data.skills ??= {};
+    const key = findKey(ALL_SKILLS, target);
+    if (!key) throw new Error('Enter a skill name from the sheet.');
+    before = Number(data.skills?.[key] || 0); after = before + 1; target = key;
+    if (after > 5) throw new Error(`${target} is already at 5.`);
+  } else if (['clanDiscipline', 'otherDiscipline', 'caitiffDiscipline'].includes(kind)) {
+    if (!target) throw new Error('Name the discipline.');
+    const disc = (data.disciplines || []).find((item) => lower(item.name) === lower(target));
+    before = Number(disc?.rating || 0); after = before + 1;
+    if (after > 5) throw new Error(`${target} is already at 5.`);
+  } else if (kind === 'bloodPotency') {
+    target = 'Blood Potency'; before = Number(data.bloodPotency || 0); after = before + 1;
+    if (after > 10) throw new Error('Blood Potency is already at 10.');
+  } else if (kind === 'specialty') {
+    if (!target) throw new Error('Use “Skill: Specialty” so the sheet knows where to put it.');
+    const parts = target.split(':');
+    if (parts.length < 2 || !parts.slice(1).join(':').trim()) throw new Error('Use “Skill: Specialty”.');
+    const skill = findKey(ALL_SKILLS, parts[0]);
+    if (!skill) throw new Error('Use a skill name from the sheet before the colon.');
+    target = `${skill}: ${parts.slice(1).join(':').trim()}`;
+  } else if (kind === 'advantage') {
+    if (!target) throw new Error('Name the advantage.');
+    const adv = (data.advantages || []).find((item) => !item.flaw && lower(item.name) === lower(target));
+    before = Number(adv?.dots || 0); after = before + 1;
+    if (after > 5) throw new Error(`${target} is already at 5 dots.`);
+  } else if (kind === 'ritual' || kind === 'formula') {
+    if (!target) throw new Error(`Name the ${kind}.`);
+    after = Math.max(1, Math.min(5, Math.floor(Number(spec.rating) || 1)));
+  } else if (!target) target = 'Storyteller-approved spend';
+
+  const ratingForCost = rule.rating ? after : rule.level ? after : 1;
+  const cost = xpSpendCost(kind, ratingForCost, spec.manualCost);
+  const total = Math.max(0, Number(data.xp.total) || 0);
+  const spent = Math.max(0, Number(data.xp.spent) || 0);
+  if (cost > total - spent) throw new Error(`That costs ${cost} XP; only ${Math.max(0, total - spent)} XP is available.`);
+
+  if (kind === 'attribute') data.attributes[findKey(ALL_ATTRS, target)] = after;
+  else if (kind === 'skill') data.skills[findKey(ALL_SKILLS, target)] = after;
+  else if (['clanDiscipline', 'otherDiscipline', 'caitiffDiscipline'].includes(kind)) {
+    data.disciplines ??= [];
+    let disc = data.disciplines.find((item) => lower(item.name) === lower(target));
+    if (!disc) { disc = { name: target, rating: 0, powers: [] }; data.disciplines.push(disc); }
+    disc.rating = after;
+  } else if (kind === 'bloodPotency') data.bloodPotency = after;
+  else if (kind === 'specialty') {
+    const [skill, ...rest] = target.split(':');
+    data.specialties ??= [];
+    data.specialties.push({ skill: skill.trim(), name: rest.join(':').trim() });
+  } else if (kind === 'advantage') {
+    data.advantages ??= [];
+    let adv = data.advantages.find((item) => !item.flaw && lower(item.name) === lower(target));
+    if (!adv) { adv = { name: target, dots: 0, flaw: false, desc: '' }; data.advantages.push(adv); }
+    adv.dots = after;
+  }
+
+  const detail = rule.rating ? `${before} → ${after}` : rule.level ? `level ${after}` : '';
+  const entry = {
+    at: new Date().toISOString(), kind, target, before, after, cost,
+    label: `${rule.label}: ${target}${detail ? ` (${detail})` : ''}`,
+  };
+  data.xp.spent = spent + cost;
+  data.xp.ledger.push(entry);
+  if (data.xp.ledger.length > 100) data.xp.ledger.splice(0, data.xp.ledger.length - 100);
+  return entry;
+}
+
 export function defaults() {
   return {
     clan: '', generation: 13, bloodPotency: 1, predatorType: '', sire: '',
@@ -48,7 +161,7 @@ export function defaults() {
     hunger: 1, humanity: 7,
     health: { superficial: 0, aggravated: 0 },
     willpower: { superficial: 0, aggravated: 0 },
-    xp: { total: 0, spent: 0 },
+    xp: { total: 0, spent: 0, ledger: [] },
     notes: '',
   };
 }
@@ -110,6 +223,8 @@ export function html(data) {
     const t = (d.touchstones || [])[i];
     return `<div class="small">• ${esc(c)}${t?.name ? ` <span class="muted">— touchstone: ${esc(t.name)}</span>` : ''}</div>`;
   }).join('');
+  const xp = { total: 0, spent: 0, ledger: [], ...(d.xp || {}) };
+  const lastSpend = xp.ledger?.[xp.ledger.length - 1];
 
   return `<div class="sheet sheet-vtm">
     <div class="sheet-head">
@@ -129,7 +244,9 @@ export function html(data) {
     ${sectionHtml('Disciplines', disciplines)}
     ${advantages ? sectionHtml('Advantages & flaws', advantages) : ''}
     ${convictions ? sectionHtml('Convictions & touchstones', convictions) : ''}
-    ${d.xp?.total ? sectionHtml('Experience', `<div class="small">${d.xp.spent} / ${d.xp.total} XP spent</div>`) : ''}
+    ${xp.total || xp.spent || xp.ledger?.length ? sectionHtml('Experience',
+      `<div class="small"><strong>${Math.max(0, xp.total - xp.spent)} XP available</strong> · ${xp.spent} / ${xp.total} spent</div>` +
+      (lastSpend ? `<div class="muted small">Last: ${esc(lastSpend.label)} · ${lastSpend.cost} XP</div>` : '')) : ''}
     ${d.notes ? sectionHtml('Notes', `<div class="small">${esc(d.notes).replace(/\n/g, '<br>')}</div>`) : ''}
     <div class="sheet-attrib muted">Unofficial Dark Pack fan material. Dots are click-editable in GM view.</div>
   </div>`;
@@ -139,6 +256,8 @@ export function html(data) {
 
 export function editor(block, save) {
   const d = block.data = { ...defaults(), ...(block.data || {}) };
+  d.xp = { total: 0, spent: 0, ledger: [], ...(d.xp || {}) };
+  d.xp.ledger ??= [];
   const wrap = el('div', { class: 'sb-form' },
     el('p', { class: 'muted small' }, 'Attributes, skills, hunger, humanity and damage are edited by clicking the dots and boxes on the sheet itself. Everything else lives here.'),
     el('div', { class: 'row' },
@@ -150,8 +269,128 @@ export function editor(block, save) {
       frow('Ambition', textInput(d.ambition, (v) => { d.ambition = v; save(); }, { style: 'flex:1' })),
       frow('Desire', textInput(d.desire, (v) => { d.desire = v; save(); }, { style: 'flex:1' }))),
     el('div', { class: 'row' },
-      frow('XP total', numInput(d.xp.total, (v) => { d.xp.total = v; save(); })),
-      frow('XP spent', numInput(d.xp.spent, (v) => { d.xp.spent = v; save(); }))));
+      frow('XP total', numInput(d.xp.total, (v) => { d.xp.total = v; save(); redrawXpAssistant(); })),
+      frow('XP spent', numInput(d.xp.spent, (v) => { d.xp.spent = v; save(); redrawXpAssistant(); }))));
+
+  const xpDetails = el('details', {});
+  const xpSummary = el('summary', {});
+  const xpBody = el('div', {});
+  xpDetails.append(xpSummary, xpBody);
+  let xpMessage = '';
+
+  function currentRating(kind, target) {
+    if (kind === 'attribute') {
+      const key = findKey(ALL_ATTRS, target);
+      return Number(key ? d.attributes[key] : 0) || 0;
+    }
+    if (kind === 'skill') {
+      const key = findKey(ALL_SKILLS, target);
+      return Number(key ? d.skills[key] : 0) || 0;
+    }
+    if (['clanDiscipline', 'otherDiscipline', 'caitiffDiscipline'].includes(kind)) {
+      return Number(d.disciplines.find((disc) => lower(disc.name) === lower(target))?.rating || 0);
+    }
+    if (kind === 'bloodPotency') return Number(d.bloodPotency || 0);
+    if (kind === 'advantage') return Number(d.advantages.find((adv) => !adv.flaw && lower(adv.name) === lower(target))?.dots || 0);
+    return 0;
+  }
+
+  function redrawXpAssistant() {
+    const available = Math.max(0, Number(d.xp.total || 0) - Number(d.xp.spent || 0));
+    xpSummary.textContent = `Spend XP · ${available} available`;
+    xpBody.innerHTML = '';
+
+    const kindSel = el('select', {}, Object.entries(XP_SPEND_TYPES).map(([key, rule]) =>
+      el('option', { value: key }, rule.label)));
+    kindSel.value = 'attribute';
+    const targetHost = el('span', { style: 'display:flex;flex:1' });
+    const levelLabel = el('span', { class: 'small muted' }, 'Level');
+    const levelInput = numInput(1, () => updateCost(), { min: 1, max: 5, title: 'level' });
+    const manualLabel = el('span', { class: 'small muted' }, 'Cost');
+    const manualInput = numInput(1, () => updateCost(), { min: 1, max: 999, title: 'XP cost' });
+    const costText = el('strong', { class: 'small' });
+    const status = el('div', { class: 'muted small' }, xpMessage);
+    let targetInput;
+
+    function targetValue() {
+      if (kindSel.value === 'bloodPotency') return 'Blood Potency';
+      return targetInput?.value || '';
+    }
+    function updateCost() {
+      const kind = kindSel.value, rule = XP_SPEND_TYPES[kind];
+      const before = currentRating(kind, targetValue());
+      const rating = rule.rating ? before + 1 : rule.level ? Number(levelInput.value) || 1 : 1;
+      let cost = 0;
+      try { cost = xpSpendCost(kind, rating, Number(manualInput.value)); } catch { /* incomplete */ }
+      costText.textContent = `${cost} XP${rule.rating ? ` · ${before} → ${rating}` : ''}`;
+      costText.style.color = cost > available ? 'var(--danger)' : '';
+      levelLabel.style.display = rule.level ? '' : 'none';
+      levelInput.style.display = rule.level ? '' : 'none';
+      manualLabel.style.display = rule.manual ? '' : 'none';
+      manualInput.style.display = rule.manual ? '' : 'none';
+    }
+    function rebuildTarget() {
+      const kind = kindSel.value;
+      if (kind === 'attribute' || kind === 'skill') {
+        const choices = kind === 'attribute' ? ALL_ATTRS.map(cap) : ALL_SKILLS;
+        targetInput = el('select', {}, choices.map((name) => el('option', { value: name }, name)));
+        targetInput.value = choices[0];
+        targetInput.addEventListener('change', updateCost);
+        targetHost.replaceChildren(targetInput);
+      } else if (kind === 'bloodPotency') {
+        targetInput = null;
+        targetHost.replaceChildren(el('span', { class: 'small' }, 'Blood Potency'));
+      } else {
+        const placeholder = kind === 'specialty' ? 'Skill: Specialty'
+          : kind === 'ritual' ? 'Ritual name'
+          : kind === 'formula' ? 'Formula name'
+          : kind === 'advantage' ? 'Advantage name'
+          : kind === 'manual' ? 'What the XP bought'
+          : 'Discipline name';
+        targetInput = textInput('', () => updateCost(), { placeholder, style: 'flex:1' });
+        targetHost.replaceChildren(targetInput);
+      }
+      updateCost();
+    }
+    kindSel.addEventListener('change', rebuildTarget);
+
+    const apply = el('button', {
+      class: 'primary small',
+      onclick: () => {
+        try {
+          const entry = spendXp(d, {
+            kind: kindSel.value,
+            target: targetValue(),
+            rating: Number(levelInput.value),
+            manualCost: Number(manualInput.value),
+          });
+          save();
+          xpMessage = `Recorded ${entry.label} for ${entry.cost} XP.`;
+          redrawXpAssistant();
+        } catch (err) {
+          status.textContent = err.message;
+          status.style.color = 'var(--danger)';
+        }
+      },
+    }, 'Buy & record');
+
+    const ledger = (d.xp.ledger || []).slice(-8).reverse();
+    xpBody.append(
+      el('p', { class: 'muted small' },
+        'The assistant buys one dot at a time and applies it to the sheet. Rating costs use the new rating; specialties and advantage dots cost 3 XP. Rituals and formulae are recorded without bundling their text.'),
+      el('div', { class: 'row' }, kindSel, targetHost,
+        levelLabel, levelInput,
+        manualLabel, manualInput,
+        costText, apply),
+      status,
+      ledger.length ? el('div', { class: 'card', style: 'margin-top:8px' },
+        el('div', { class: 'small muted' }, 'Recent XP ledger'),
+        ledger.map((entry) => el('div', { class: 'small' },
+          `${entry.label} · ${entry.cost} XP`))) : null);
+    rebuildTarget();
+  }
+  redrawXpAssistant();
+  wrap.append(xpDetails);
 
   wrap.append(el('details', { open: true }, el('summary', {}, 'Disciplines & powers'),
     listEdit(d.disciplines, (disc) => el('span', { style: 'flex:1' },
@@ -220,6 +459,10 @@ export function writePdf(w, data) {
     const t = (d.touchstones || [])[i];
     w.line(`Conviction: ${c}${t?.name ? ` — touchstone: ${t.name}` : ''}`);
   });
+  if (d.xp?.total || d.xp?.spent) {
+    w.line(`Experience: ${Math.max(0, Number(d.xp.total || 0) - Number(d.xp.spent || 0))} available; ${d.xp.spent || 0} / ${d.xp.total || 0} spent`);
+  }
+  for (const entry of (d.xp?.ledger || []).slice(-10)) w.line(`XP: ${entry.label} (${entry.cost})`);
   if (d.notes) w.para(d.notes);
 }
 
@@ -458,9 +701,14 @@ export const wizard = {
         genSel.value = String(ctx.data.generation.indexOf(draft.genPick));
         genSel.addEventListener('change', () => { draft.genPick = ctx.data.generation[Number(genSel.value)]; ctx.update(); });
         const a = draft.attributes;
+        const nameInput = el('input', { value: draft.name, placeholder: 'Character name', style: 'flex:1', oninput: (ev) => { draft.name = ev.target.value; } });
+        const nameRoll = el('button', {
+          class: 'ghost small', title: 'Suggest a person name', 'aria-label': 'Suggest a person name',
+          onclick: () => { draft.name = personName(); nameInput.value = draft.name; },
+        }, '🎲');
         return el('div', {},
           el('div', { class: 'row' },
-            el('label', {}, 'Name'), el('input', { value: draft.name, placeholder: 'Character name', style: 'flex:1', oninput: (ev) => { draft.name = ev.target.value; } }),
+            el('label', {}, 'Name'), nameInput, nameRoll,
             el('label', {}, 'Sire'), el('input', { value: draft.sire || '', style: 'flex:1', oninput: (ev) => { draft.sire = ev.target.value; } })),
           el('div', { class: 'row', style: 'margin-top:8px' },
             el('label', {}, 'Ambition'), el('input', { value: draft.ambition || '', style: 'flex:1', oninput: (ev) => { draft.ambition = ev.target.value; } }),

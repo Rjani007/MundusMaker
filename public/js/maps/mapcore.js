@@ -1,9 +1,9 @@
 // Shared map plumbing: kind registry, marker/label overlay (with GM-secret
 // filtering), full renders for the editor, thumbnails, PNG and PDF export.
 
-import { uid } from '../util.js';
+import { uid, el } from '../util.js';
 import { WORLD_W, WORLD_H, WORLD_STYLES, defaultWorldParams, buildWorldModel, renderWorldBase, applyWorldStroke } from './world.js';
-import { TOWN_W, TOWN_H, defaultTownParams, buildTownModel, renderTownBase, TOWN_LAYOUTS, TOWN_TERRAINS, TOWN_PAVINGS } from './town.js';
+import { TOWN_W, TOWN_H, defaultTownParams, buildTownModel, renderTownBase, computeWards, TOWN_LAYOUTS, TOWN_TERRAINS, TOWN_PAVINGS } from './town.js';
 import {
   CELL, FLOOR, SOLID, DOOR, STAIR_DOWN, STAIR_UP, DUNGEON_STYLES,
   defaultDungeonParams, dungeonSize, dungeonGrid, dungeonLevels, gridToString, renderDungeonBase,
@@ -126,6 +126,34 @@ export const MAP_KINDS = {
       { key: 'river', label: 'River', type: 'checkbox', absent: false,
         show: (p) => !['coastal', 'riverside'].includes(p.layout || 'auto') },
     ],
+    // GM-editable ward names: overrides live in map.wardNames (plain data, so
+    // thumbnails, PNG exports and the PDF all pick them up), keyed by the
+    // ward's index in computeWards' deterministic order. Blank = generated name.
+    extraPanel({ map, model, readOnly, save, refreshBase }) {
+      if (!map.params?.wards || readOnly) return null;
+      const wards = computeWards(model, map.seed);
+      if (!wards.length) return null;
+      const wrap = el('div', {}, el('h3', {}, 'Wards'));
+      wards.forEach((w, i) => {
+        wrap.append(el('div', { class: 'param-row' },
+          el('label', {}, `Ward ${i + 1}`),
+          el('input', {
+            type: 'text', value: map.wardNames?.[i] || '', placeholder: w.name,
+            title: 'Rename this ward — leave blank to keep the generated name',
+            oninput: (ev) => {
+              const v = ev.target.value.trim();
+              map.wardNames ??= {};
+              if (v) map.wardNames[i] = v;
+              else delete map.wardNames[i];
+              save();
+              refreshBase();
+            },
+          })));
+      });
+      wrap.append(el('div', { class: 'muted small', style: 'margin-top:4px' },
+        'Names print on the map and in the PDF. Blank keeps the generated one.'));
+      return wrap;
+    },
   },
   interior: {
     label: 'Building map',

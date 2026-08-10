@@ -1,7 +1,9 @@
 // D&D 5.5e (2024 rules) character sheet + creation wizard, powered by the
 // bundled SRD 5.2 content pack (public/srd52/, CC-BY-4.0).
 
-import { el, esc } from '../util.js';
+import { el, esc, makeRng } from '../util.js';
+import { api } from '../api.js';
+import { nameFor } from '../names.js';
 import { linkDice } from '../render.js';
 import {
   dotsHtml, boxesHtml, rollBtn, kvHtml, sectionHtml,
@@ -28,6 +30,128 @@ export async function loadData() {
   return {
     classes: classes.classes, species: species.species, backgrounds: backgrounds.backgrounds,
     feats: feats.feats, spells: spells.spells, equipment: equipment.equipment,
+  };
+}
+
+// The creation wizard deliberately stays on the bundled SRD. Advancement may
+// also read a user's own local 5etools packs, but bundled classes win whenever
+// both sources contain the same class. That keeps the shipped, attributed SRD
+// path predictable while still letting an imported subclass advance.
+const lower = (s) => String(s || '').trim().toLowerCase();
+const personName = () => nameFor(makeRng(`dnd-wizard:${Date.now()}:${Math.random()}`), 'person');
+
+function clean5eText(s) {
+  return String(s || '')
+    .replace(/\{@(?:dice|damage) ([^}|]+)(?:\|[^}]*)?}/g, '$1')
+    .replace(/\{@(?:spell|item|creature|condition|skill|action|sense|status|classFeature|subclassFeature) ([^}|]+)(?:\|[^}]*)?}/g, '$1')
+    .replace(/\{@(?:b|i) ([^}]+)}/g, '$1')
+    .replace(/\{@[^ ]+ ([^}|]+)(?:\|[^}]*)?}/g, '$1');
+}
+
+function entriesText(value) {
+  if (typeof value === 'string') return clean5eText(value);
+  if (Array.isArray(value)) return value.map(entriesText).filter(Boolean).join('\n\n');
+  if (!value || typeof value !== 'object') return '';
+  if (value.type === 'table') {
+    const rows = (value.rows || []).map((row) => (row || []).map(entriesText).join(' | ')).join('\n');
+    return [value.caption, rows].filter(Boolean).join('\n');
+  }
+  const body = entriesText(value.entries || value.items || value.entry);
+  return [value.name ? `${clean5eText(value.name)}.` : '', body].filter(Boolean).join(' ');
+}
+
+function importedClassName(feature) {
+  return feature?.className || feature?.class?.name || '';
+}
+
+function normalizeImportedFeature(feature, packName, kind) {
+  const level = Number(feature?.level);
+  if (!feature?.name || !Number.isInteger(level) || level < 1 || level > 20) return null;
+  return {
+    name: clean5eText(feature.name), level,
+    text: entriesText(feature.entries), kind,
+    pack: packName,
+  };
+}
+
+/**
+ * Resolve one class for the advancement assistant. Bundled SRD class and
+ * subclass features are authoritative; locally imported 5etools data is a
+ * fallback for non-SRD classes/subclasses and is never written until level-up.
+ */
+export async function loadAdvancementClass(className, subclassName = '') {
+  const data = await loadData();
+  const bundled = data.classes.find((c) => lower(c.name) === lower(className));
+  const bundledSubclassMatches = lower(bundled?.subclass?.name) === lower(subclassName);
+  const out = bundled ? {
+    name: bundled.name,
+    hitDie: bundled.hitDie,
+    source: 'SRD 5.2',
+    features: (bundled.features || []).map((f) => ({ ...f, kind: 'class', pack: 'SRD 5.2' })),
+    subclassFeatures: bundledSubclassMatches
+      ? (bundled.subclass.features || []).map((f) => ({ ...f, kind: 'subclass', pack: 'SRD 5.2' }))
+      : [],
+  } : null;
+  if (out && (!subclassName || bundledSubclassMatches)) return out;
+
+  let packs = [];
+  try {
+    const relevant = new Set(['class', 'classFeature', 'subclass', 'subclassFeature']);
+    const metas = (await api.library()).filter((meta) => !Array.isArray(meta.kinds)
+      || meta.kinds.some((kind) => relevant.has(kind)));
+    packs = await Promise.all(metas.map(async (meta) => {
+      try { return { meta, pack: await api.libraryPack(meta.id) }; }
+      catch { return null; }
+    }));
+  } catch { /* older server, or no imported library */ }
+
+  const wantedClass = lower(className), wantedSubclass = lower(subclassName);
+  const importedClassFeatures = [], importedSubclassFeatures = [];
+  let importedClass = null;
+
+  for (const item of packs.filter(Boolean)) {
+    const { meta, pack } = item;
+    const packName = meta.name || 'Imported pack';
+    const rawClass = (pack.class || []).find((c) => lower(c.name) === wantedClass);
+    if (!importedClass && rawClass) importedClass = rawClass;
+
+    if (!bundled) {
+      for (const f of pack.classFeature || []) {
+        if (lower(importedClassName(f)) !== wantedClass) continue;
+        const normalized = normalizeImportedFeature(f, packName, 'class');
+        if (normalized) importedClassFeatures.push(normalized);
+      }
+    }
+
+    if (wantedSubclass && !(bundled && lower(bundled.subclass?.name) === wantedSubclass)) {
+      const aliases = new Set([wantedSubclass]);
+      const subclasses = [...(pack.subclass || []), ...((rawClass?.subclasses || []).filter((s) => typeof s === 'object'))];
+      for (const sub of subclasses) {
+        if (lower(sub.className || className) !== wantedClass) continue;
+        if (![lower(sub.name), lower(sub.shortName)].includes(wantedSubclass)) continue;
+        aliases.add(lower(sub.name)); aliases.add(lower(sub.shortName));
+      }
+      for (const f of pack.subclassFeature || []) {
+        if (lower(importedClassName(f)) !== wantedClass) continue;
+        const sub = lower(f.subclassShortName || f.subclassName);
+        if (!aliases.has(sub)) continue;
+        const normalized = normalizeImportedFeature(f, packName, 'subclass');
+        if (normalized) importedSubclassFeatures.push(normalized);
+      }
+    }
+  }
+
+  if (out) {
+    if (!out.subclassFeatures.length) out.subclassFeatures = importedSubclassFeatures;
+    return out;
+  }
+  if (!importedClass && !importedClassFeatures.length) return null;
+  return {
+    name: importedClass?.name || className,
+    hitDie: Number(importedClass?.hd?.faces || importedClass?.hitDie || 8),
+    source: 'Imported library',
+    features: importedClassFeatures,
+    subclassFeatures: importedSubclassFeatures,
   };
 }
 
@@ -73,8 +197,59 @@ export function defaults() {
     attacks: [], equipment: [], coins: { gp: 0, sp: 0, cp: 0 },
     spellcasting: null,
     features: [], personality: { traits: '', ideals: '', bonds: '', flaws: '' },
+    advancement: { log: [] },
     notes: '',
   };
+}
+
+/** Mutates a sheet by exactly one level and returns the applied changes. */
+export function advanceLevel(data, classData, { hpGain, addToCurrent = true } = {}) {
+  if (!data?.klass) throw new Error('This sheet has no class to advance.');
+  const from = Math.max(1, Number(data.klass.level) || 1);
+  if (from >= 20) throw new Error('This character is already level 20.');
+  if (!classData || lower(classData.name) !== lower(data.klass.name)) {
+    throw new Error(`No advancement data found for ${data.klass.name || 'this class'}.`);
+  }
+  const to = from + 1;
+  const gain = Math.max(1, Math.floor(Number(hpGain) || 1));
+  const candidates = [...(classData.features || []), ...(classData.subclassFeatures || [])]
+    .filter((f) => Number(f.level) === to);
+
+  data.features ??= [];
+  const added = [];
+  const seen = new Set();
+  for (const f of candidates) {
+    const candidateKey = `${f.kind || 'class'}:${lower(f.name)}`;
+    if (seen.has(candidateKey)) continue;
+    seen.add(candidateKey);
+    let source = f.kind === 'subclass'
+      ? `${data.klass.subclass || 'Subclass'} ${to}`
+      : `${classData.name} ${to}`;
+    if (f.pack && f.pack !== 'SRD 5.2') source += ` · ${f.pack}`;
+    const duplicate = data.features.some((old) => lower(old.name) === lower(f.name)
+      && lower(old.source) === lower(source));
+    if (duplicate) continue;
+    const feature = { name: f.name, source, text: f.text || '' };
+    if (f.pack && f.pack !== 'SRD 5.2') feature.pack = f.pack;
+    data.features.push(feature);
+    added.push(feature);
+  }
+
+  data.klass.level = to;
+  data.klass.hitDie = Number(classData.hitDie) || data.klass.hitDie || 8;
+  data.hp ??= { max: 0, current: 0, temp: 0 };
+  data.hp.max = Math.max(0, Number(data.hp.max) || 0) + gain;
+  if (addToCurrent) data.hp.current = Math.max(0, Number(data.hp.current) || 0) + gain;
+  data.hitDice ??= { spent: 0 };
+  data.hitDice.spent = Math.min(Number(data.hitDice.spent) || 0, to);
+  data.advancement ??= { log: [] };
+  data.advancement.log ??= [];
+  data.advancement.log.push({
+    at: new Date().toISOString(), from, to, hpGain: gain,
+    features: added.map((f) => f.name),
+  });
+  if (data.advancement.log.length > 40) data.advancement.log.splice(0, data.advancement.log.length - 40);
+  return { from, to, hpGain: gain, features: added };
 }
 
 export function summary(data) {
@@ -173,15 +348,15 @@ export function editor(block, save) {
   wrap.append(
     el('div', { class: 'row' },
       frow('Species', textInput(d.species.name, (v) => { d.species.name = v; save(); })),
-      frow('Class', textInput(d.klass.name, (v) => { d.klass.name = v; save(); })),
-      frow('Subclass', textInput(d.klass.subclass, (v) => { d.klass.subclass = v; save(); })),
-      frow('Level', numInput(d.klass.level, (v) => { d.klass.level = Math.max(1, v); save(); }, { min: 1, max: 20 }))),
+      frow('Class', textInput(d.klass.name, (v) => { d.klass.name = v; save(); invalidateAdvancePreview(); })),
+      frow('Subclass', textInput(d.klass.subclass, (v) => { d.klass.subclass = v; save(); invalidateAdvancePreview(); })),
+      frow('Level', numInput(d.klass.level, (v) => { d.klass.level = Math.max(1, v); save(); invalidateAdvancePreview(); }, { min: 1, max: 20 }))),
     el('div', { class: 'row' },
       frow('Background', textInput(d.background.name, (v) => { d.background.name = v; save(); })),
       frow('Origin feat', textInput(d.background.feat, (v) => { d.background.feat = v; save(); }))),
     el('div', { class: 'sb-abrow' },
       ...ABILITIES.map((a) => el('label', {}, a.toUpperCase(),
-        numInput(d.abilities[a], (v) => { d.abilities[a] = v; save(); }, { min: 1, max: 30 })))),
+        numInput(d.abilities[a], (v) => { d.abilities[a] = v; save(); if (a === 'con') invalidateAdvancePreview(); }, { min: 1, max: 30 })))),
     el('div', { class: 'row' },
       frow('AC', numInput(d.ac, (v) => { d.ac = v; save(); })),
       frow('Speed', numInput(d.speed, (v) => { d.speed = v; save(); })),
@@ -197,6 +372,111 @@ export function editor(block, save) {
             save();
           },
         }), a.toUpperCase()))));
+
+  const advanceBody = el('div', {});
+  const advanceDetails = el('details', {},
+    el('summary', {}, `Level-up assistant${d.klass.level < 20 ? ` · next: ${Number(d.klass.level) + 1}` : ''}`),
+    advanceBody);
+  let advanceLoad = 0;
+  function invalidateAdvancePreview() {
+    advanceLoad++;
+    advanceDetails.querySelector('summary').textContent = `Level-up assistant${d.klass.level < 20 ? ` · next: ${Number(d.klass.level) + 1}` : ''}`;
+    if (advanceDetails.open) renderAdvance();
+  }
+  async function renderAdvance() {
+    const token = ++advanceLoad;
+    advanceBody.replaceChildren(el('p', { class: 'muted small' }, 'Loading class features…'));
+    if ((Number(d.klass.level) || 1) >= 20) {
+      advanceBody.replaceChildren(el('div', { class: 'notice' }, 'Level 20 reached — this class has no further level to add.'));
+      return;
+    }
+    let classData;
+    try { classData = await loadAdvancementClass(d.klass.name, d.klass.subclass); }
+    catch (err) {
+      if (token !== advanceLoad) return;
+      advanceBody.replaceChildren(el('div', { class: 'notice warn' }, `Could not load advancement data: ${err.message}`));
+      return;
+    }
+    if (token !== advanceLoad) return;
+    if (!classData) {
+      advanceBody.replaceChildren(el('div', { class: 'notice warn' },
+        `No bundled or imported class named “${d.klass.name || '—'}”. Match the class name to an SRD class or import its 5etools class data.`));
+      return;
+    }
+
+    const from = Math.max(1, Number(d.klass.level) || 1), to = from + 1;
+    const previewClass = lower(d.klass.name), previewSubclass = lower(d.klass.subclass);
+    const conMod = mod(d.abilities.con);
+    const averageGain = Math.max(1, Math.floor((Number(classData.hitDie) || 8) / 2) + 1 + conMod);
+    const hpInput = numInput(averageGain, () => {}, { min: 1, max: 99, title: 'Hit points gained' });
+    const addCurrent = el('input', { type: 'checkbox', checked: true });
+    const features = [...(classData.features || []), ...(classData.subclassFeatures || [])]
+      .filter((f) => Number(f.level) === to);
+    const featureList = features.length
+      ? el('ul', { class: 'small' }, features.map((f) => el('li', {},
+          el('strong', {}, f.name),
+          f.kind === 'subclass' ? ` — ${d.klass.subclass || 'subclass'}` : '',
+          f.pack && f.pack !== 'SRD 5.2' ? el('span', { class: 'muted' }, ` · ${f.pack}`) : null)))
+      : el('p', { class: 'muted small' }, 'No new named class features at this level; proficiency and hit dice still advance.');
+    const choiceNames = features.filter((f) => /subclass|ability score|feat|expertise|fighting style|epic boon|mastery/i.test(f.name));
+    const status = el('div', { class: 'muted small' });
+    const apply = el('button', {
+      class: 'primary',
+      onclick: () => {
+        if ((Number(d.klass.level) || 1) !== from
+            || lower(d.klass.name) !== previewClass
+            || lower(d.klass.subclass) !== previewSubclass) {
+          renderAdvance();
+          return;
+        }
+        try {
+          const result = advanceLevel(d, classData, {
+            hpGain: Number(hpInput.value), addToCurrent: addCurrent.checked,
+          });
+          save();
+          status.textContent = `Advanced to level ${result.to}: +${result.hpGain} HP and ${result.features.length} feature${result.features.length === 1 ? '' : 's'} added.`;
+          wrap.dispatchEvent(new CustomEvent('sheet-reopen', { bubbles: true }));
+        } catch (err) {
+          status.textContent = err.message;
+          status.style.color = 'var(--danger)';
+        }
+      },
+    }, `Advance to level ${to}`);
+    const rollHp = el('button', {
+      class: 'ghost small',
+      title: `Roll 1d${classData.hitDie} and add CON (${fmtMod(conMod)}), minimum 1`,
+      onclick: () => {
+        const die = 1 + Math.floor(Math.random() * (Number(classData.hitDie) || 8));
+        hpInput.value = String(Math.max(1, die + conMod));
+        status.textContent = `Rolled ${die} on the d${classData.hitDie}${conMod ? ` ${fmtMod(conMod)} CON` : ''}.`;
+      },
+    }, `🎲 Roll d${classData.hitDie}`);
+
+    advanceBody.replaceChildren(
+      el('p', { class: 'small' },
+        el('strong', {}, `${classData.name} ${from} → ${to}`),
+        el('span', { class: 'muted' }, ` · ${classData.source}`)),
+      el('p', { class: 'muted small' },
+        'This applies the level, HP gain, hit-die count, and named class/subclass features. Spell-slot maxima, prepared spells, ability increases, feats, and other choices remain manual.'),
+      el('div', { class: 'card' },
+        el('div', { class: 'small muted' }, `Features gained at level ${to}`),
+        featureList),
+      choiceNames.length ? el('div', { class: 'notice warn small' },
+        `Choice needed after advancing: ${choiceNames.map((f) => f.name).join(', ')}. The feature text is added to the sheet; make the actual choice in Abilities, Skills, Subclass, or Features.`) : null,
+      el('div', { class: 'row', style: 'margin-top:8px' },
+        frow('HP gained', hpInput),
+        el('span', { class: 'muted small' }, `average ${averageGain} (d${classData.hitDie}, CON ${fmtMod(conMod)})`),
+        rollHp),
+      el('label', { class: 'small', style: 'display:flex;align-items:center;gap:5px' },
+        addCurrent, 'Also add the gain to current HP'),
+      el('div', { class: 'row', style: 'margin-top:8px' }, apply,
+        el('button', { class: 'ghost small', onclick: renderAdvance }, 'Refresh preview')),
+      status);
+  }
+  advanceDetails.addEventListener('toggle', () => {
+    if (advanceDetails.open) renderAdvance();
+  });
+  wrap.append(advanceDetails);
 
   // skills: none / proficient / expertise
   const skillsWrap = el('div', { class: 'sheet-edit-skills' });
@@ -547,9 +827,13 @@ export const wizard = {
         draft.name ??= '';
         draft.acFinal ??= 10 + mod(abs.dex);
         const nameInput = el('input', { value: draft.name, placeholder: 'Character name', style: 'flex:1', oninput: (ev) => { draft.name = ev.target.value; } });
+        const nameRoll = el('button', {
+          class: 'ghost small', title: 'Suggest a person name', 'aria-label': 'Suggest a person name',
+          onclick: () => { draft.name = personName(); nameInput.value = draft.name; },
+        }, '🎲');
         const acInput = el('input', { type: 'number', value: draft.acFinal, min: 5, max: 30, style: 'width:70px', oninput: (ev) => { draft.acFinal = Number(ev.target.value) || 10; } });
         return el('div', {},
-          el('div', { class: 'row' }, el('label', {}, 'Name'), nameInput),
+          el('div', { class: 'row' }, el('label', {}, 'Name'), nameInput, nameRoll),
           el('div', { class: 'card', style: 'margin-top:10px' },
             el('div', {}, `${draft.species.name} ${draft.klass.name} (${draft.klass.subclass?.name || ''}) — ${draft.background.name}`),
             el('div', { class: 'small muted' }, ABILITIES.map((a) => `${a.toUpperCase()} ${abs[a]}`).join('  ')),

@@ -2,7 +2,8 @@
 // Data pack (public/systems/coc7.json) carries names, base values and the
 // occupation point formulas — no rules text (Chaosium fan material policy).
 
-import { el, esc } from '../util.js';
+import { el, esc, makeRng } from '../util.js';
+import { nameFor } from '../names.js';
 import { linkDice } from '../render.js';
 import {
   rollBtn, kvHtml, sectionHtml,
@@ -24,6 +25,44 @@ export async function loadData() {
 
 const CHARS = ['STR', 'CON', 'SIZ', 'DEX', 'APP', 'INT', 'POW', 'EDU'];
 const CHAR_NAMES = { STR: 'Strength', CON: 'Constitution', SIZ: 'Size', DEX: 'Dexterity', APP: 'Appearance', INT: 'Intelligence', POW: 'Power', EDU: 'Education' };
+const personName = () => nameFor(makeRng(`coc-wizard:${Date.now()}:${Math.random()}`), 'person');
+
+const die = (sides, rng) => 1 + Math.floor(Math.max(0, Math.min(0.999999999, rng())) * sides);
+const canImprove = (skill) => String(skill?.name || '').trim().toLowerCase() !== 'cthulhu mythos';
+
+/** Resolve one checked skill without mutating it; injectable RNG keeps it testable. */
+export function rollImprovementCheck(value, rng = Math.random) {
+  const before = Math.max(0, Math.min(99, Math.floor(Number(value) || 0)));
+  const roll = die(100, rng);
+  const improved = roll > before || roll >= 96;
+  const rolledGain = improved ? die(10, rng) : 0;
+  const after = Math.min(99, before + rolledGain);
+  return { before, roll, improved, gain: after - before, after };
+}
+
+/** Run every marked improvement check, apply gains, clear marks, and log it. */
+export function runDevelopment(data, rng = Math.random) {
+  const marked = (data.skills || []).filter((skill) => skill.improve);
+  if (!marked.length) throw new Error('Mark at least one skill for improvement first.');
+  const results = [];
+  for (const skill of marked) {
+    if (!canImprove(skill)) {
+      results.push({ name: skill.name, before: skill.value, skipped: true, reason: 'Cthulhu Mythos does not use improvement checks.' });
+      skill.improve = false;
+      continue;
+    }
+    const result = rollImprovementCheck(skill.value, rng);
+    skill.value = result.after;
+    skill.improve = false;
+    results.push({ name: skill.name, ...result });
+  }
+  data.development ??= { log: [] };
+  data.development.log ??= [];
+  const phase = { at: new Date().toISOString(), results };
+  data.development.log.push(phase);
+  if (data.development.log.length > 30) data.development.log.splice(0, data.development.log.length - 30);
+  return phase;
+}
 
 export function defaults() {
   return {
@@ -37,6 +76,7 @@ export function defaults() {
     skills: [], weapons: [], gear: [],
     cash: '', spendingLevel: '',
     backstory: { description: '', ideology: '', significantPeople: '', meaningfulLocations: '', treasuredPossessions: '', traits: '', injuries: '', phobias: '' },
+    development: { log: [] },
     notes: '',
   };
 }
@@ -86,7 +126,7 @@ export function html(data) {
 
   const skills = (d.skills || []).slice().sort((a, b) => a.name.localeCompare(b.name));
   const skillRows = skills.map((s) =>
-    `<div class="sheet-skill">${s.occupational ? '●' : '○'} ${rollBtn({ kind: 'pct', target: s.value, label: s.name }, `${esc(s.name)} ${s.value}%`, 'Roll — Shift bonus die, Ctrl penalty die')} <span class="muted small">(${half(s.value)}/${fifth(s.value)})</span></div>`).join('');
+    `<div class="sheet-skill">${s.occupational ? '●' : '○'}${s.improve ? ' <span title="Marked for a development check">✓</span>' : ''} ${rollBtn({ kind: 'pct', target: s.value, label: s.name }, `${esc(s.name)} ${s.value}%`, 'Roll — Shift bonus die, Ctrl penalty die')} <span class="muted small">(${half(s.value)}/${fifth(s.value)})</span></div>`).join('');
 
   const weapons = (d.weapons || []).length
     ? d.weapons.map((w) => `<div class="sheet-kv"><span class="sk">${esc(w.name)}</span><span class="sv">` +
@@ -100,6 +140,11 @@ export function html(data) {
     'Treasured possessions': d.backstory.treasuredPossessions, Traits: d.backstory.traits,
     'Injuries & scars': d.backstory.injuries, 'Phobias & manias': d.backstory.phobias,
   }).filter(([, v]) => v);
+  const pending = (d.skills || []).filter((s) => s.improve && canImprove(s)).length;
+  const lastPhase = d.development?.log?.[d.development.log.length - 1];
+  const development = lastPhase?.results?.map((result) => result.skipped
+    ? `${esc(result.name)}: skipped`
+    : `${esc(result.name)}: ${result.roll} vs ${result.before}${result.improved ? ` · +${result.gain} → ${result.after}` : ' · no increase'}`).join('<br>');
 
   return `<div class="sheet sheet-coc">
     <div class="sheet-head">
@@ -115,6 +160,9 @@ export function html(data) {
       kvHtml('Move', String(d.move)) +
       kvHtml('Dodge', pct(d.dodge, 'Dodge')))}
     ${sectionHtml('Skills', `<div class="sheet-skills">${skillRows || '<span class="muted small">No skills recorded.</span>'}</div>`)}
+    ${pending || development ? sectionHtml('Development',
+      `${pending ? `<div class="small"><strong>${pending}</strong> skill${pending === 1 ? '' : 's'} marked for improvement.</div>` : ''}` +
+      `${development ? `<div class="muted small">Last phase:<br>${development}</div>` : ''}`) : ''}
     ${sectionHtml('Weapons', weapons)}
     ${(d.gear || []).length ? sectionHtml('Gear & possessions', `<div class="small">${esc(d.gear.map((g) => g.name || g).join(', '))}</div>` + (d.cash ? kvHtml('Cash & assets', esc(`${d.cash}${d.spendingLevel ? ` · spending level ${d.spendingLevel}` : ''}`)) : '')) : ''}
     ${back.length ? sectionHtml('Backstory', back.map(([k, v]) => kvHtml(k, esc(v))).join('')) : ''}
@@ -126,6 +174,8 @@ export function html(data) {
 
 export function editor(block, save) {
   const d = block.data = { ...defaults(), ...(block.data || {}) };
+  d.development = { log: [], ...(d.development || {}) };
+  d.development.log ??= [];
   const wrap = el('div', { class: 'sb-form' });
 
   const recompute = el('button', {
@@ -158,13 +208,55 @@ export function editor(block, save) {
       frow('Luck', numInput(d.luck, (v) => { d.luck = v; save(); })),
       frow('SAN now', numInput(d.san.current, (v) => { d.san.current = v; save(); }))));
 
+  const development = el('details', {});
+  const developmentSummary = el('summary', {});
+  const developmentBody = el('div', {});
+  development.append(developmentSummary, developmentBody);
+  function redrawDevelopment() {
+    const marked = d.skills.filter((skill) => skill.improve);
+    const last = d.development.log[d.development.log.length - 1];
+    developmentSummary.textContent = `Development phase · ${marked.length} marked`;
+    const status = el('div', { class: 'muted small' });
+    const roll = el('button', {
+      class: 'primary', disabled: !marked.length,
+      onclick: () => {
+        try {
+          runDevelopment(d);
+          save();
+          wrap.dispatchEvent(new CustomEvent('sheet-reopen', { bubbles: true }));
+        } catch (err) {
+          status.textContent = err.message;
+          status.style.color = 'var(--danger)';
+        }
+      },
+    }, `🎲 Roll ${marked.length || ''} improvement check${marked.length === 1 ? '' : 's'}`);
+    const lastRows = last?.results?.map((result) => el('div', { class: 'small' }, result.skipped
+      ? `${result.name}: skipped — ${result.reason}`
+      : `${result.name}: rolled ${result.roll} vs ${result.before} — ${result.improved ? `+${result.gain}, now ${result.after}` : 'no increase'}`));
+    developmentBody.replaceChildren(
+      el('p', { class: 'muted small' },
+        'After a skill succeeds during play, mark “improve” beside it. At the development phase, this rolls every marked check, applies successful 1d10 gains, clears the marks, and keeps a short audit log.'),
+      marked.length ? el('p', { class: 'small' }, `Ready: ${marked.map((skill) => skill.name).join(', ')}`)
+        : el('p', { class: 'muted small' }, 'No skills are marked yet.'),
+      roll, status,
+      lastRows?.length ? el('div', { class: 'card', style: 'margin-top:8px' },
+        el('div', { class: 'small muted' }, 'Previous phase'), lastRows) : null);
+  }
+  redrawDevelopment();
+  wrap.append(development);
+
   wrap.append(el('details', { open: true }, el('summary', {}, 'Skills'),
     listEdit(d.skills, (s) => el('span', { class: 'row', style: 'flex:1' },
       el('label', { class: 'small', style: 'display:flex;align-items:center;gap:3px' },
         el('input', { type: 'checkbox', checked: !!s.occupational, onchange: (ev) => { s.occupational = ev.target.checked; save(); } }), 'occ.'),
+      el('label', { class: 'small', style: 'display:flex;align-items:center;gap:3px', title: canImprove(s) ? 'Mark this after a successful use during play' : 'Cthulhu Mythos does not use improvement checks' },
+        el('input', {
+          type: 'checkbox', checked: !!s.improve && canImprove(s), disabled: !canImprove(s),
+          onchange: (ev) => { s.improve = ev.target.checked; save(); redrawDevelopment(); },
+        }), 'improve'),
       textInput(s.name, (v) => { s.name = v; save(); }, { placeholder: 'Skill', style: 'flex:1' }),
       numInput(s.value, (v) => { s.value = v; save(); }, { min: 0, max: 99 })),
-      () => ({ name: '', value: 20, occupational: false }), save)));
+      () => ({ name: '', value: 20, occupational: false, improve: false }), save)));
 
   wrap.append(el('details', {}, el('summary', {}, 'Weapons'),
     listEdit(d.weapons, (w) => el('span', { class: 'row', style: 'flex:1' },
@@ -208,6 +300,14 @@ export function writePdf(w, data) {
     ['meaningfulLocations', 'Meaningful locations'], ['treasuredPossessions', 'Treasured possessions'], ['traits', 'Traits'],
     ['injuries', 'Injuries'], ['phobias', 'Phobias & manias']]) {
     if (d.backstory?.[k]) w.line(`${lab}: ${d.backstory[k]}`);
+  }
+  const pending = (d.skills || []).filter((skill) => skill.improve && canImprove(skill));
+  if (pending.length) w.line(`Development checks marked: ${pending.map((skill) => skill.name).join(', ')}`);
+  const last = d.development?.log?.[d.development.log.length - 1];
+  for (const result of last?.results || []) {
+    w.line(result.skipped
+      ? `Development: ${result.name} skipped`
+      : `Development: ${result.name} rolled ${result.roll} vs ${result.before}; ${result.improved ? `+${result.gain}, now ${result.after}` : 'no increase'}`);
   }
   if (d.notes) w.para(d.notes);
 }
@@ -468,9 +568,14 @@ export const wizard = {
       render(draft, ctx) {
         draft.name ??= '';
         const der = derive({ characteristics: draft.characteristics, age: draft.age }, ctx.data);
+        const nameInput = el('input', { value: draft.name, placeholder: 'Investigator name', style: 'flex:1', oninput: (ev) => { draft.name = ev.target.value; } });
+        const nameRoll = el('button', {
+          class: 'ghost small', title: 'Suggest a person name', 'aria-label': 'Suggest a person name',
+          onclick: () => { draft.name = personName(); nameInput.value = draft.name; },
+        }, '🎲');
         return el('div', {},
           el('div', { class: 'row' }, el('label', {}, 'Name'),
-            el('input', { value: draft.name, placeholder: 'Investigator name', style: 'flex:1', oninput: (ev) => { draft.name = ev.target.value; } })),
+            nameInput, nameRoll),
           el('div', { class: 'card', style: 'margin-top:10px' },
             el('div', {}, `${draft.occupation.name}, ${draft.era}, age ${draft.age}`),
             el('div', { class: 'small muted' }, CHARS.map((k) => `${k} ${draft.characteristics[k]}`).join('  ')),

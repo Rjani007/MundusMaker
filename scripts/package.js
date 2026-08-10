@@ -36,7 +36,7 @@ const APP_FILES = [
   'server.js', 'package.json', 'LICENSE', 'README.md',
   'Start-MundusMaker.bat', 'Start-MundusMaker.command', 'start-mundusmaker.sh',
   'Install-MundusMaker.ps1', 'Install-MundusMaker.bat', 'MundusMaker-Tray.ps1',
-  'public', 'sample',
+  'public', 'sample', 'scripts/fetch-5etools.js',
 ];
 
 function fetchBuffer(url, redirects = 0) {
@@ -107,7 +107,11 @@ async function build(target, nodeVersion) {
   for (const f of APP_FILES) {
     const src = path.join(ROOT, f);
     if (fs.statSync(src).isDirectory()) copyDirSync(src, path.join(outDir, f));
-    else fs.copyFileSync(src, path.join(outDir, f));
+    else {
+      const dest = path.join(outDir, f);
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.copyFileSync(src, dest);
+    }
   }
   const runtimeDest = path.join(outDir, ...spec.runtimePath);
   fs.mkdirSync(path.dirname(runtimeDest), { recursive: true });

@@ -716,3 +716,10 @@ a.sheet-roll:hover { color: var(--accent); border-bottom-color: var(--accent); }
   .wiz-rail { width: auto; position: static; display: flex; flex-wrap: wrap; }
   .sheet-cols { grid-template-columns: 1fr; }
 }
+.random-table{border:1px solid var(--line);border-radius:8px;overflow:hidden;background:rgba(255,255,255,.018)}
+.random-table .rt-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 11px;border-bottom:1px solid var(--line)}
+.random-table table{width:100%;border-collapse:collapse}
+.random-table td{padding:6px 9px;border-bottom:1px solid var(--line)}
+.random-table tr:last-child td{border-bottom:0}
+.random-table .rt-weight{width:46px;text-align:center;font-variant-numeric:tabular-nums;color:var(--accent)}
+.random-table .rt-result{padding:9px 11px;border-top:1px solid var(--line);min-height:20px}

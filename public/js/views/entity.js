@@ -15,6 +15,8 @@ import { defaultStat, statblockHtml, ABILITIES } from '../statblock.js';
 import { defaultEncounter, computeEncounter, DIFFICULTY_COLORS } from '../encounter.js';
 import { monsterToStat, loadAllMonsters } from '../importers.js';
 import { SHEET_SYSTEMS, handleSheetClick } from '../sheets/sheetcore.js';
+import { defaultRandomTable, randomTableHtml, rollRandomTable, tableRows } from '../randomtable.js';
+import { nameStyleForType, randomName } from '../names.js';
 import { api } from '../api.js';
 
 function escapeRegExp(s) {
@@ -51,7 +53,7 @@ const fieldHint = (type, key) => FIELD_HINTS[`${type}:${key}`] || FIELD_HINTS[ke
 // would bring back.
 const BLOCK_NOUN = {
   text: 'Block', heading: 'Heading', quote: 'Quote',
-  statblock: '⚔ Statblock', encounter: '💀 Encounter', sheet: '🎭 Character sheet',
+  statblock: '⚔ Statblock', encounter: '💀 Encounter', sheet: '🎭 Character sheet', table: '🎲 Random table',
 };
 
 export function render(container, id) {
@@ -132,8 +134,18 @@ export function render(container, id) {
         oninput: (ev) => { e.name = ev.target.value; save(); },
         onchange: () => propagateRename(),
       });
+  const titleRow = readOnly ? title : el('div', { class: 'row' }, title,
+    el('button', {
+      class: 'ghost', title: 'Roll a fitting name for this entry type',
+      onclick: async () => {
+        e.name = randomName(nameStyleForType(e.type));
+        title.value = e.name;
+        save();
+        await propagateRename();
+      },
+    }, '🎲'));
 
-  const typeSel = el('select', { onchange: (ev) => { e.type = ev.target.value; save(); refreshFields(); } },
+  const typeSel = el('select', { onchange: (ev) => { e.type = ev.target.value; save(); rerender(); } },
     Object.entries(types()).map(([key, ty]) => el('option', { value: key, selected: key === e.type }, ty.label)));
 
   const tagsInput = el('input', {
@@ -170,7 +182,7 @@ export function render(container, id) {
          }, '⏳ History'),
          el('button', {
            class: 'ghost danger', onclick: async () => {
-             if (!confirm(`Delete “${e.name}”? Links pointing here will show as missing.`)) return;
+              if (!confirm(`Delete “${e.name}”? Links pointing here will show as missing.\n\nYou can restore the entry from Settings → Trash & snapshots.`)) return;
              await deleteEntity(e.id);
              location.hash = '#/';
            },
@@ -575,6 +587,7 @@ export function render(container, id) {
       return sys ? sys.html(b.data, { gm: state.gm })
         : `<div class="notice warn">Unknown sheet system “${esc(b.system || '?')}” — from a newer MundusMaker?</div>`;
     }
+    if (b.kind === 'table') return randomTableHtml(b.table);
     // Placeholders are editor furniture. Empty text blocks never reach player
     // preview (refreshBlocks filters them out), but an *empty heading* over a
     // written section does — it must stay invisible there, exactly as before.
@@ -623,7 +636,54 @@ export function render(container, id) {
     if (b.kind === 'statblock') editStatblock(b, blockNode);
     else if (b.kind === 'encounter') editEncounter(b, blockNode);
     else if (b.kind === 'sheet') editSheet(b, blockNode);
+    else if (b.kind === 'table') editRandomTable(b, blockNode);
     else editBlock(b, blockNode);
+  }
+
+  // --- weighted random-table editor ---
+  function editRandomTable(b, blockNode) {
+    const table = (b.table ??= defaultRandomTable());
+    table.rows = tableRows(table);
+    const form = el('div', { class: 'sb-form rt-editor' });
+    const rowsWrap = el('div', {});
+
+    function refreshRows() {
+      rowsWrap.innerHTML = '';
+      table.rows.forEach((row, i) => {
+        rowsWrap.append(el('div', { class: 'entry-row rt-edit-row' },
+          el('input', {
+            type: 'number', min: 0, step: 1, value: row.weight,
+            title: 'Relative weight (0 disables this row)', style: 'width:76px',
+            oninput: (ev) => { row.weight = Math.max(0, Number(ev.target.value) || 0); save(); },
+          }),
+          el('input', {
+            value: row.text, placeholder: 'Result…', style: 'flex:1',
+            oninput: (ev) => { row.text = ev.target.value; save(); },
+          }),
+          el('button', {
+            type: 'button', class: 'ghost', title: 'Remove row',
+            onclick: () => { table.rows.splice(i, 1); save(); refreshRows(); },
+          }, '✕')));
+      });
+    }
+    refreshRows();
+    form.append(
+      el('label', { class: 'field-row' }, el('span', {}, 'Table title'), el('input', {
+        value: table.title || '', placeholder: 'Random encounter, Tavern rumor…',
+        oninput: (ev) => { table.title = ev.target.value; save(); },
+      })),
+      el('div', { class: 'muted small', style: 'margin:8px 0 5px' },
+        'Weight is relative: a row weighted 3 is three times as likely as one weighted 1. Weight 0 keeps a row without rolling it.'),
+      rowsWrap,
+      el('div', { class: 'row', style: 'margin-top:8px' },
+        el('button', {
+          type: 'button', class: 'ghost small',
+          onclick: () => { table.rows.push({ weight: 1, text: '' }); save(); refreshRows(); },
+        }, '+ Add row'),
+        el('span', { class: 'spacer' }),
+        el('button', { type: 'button', class: 'primary', onclick: () => { save(); refreshBlocks(); } }, 'Done')));
+    const content = blockNode.querySelector('.block-content');
+    content.replaceWith(el('div', { class: 'block-content' }, form));
   }
 
   // --- character-sheet editor (form comes from the system module) ---
@@ -974,7 +1034,7 @@ export function render(container, id) {
     blocksWrap.innerHTML = '';
     // players never see secrets; empty scaffold blocks — and headings whose
     // whole section is empty — are edit-mode only
-    const hasContent = (b) => b.kind === 'statblock' || b.kind === 'encounter' || b.kind === 'sheet' || b.text?.trim();
+    const hasContent = (b) => b.kind === 'statblock' || b.kind === 'encounter' || b.kind === 'sheet' || b.kind === 'table' || b.text?.trim();
     let list = e.blocks;
     if (readOnly) {
       const shown = e.blocks.filter((b) => !b.secret);
@@ -998,7 +1058,7 @@ export function render(container, id) {
           // A named picker, not the old ¶ cycle button: all three styles are
           // visible, the current one is marked, and there is no "click it three
           // more times to get back to text".
-          b.kind === 'statblock' || b.kind === 'encounter' || b.kind === 'sheet' ? null : el('span', { class: 'bc-style' },
+          b.kind === 'statblock' || b.kind === 'encounter' || b.kind === 'sheet' || b.kind === 'table' ? null : el('span', { class: 'bc-style' },
             [['text', 'Text'], ['heading', 'Heading'], ['quote', 'Quote']].map(([k, label]) => ctrlBtn({
               class: k === b.kind ? 'sel' : '',
               title: k === b.kind ? `Already a ${label.toLowerCase()} block` : `Turn this into a ${label.toLowerCase()} block`,
@@ -1020,7 +1080,7 @@ export function render(container, id) {
               // A statblock or encounter represents real work and the undo toast
               // is transient (9s, and gone on navigation), so those keep an
               // explicit confirm. Text/heading/quote rely on undo alone.
-              const costly = b.kind === 'statblock' || b.kind === 'encounter' || b.kind === 'sheet';
+              const costly = b.kind === 'statblock' || b.kind === 'encounter' || b.kind === 'sheet' || b.kind === 'table';
               if (costly && !confirm(`Delete this ${BLOCK_NOUN[b.kind] || 'block'}? You can undo for a few seconds afterwards.`)) return;
               e.blocks.splice(idx, 1);
               save(); refreshBlocks();
@@ -1033,8 +1093,20 @@ export function render(container, id) {
       }
       const content = el('div', { class: 'block-content' });
       content.innerHTML = blockContentHtml(b, idx);
-      if (!readOnly) {
-        content.addEventListener('click', (ev) => {
+      content.addEventListener('click', (ev) => {
+          const rollBtn = ev.target.closest('[data-table-roll]');
+          if (b.kind === 'table' && rollBtn) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            const picked = rollRandomTable(b.table);
+            const result = content.querySelector('[data-table-result]');
+            if (result) {
+              result.classList.remove('muted');
+              result.textContent = picked ? `🎲 ${picked.text}` : 'No enabled rows to roll.';
+            }
+            return;
+          }
+          if (readOnly) return;
           if (ev.target.closest('a')) return; // let links navigate
           if (b.kind === 'sheet') {
             // dots and damage boxes edit in place; the roll bar is left alone
@@ -1047,7 +1119,6 @@ export function render(container, id) {
           }
           openEditor(b, node);
         });
-      }
       node.append(content);
       blocksWrap.append(node);
     }
@@ -1065,6 +1136,10 @@ export function render(container, id) {
           class: 'ghost', title: 'An interactive character sheet (D&D 5.5e, Vampire V5 or Call of Cthulhu). For a guided build, use Create a character instead.',
           onclick: pickSheetSystem,
         }, '+ 🎭 Sheet'),
+        el('button', {
+          class: 'ghost', title: 'A weighted list you can roll at the table',
+          onclick: () => addBlock({ kind: 'table' }),
+        }, '+ 🎲 Table'),
         // Kept as its own button rather than folded into "+ Text then lock it":
         // a GM-only paragraph is the single most-used thing in the app, and
         // folding it would hide it behind a control you must first discover.
@@ -1083,6 +1158,7 @@ export function render(container, id) {
     if (kind === 'statblock') b.stat = defaultStat(e.name);
     if (kind === 'encounter') b.enc = defaultEncounter();
     if (kind === 'sheet') { b.system = system; b.data = SHEET_SYSTEMS[system].defaults(); }
+    if (kind === 'table') b.table = defaultRandomTable();
     e.blocks.push(b);
     save();
     refreshBlocks();
@@ -1174,14 +1250,20 @@ export function render(container, id) {
   function refreshBacklinks() {
     backWrap.innerHTML = '';
     const links = backlinksFor(e.id);
-    // maps whose markers or placed stamps point at this entry
+    // maps whose markers, placed stamps, or generated cross-scale settlements
+    // point at this entry
     const mapRefs = [];
     for (const src of visibleEntities()) {
       if (src.id === e.id) continue;
+      let placed = false;
       for (const mk of [...(src.map?.markers || []), ...(src.map?.stamps || [])]) {
         if (mk.to !== e.id || (mk.secret && !state.gm)) continue;
-        mapRefs.push({ src, secret: !!mk.secret });
+        mapRefs.push({ src, secret: !!mk.secret, crossScale: false });
+        placed = true;
         break; // one line per map even with several references
+      }
+      if (!placed && Object.values(src.map?.scaleLinks || {}).includes(e.id)) {
+        mapRefs.push({ src, secret: false, crossScale: true });
       }
     }
     if (!links.length && !mapRefs.length) {
@@ -1195,10 +1277,10 @@ export function render(container, id) {
         el('span', { class: 'muted' }, bl.via === 'mention' ? ' — mentions this entry' : ` — ${bl.label || 'related'}`),
         bl.secret ? el('span', { class: 'rel-secret-mark' }, '🔒') : null));
     }
-    for (const { src, secret } of mapRefs) {
+    for (const { src, secret, crossScale } of mapRefs) {
       backWrap.append(el('div', { class: 'backlink-item' },
         el('span', { style: 'margin-right:6px' }, '📍'),
-        el('a', { href: `#/map/${src.id}` }, `Marked on the map of ${src.name}`),
+        el('a', { href: `#/map/${src.id}` }, crossScale ? `Linked from a settlement on ${src.name}` : `Marked on the map of ${src.name}`),
         secret ? el('span', { class: 'rel-secret-mark' }, '🔒') : null));
     }
   }
@@ -1238,6 +1320,87 @@ export function render(container, id) {
   }
   refreshMap();
 
+  // ---------- session initiative / HP tracker ----------
+  // This is deliberately a local GM list, not a shared VTT surface. It is not
+  // rendered in player preview or exports, and lives on session entries where
+  // it can be resumed after a reload.
+  const trackerWrap = el('div', {});
+  function refreshTracker() {
+    trackerWrap.innerHTML = '';
+    const tracker = (e.sessionTracker ??= { round: 1, active: 0, rows: [] });
+    tracker.rows ??= [];
+    if (tracker.active >= tracker.rows.length) tracker.active = 0;
+
+    const controls = el('div', { class: 'row', style: 'margin-bottom:9px' },
+      el('label', { class: 'small row', style: 'gap:5px' }, 'Round', el('input', {
+        type: 'number', min: 1, step: 1, value: tracker.round || 1, style: 'width:70px',
+        oninput: (ev) => { tracker.round = Math.max(1, Math.trunc(Number(ev.target.value)) || 1); save(); },
+      })),
+      el('button', {
+        class: 'small', disabled: !tracker.rows.length,
+        onclick: () => {
+          tracker.active++;
+          if (tracker.active >= tracker.rows.length) { tracker.active = 0; tracker.round = Math.max(1, tracker.round || 1) + 1; }
+          save(); refreshTracker();
+        },
+      }, 'Next turn →'),
+      el('button', {
+        class: 'ghost small', disabled: tracker.rows.length < 2,
+        onclick: () => {
+          tracker.rows.sort((a, b) => (Number(b.initiative) || 0) - (Number(a.initiative) || 0));
+          tracker.active = 0; save(); refreshTracker();
+        },
+      }, 'Sort initiative'),
+      el('span', { class: 'spacer' }),
+      el('button', {
+        class: 'ghost small',
+        onclick: () => {
+          tracker.rows.push({ id: uid(), name: '', initiative: '', hp: '', maxHp: '', conditions: '' });
+          save(); refreshTracker();
+          const nameInputs = trackerWrap.querySelectorAll('.tracker-name');
+          nameInputs[nameInputs.length - 1]?.focus();
+        },
+      }, '+ Add combatant'));
+    trackerWrap.append(controls);
+
+    if (!tracker.rows.length) {
+      trackerWrap.append(el('div', { class: 'muted small' }, 'No combatants yet. Add them when initiative is rolled.'));
+      return;
+    }
+    tracker.rows.forEach((row, i) => {
+      const active = i === tracker.active;
+      const numberInput = (key, placeholder, width) => el('input', {
+        type: 'number', step: 1, value: row[key] ?? '', placeholder, style: `width:${width}px`,
+        oninput: (ev) => { row[key] = ev.target.value === '' ? '' : Number(ev.target.value); save(); },
+      });
+      trackerWrap.append(el('div', {
+        class: 'row',
+        style: `padding:7px 8px;margin:4px 0;border-radius:6px;border:1px solid ${active ? 'var(--accent)' : 'var(--line)'};background:${active ? 'rgba(219,169,90,.08)' : 'transparent'}`,
+      },
+        el('span', { style: 'width:18px;text-align:center', title: active ? 'Current turn' : '' }, active ? '▶' : ''),
+        numberInput('initiative', 'Init', 66),
+        el('input', {
+          class: 'tracker-name', value: row.name || '', placeholder: 'Combatant', style: 'flex:1;min-width:120px',
+          oninput: (ev) => { row.name = ev.target.value; save(); },
+        }),
+        el('span', { class: 'muted small' }, 'HP'),
+        el('button', { class: 'ghost small', title: 'Lose 1 HP', onclick: () => { row.hp = (Number(row.hp) || 0) - 1; save(); refreshTracker(); } }, '−'),
+        numberInput('hp', 'now', 70),
+        el('span', { class: 'muted' }, '/'),
+        numberInput('maxHp', 'max', 70),
+        el('button', { class: 'ghost small', title: 'Gain 1 HP', onclick: () => { row.hp = (Number(row.hp) || 0) + 1; save(); refreshTracker(); } }, '+'),
+        el('input', {
+          value: row.conditions || '', placeholder: 'conditions', style: 'width:150px',
+          oninput: (ev) => { row.conditions = ev.target.value; save(); },
+        }),
+        el('button', {
+          class: 'ghost danger small', title: 'Remove combatant',
+          onclick: () => { tracker.rows.splice(i, 1); if (tracker.active > i) tracker.active--; save(); refreshTracker(); },
+        }, '✕')));
+    });
+  }
+  if (!readOnly && e.type === 'session') refreshTracker();
+
   // ---------- assemble ----------
   function card(titleText, node, extra) {
     return el('div', { class: 'card' }, el('h3', {}, titleText, extra || ''), node);
@@ -1247,10 +1410,11 @@ export function render(container, id) {
     readOnly ? el('div', { class: 'notice', style: 'margin-bottom:14px' },
       '👁 Player preview — secrets and GM-only content are hidden. Toggle GM view in the top bar to edit.') : null,
     el('div', { class: 'ent-head ent-head-row' },
-      el('div', { class: 'ent-head-main' }, title, meta, dateWrap),
+      el('div', { class: 'ent-head-main' }, titleRow, meta, dateWrap),
       (e.image || !readOnly) ? portrait : null),
     el('hr', { class: 'soft' }),
     blocksWrap,
+    (!readOnly && e.type === 'session') ? card('⚔ Initiative & HP', trackerWrap) : null,
     el('hr', { class: 'soft' }),
     card('Details', fieldsWrap, readOnly ? null
       : helpTip('Quick facts, shown here and in exports. Blank fields stay hidden; ✕ hides a field you don’t need.')),

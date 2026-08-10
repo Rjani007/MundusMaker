@@ -10,6 +10,7 @@ import { mapToJpeg, mapKey } from './maps/mapcore.js';
 import { ABILITIES, abilityMod } from './statblock.js';
 import { computeEncounter } from './encounter.js';
 import { SHEET_SYSTEMS } from './sheets/sheetcore.js';
+import { tableRows } from './randomtable.js';
 import { api } from './api.js';
 
 /** Load an image from the world's assets and re-encode as a bounded JPEG. */
@@ -244,6 +245,18 @@ export async function buildPdf(opts) {
     y += 4;
   }
 
+  function writeRandomTable(b, secretStyle) {
+    const table = b.table || {};
+    const style = Object.keys(secretStyle).length ? secretStyle : { bg: [246, 243, 234], bar: [148, 112, 55] };
+    y += 4;
+    para(table.title || 'Random table', 11, 'bold', [92, 65, 34], style);
+    for (const row of tableRows(table)) {
+      if (!row.text.trim()) continue;
+      para(`[weight ${row.weight}]  ${row.text}`, 9.5, 'normal', [58, 52, 45], { indent: 8, ...style });
+    }
+    y += 4;
+  }
+
   // ---------- entities by type ----------
   for (const [typeKey, t] of groups) {
     if (!opts.typeKeys.has(typeKey)) continue;
@@ -302,7 +315,7 @@ export async function buildPdf(opts) {
 
       // skip headings whose whole section is empty (fresh template scaffolds)
       const shownBlocks = (e.blocks || []).filter((b) => opts.gm || !b.secret);
-      const blockHasContent = (b) => b.kind === 'statblock' || b.kind === 'encounter' || b.kind === 'sheet' || b.text?.trim();
+      const blockHasContent = (b) => b.kind === 'statblock' || b.kind === 'encounter' || b.kind === 'sheet' || b.kind === 'table' || b.text?.trim();
       const printable = shownBlocks.filter((b, i) => {
         if (b.kind !== 'heading') return true;
         for (let j = i + 1; j < shownBlocks.length && shownBlocks[j].kind !== 'heading'; j++) {
@@ -335,6 +348,14 @@ export async function buildPdf(opts) {
             writeLines(['GM SECRET'], 7, 'bold', [138, 95, 194], secretStyle);
           }
           writeSheet(b, e.name, secretStyle);
+          continue;
+        }
+        if (b.kind === 'table') {
+          if (b.secret && opts.gm) {
+            ensure(14);
+            writeLines(['GM SECRET'], 7, 'bold', [138, 95, 194], secretStyle);
+          }
+          writeRandomTable(b, secretStyle);
           continue;
         }
         const text = mdToPlain(b.text).trim();

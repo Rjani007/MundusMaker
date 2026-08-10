@@ -672,11 +672,11 @@ export function renderInteriorBase(map, model, scale = 1) {
       ctx.strokeStyle = '#3a250f';
       ctx.lineWidth = 1.5;
       if (horizontalPassage) {
-        ctx.fillRect(px + 4, py + CELL / 2 - 3, CELL - 8, 6);
-        ctx.strokeRect(px + 4, py + CELL / 2 - 3, CELL - 8, 6);
-      } else {
         ctx.fillRect(px + CELL / 2 - 3, py + 4, 6, CELL - 8);
         ctx.strokeRect(px + CELL / 2 - 3, py + 4, 6, CELL - 8);
+      } else {
+        ctx.fillRect(px + 4, py + CELL / 2 - 3, CELL - 8, 6);
+        ctx.strokeRect(px + 4, py + CELL / 2 - 3, CELL - 8, 6);
       }
     }
   }

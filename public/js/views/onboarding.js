@@ -7,6 +7,14 @@ import { api } from '../api.js';
 
 export async function maybeShowOnboarding() {
   if (readSetting('onboarded')) return;
+  // Marked the moment it appears, not when it's dismissed — refreshing halfway
+  // through the tour must not bring it back. Settings has a replay link.
+  writeSetting('onboarded', '1');
+  return showOnboarding();
+}
+
+/** Always shows — the "replay the tour" path from Settings. */
+export async function showOnboarding() {
   let dataDir = 'the data folder next to the app';
   try { dataDir = (await api.status()).dataDir; } catch { /* server info is a nicety, not a gate */ }
 

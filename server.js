@@ -21,6 +21,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { exec } = require('child_process');
+const { download5etools } = require('./scripts/fetch-5etools');
 
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
@@ -68,6 +69,7 @@ const NO_OPEN = flags.includes('--no-open')
 const VERSION = (() => {
   try { return JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version; } catch { return '?'; }
 })();
+let libraryDownloadActive = false;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -228,6 +230,368 @@ function snapshotWorlds() {
   }
 }
 
+// ---------- trash & snapshot recovery ----------
+
+const TRASH_ENTITY_KEY = /^([a-z0-9-]{4,258})--(\d{10,17})$/;
+const TRASH_WORLD_KEY = /^([a-z0-9][a-z0-9-]{0,127})-(\d{10,17})$/;
+const SNAPSHOT_STAMP = /^\d{4}-\d{2}-\d{2}-\d{2}-\d{2}(?:-[a-z0-9][a-z0-9-]{0,80})?$/;
+
+function recoveryError(message, status = 400) {
+  return Object.assign(new Error(message), { status });
+}
+
+function readRecoveryJson(file, maxBytes) {
+  try {
+    const stat = fs.lstatSync(file);
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > maxBytes) return null;
+    const value = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+  } catch { return null; }
+}
+
+// The on-disk `<world>--<entity>--<millis>.json` format predates this browser.
+// `--` is legal inside an id, so split from the known entity.id suffix instead
+// of guessing which double-hyphen belongs to which id.
+function parseTrashEntityKey(key, entity) {
+  const match = key.match(TRASH_ENTITY_KEY);
+  const id = String(entity?.id || '');
+  if (!match || !SAFE_ID.test(id)) return null;
+  const suffix = `--${id}`;
+  if (!match[1].endsWith(suffix)) return null;
+  const wid = match[1].slice(0, -suffix.length);
+  return SAFE_ID.test(wid) ? { wid, id, millis: match[2] } : null;
+}
+
+function jsonFileCount(dir) {
+  try {
+    return fs.readdirSync(dir, { withFileTypes: true })
+      .filter((item) => item.isFile() && !item.isSymbolicLink() && item.name.endsWith('.json')).length;
+  } catch { return 0; }
+}
+
+function epochIso(value, fallbackPath) {
+  const millis = Number(value);
+  if (Number.isFinite(millis)) {
+    const date = new Date(millis);
+    if (!Number.isNaN(date.getTime())) return date.toISOString();
+  }
+  try { return fs.statSync(fallbackPath).mtime.toISOString(); } catch { return null; }
+}
+
+function snapshotIso(stamp, dir) {
+  const match = stamp.match(/^(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})/);
+  if (match) {
+    const date = new Date(`${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:00.000Z`);
+    if (!Number.isNaN(date.getTime())) return date.toISOString();
+  }
+  try { return fs.statSync(dir).mtime.toISOString(); } catch { return null; }
+}
+
+function liveWorldName(wid) {
+  const meta = readRecoveryJson(path.join(WORLDS_DIR, wid, 'world.json'), 2 * 1024 * 1024);
+  return meta?.name || wid;
+}
+
+function hasTrashedWorld(wid) {
+  if (!SAFE_ID.test(wid)) return false;
+  const trashDir = path.join(DATA_DIR, '.trash');
+  let items = [];
+  try { items = fs.readdirSync(trashDir, { withFileTypes: true }); } catch { return false; }
+  return items.some((item) => {
+    if (!item.isDirectory() || item.isSymbolicLink()) return false;
+    const match = item.name.match(TRASH_WORLD_KEY);
+    if (!match || match[1] !== wid) return false;
+    return !!readRecoveryJson(path.join(trashDir, item.name, 'world.json'), 2 * 1024 * 1024);
+  });
+}
+
+/**
+ * Return display metadata only. Keys are validated again on restore and never
+ * treated as paths supplied by the client.
+ */
+function listRecovery() {
+  const worlds = [];
+  const entities = [];
+  const snapshots = [];
+  const deletedWorldNames = new Map();
+  const trashDir = path.join(DATA_DIR, '.trash');
+  let trashItems = [];
+  try { trashItems = fs.readdirSync(trashDir, { withFileTypes: true }); } catch { /* no trash yet */ }
+
+  for (const item of trashItems) {
+    if (!item.isDirectory() || item.isSymbolicLink()) continue;
+    const match = item.name.match(TRASH_WORLD_KEY);
+    if (!match) continue;
+    const src = path.join(trashDir, item.name);
+    const meta = readRecoveryJson(path.join(src, 'world.json'), 2 * 1024 * 1024);
+    if (!meta) continue; // excludes trashed compendium packs and incomplete folders
+    const row = {
+      key: item.name,
+      originalId: match[1],
+      name: String(meta.name || match[1]),
+      description: String(meta.description || ''),
+      entities: jsonFileCount(path.join(src, 'entities')),
+      deletedAt: epochIso(match[2], src),
+      idCollision: fs.existsSync(path.join(WORLDS_DIR, match[1])),
+    };
+    worlds.push(row);
+    if (!deletedWorldNames.has(row.originalId)) deletedWorldNames.set(row.originalId, row.name);
+  }
+
+  for (const item of trashItems) {
+    if (!item.isFile() || item.isSymbolicLink() || !item.name.endsWith('.json')) continue;
+    const key = item.name.slice(0, -5);
+    if (!TRASH_ENTITY_KEY.test(key)) continue;
+    const file = path.join(trashDir, item.name);
+    const entity = readRecoveryJson(file, 8 * 1024 * 1024);
+    const parsed = parseTrashEntityKey(key, entity);
+    if (!parsed) continue;
+    const liveDir = path.join(WORLDS_DIR, parsed.wid);
+    const worldAvailable = fs.existsSync(path.join(liveDir, 'world.json'));
+    const trashedWorldExists = deletedWorldNames.has(parsed.wid);
+    const originalWorldName = deletedWorldNames.get(parsed.wid)
+      || (worldAvailable ? liveWorldName(parsed.wid) : parsed.wid);
+    entities.push({
+      key,
+      worldId: parsed.wid,
+      worldName: originalWorldName,
+      originalWorldName,
+      id: parsed.id,
+      name: String(entity.name || parsed.id),
+      type: String(entity.type || 'note'),
+      deletedAt: epochIso(parsed.millis, file),
+      worldAvailable,
+      trashedWorldExists,
+      destinationAmbiguous: trashedWorldExists,
+      destinationRequired: !worldAvailable || trashedWorldExists,
+      idCollision: worldAvailable && fs.existsSync(path.join(liveDir, 'entities', parsed.id + '.json')),
+    });
+  }
+
+  const snapshotRoot = path.join(DATA_DIR, '.snapshots');
+  let worldDirs = [];
+  try { worldDirs = fs.readdirSync(snapshotRoot, { withFileTypes: true }); } catch { /* no snapshots yet */ }
+  for (const worldItem of worldDirs) {
+    if (!worldItem.isDirectory() || worldItem.isSymbolicLink() || !SAFE_ID.test(worldItem.name)) continue;
+    const worldSnapshotDir = path.join(snapshotRoot, worldItem.name);
+    let stampItems = [];
+    try {
+      stampItems = fs.readdirSync(worldSnapshotDir, { withFileTypes: true })
+        .filter((item) => item.isDirectory() && !item.isSymbolicLink() && SNAPSHOT_STAMP.test(item.name))
+        .sort((a, b) => a.name.localeCompare(b.name)).slice(-7).reverse();
+    } catch { continue; }
+    for (const stampItem of stampItems) {
+      const src = path.join(worldSnapshotDir, stampItem.name);
+      const meta = readRecoveryJson(path.join(src, 'world.json'), 2 * 1024 * 1024);
+      if (!meta) continue;
+      snapshots.push({
+        worldId: worldItem.name,
+        stamp: stampItem.name,
+        name: String(meta.name || worldItem.name),
+        entities: jsonFileCount(path.join(src, 'entities')),
+        createdAt: snapshotIso(stampItem.name, src),
+        worldAvailable: fs.existsSync(path.join(WORLDS_DIR, worldItem.name, 'world.json')),
+      });
+    }
+  }
+
+  const newestFirst = (a, b) => String(b.deletedAt || b.createdAt || '').localeCompare(String(a.deletedAt || a.createdAt || ''));
+  worlds.sort(newestFirst);
+  entities.sort(newestFirst);
+  snapshots.sort(newestFirst);
+  return {
+    generatedAt: new Date().toISOString(),
+    trash: { entities, worlds },
+    snapshots,
+    policy: { trashSourceRetained: true, snapshotSourceRetained: true, snapshotsPerWorld: 7 },
+  };
+}
+
+function uniqueRestoredId(preferred, exists) {
+  if (SAFE_ID.test(preferred) && !exists(preferred)) return preferred;
+  const source = SAFE_ID.test(preferred) ? preferred : slugify(preferred);
+  let suffix = '-restored';
+  let candidate = source.slice(0, 128 - suffix.length) + suffix;
+  let number = 2;
+  while (exists(candidate)) {
+    suffix = `-restored-${number++}`;
+    candidate = source.slice(0, 128 - suffix.length) + suffix;
+  }
+  return candidate;
+}
+
+function copyRecoveryDirSync(src, dest) {
+  fs.mkdirSync(dest, { recursive: true });
+  for (const item of fs.readdirSync(src, { withFileTypes: true })) {
+    if (item.isSymbolicLink()) continue;
+    const from = path.join(src, item.name);
+    const to = path.join(dest, item.name);
+    if (item.isDirectory()) copyRecoveryDirSync(from, to);
+    else if (item.isFile()) fs.copyFileSync(from, to);
+  }
+}
+
+function rewriteAssetRefs(value, fromWid, toWid) {
+  const from = `/assets/${fromWid}/`;
+  const to = `/assets/${toWid}/`;
+  let changed = false;
+  const visit = (item) => {
+    if (typeof item === 'string') {
+      if (!item.includes(from)) return item;
+      changed = true;
+      return item.split(from).join(to);
+    }
+    if (Array.isArray(item)) {
+      for (let i = 0; i < item.length; i++) item[i] = visit(item[i]);
+      return item;
+    }
+    if (item && typeof item === 'object') {
+      for (const key of Object.keys(item)) item[key] = visit(item[key]);
+    }
+    return item;
+  };
+  const result = visit(value);
+  return { result, changed };
+}
+
+function rewriteJsonAssetRefs(file, fromWid, toWid) {
+  let stat;
+  try { stat = fs.lstatSync(file); } catch { return; }
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 8 * 1024 * 1024) return;
+  let value;
+  try { value = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return; }
+  const rewritten = rewriteAssetRefs(value, fromWid, toWid);
+  if (rewritten.changed) fs.writeFileSync(file, JSON.stringify(rewritten.result, null, 2));
+}
+
+function rewriteJsonTree(dir, fromWid, toWid) {
+  let items = [];
+  try { items = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+  for (const item of items) {
+    if (item.isSymbolicLink()) continue;
+    const file = path.join(dir, item.name);
+    if (item.isDirectory()) rewriteJsonTree(file, fromWid, toWid);
+    else if (item.isFile() && item.name.endsWith('.json')) rewriteJsonAssetRefs(file, fromWid, toWid);
+  }
+}
+
+/** Rebase only JSON that can hold world content; assets/ and exports/ stay byte-identical. */
+function rewriteStagedWorldAssetRefs(staged, fromWid, toWid) {
+  if (fromWid === toWid) return;
+  if (!SAFE_ID.test(fromWid) || !SAFE_ID.test(toWid)) throw recoveryError('invalid restored world id');
+  rewriteJsonAssetRefs(path.join(staged, 'world.json'), fromWid, toWid); // type templates
+  rewriteJsonTree(path.join(staged, 'entities'), fromWid, toWid);
+  rewriteJsonTree(path.join(staged, '.history'), fromWid, toWid);
+}
+
+/** Copy a recovery source through staging, then atomically publish a new world. */
+function restoreWorldCopy(src, sourceWid, preferredId = sourceWid) {
+  if (!SAFE_ID.test(sourceWid)) throw recoveryError('invalid recovery source world id');
+  const meta = readRecoveryJson(path.join(src, 'world.json'), 2 * 1024 * 1024);
+  if (!meta) throw recoveryError('recovery source is not a readable world', 409);
+  const stagingRoot = path.join(DATA_DIR, '.restore-staging');
+  fs.mkdirSync(stagingRoot, { recursive: true });
+  const staged = fs.mkdtempSync(path.join(stagingRoot, 'world-'));
+  try {
+    copyRecoveryDirSync(src, staged);
+    fs.mkdirSync(path.join(staged, 'entities'), { recursive: true });
+    fs.mkdirSync(path.join(staged, 'exports'), { recursive: true });
+    let wid = uniqueRestoredId(preferredId, (id) => fs.existsSync(path.join(WORLDS_DIR, id)));
+    let stagedWid = sourceWid;
+    // The existence check and rename are deliberately both present: two rapid
+    // restore requests still cannot overwrite one another.
+    while (true) {
+      try {
+        rewriteStagedWorldAssetRefs(staged, stagedWid, wid);
+        stagedWid = wid;
+        fs.renameSync(staged, path.join(WORLDS_DIR, wid));
+        return { worldId: wid, name: String(meta.name || wid), renamed: wid !== preferredId };
+      } catch (err) {
+        if (!['EEXIST', 'ENOTEMPTY'].includes(err.code)) throw err;
+        wid = uniqueRestoredId(preferredId, (id) => fs.existsSync(path.join(WORLDS_DIR, id)));
+      }
+    }
+  } finally {
+    // Only a failed temporary copy can remain here; recovery sources and live
+    // worlds are never cleanup targets.
+    if (fs.existsSync(staged)) fs.rmSync(staged, { recursive: true, force: true });
+  }
+}
+
+function restoreRecovery(body) {
+  if (!body || body.confirm !== true) throw recoveryError('restore confirmation required');
+  const trashDir = path.join(DATA_DIR, '.trash');
+
+  if (body.kind === 'entity') {
+    const key = String(body.key || '');
+    if (!TRASH_ENTITY_KEY.test(key)) throw recoveryError('invalid deleted entry key');
+    const src = path.join(trashDir, key + '.json');
+    const entity = readRecoveryJson(src, 8 * 1024 * 1024);
+    const parsed = parseTrashEntityKey(key, entity);
+    if (!parsed) throw recoveryError('deleted entry not found', 404);
+    const destinationWasProvided = Object.prototype.hasOwnProperty.call(body, 'destinationWorldId');
+    let destinationWid;
+    if (destinationWasProvided) {
+      if (typeof body.destinationWorldId !== 'string' || !SAFE_ID.test(body.destinationWorldId)) {
+        throw recoveryError('invalid destination world id');
+      }
+      destinationWid = body.destinationWorldId;
+    } else {
+      const originalExists = fs.existsSync(path.join(WORLDS_DIR, parsed.wid, 'world.json'));
+      if (!originalExists || hasTrashedWorld(parsed.wid)) {
+        throw recoveryError('destinationWorldId is required because the original world is missing or ambiguous', 409);
+      }
+      destinationWid = parsed.wid; // legacy request, safe only while lineage is unambiguous
+    }
+    const dir = worldDir(destinationWid);
+    const entDir = path.join(dir, 'entities');
+    fs.mkdirSync(entDir, { recursive: true });
+    let id = uniqueRestoredId(parsed.id, (candidate) => fs.existsSync(path.join(entDir, candidate + '.json')));
+    const restoredSource = destinationWid === parsed.wid
+      ? entity : rewriteAssetRefs(entity, parsed.wid, destinationWid).result;
+    while (true) {
+      const restored = { ...restoredSource, id, updated: new Date().toISOString() };
+      try {
+        fs.writeFileSync(path.join(entDir, id + '.json'), JSON.stringify(restored, null, 2), { flag: 'wx' });
+        return {
+          ok: true, kind: 'entity', sourceRetained: true,
+          restored: {
+            sourceWorldId: parsed.wid, worldId: destinationWid,
+            entityId: id, name: String(restored.name || id), renamed: id !== parsed.id,
+          },
+        };
+      } catch (err) {
+        if (err.code !== 'EEXIST') throw err;
+        id = uniqueRestoredId(parsed.id, (candidate) => fs.existsSync(path.join(entDir, candidate + '.json')));
+      }
+    }
+  }
+
+  if (body.kind === 'world') {
+    const key = String(body.key || '');
+    const match = key.match(TRASH_WORLD_KEY);
+    if (!match) throw recoveryError('invalid deleted world key');
+    const src = path.join(trashDir, key);
+    let stat;
+    try { stat = fs.lstatSync(src); } catch { throw recoveryError('deleted world not found', 404); }
+    if (!stat.isDirectory() || stat.isSymbolicLink()) throw recoveryError('deleted world not found', 404);
+    return { ok: true, kind: 'world', sourceRetained: true, restored: restoreWorldCopy(src, match[1], match[1]) };
+  }
+
+  if (body.kind === 'snapshot') {
+    const wid = String(body.worldId || '');
+    const stamp = String(body.stamp || '');
+    if (!SAFE_ID.test(wid) || !SNAPSHOT_STAMP.test(stamp)) throw recoveryError('invalid snapshot key');
+    const src = path.join(DATA_DIR, '.snapshots', wid, stamp);
+    let stat;
+    try { stat = fs.lstatSync(src); } catch { throw recoveryError('snapshot not found', 404); }
+    if (!stat.isDirectory() || stat.isSymbolicLink()) throw recoveryError('snapshot not found', 404);
+    return { ok: true, kind: 'snapshot', sourceRetained: true, restored: restoreWorldCopy(src, wid, wid) };
+  }
+
+  throw recoveryError('unknown recovery kind');
+}
+
 // ---------- helpers ----------
 
 function readBody(req, limitBytes) {
@@ -251,6 +615,38 @@ function readBody(req, limitBytes) {
 function sendJson(res, status, obj) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(obj));
+}
+
+/**
+ * The 5etools route is the app's only API mutation that initiates outbound
+ * network traffic. Keep it callable by this localhost UI and scripts, but not
+ * by an arbitrary web page posting a simple request to the user's loopback.
+ */
+function requireLocalJsonDownload(req) {
+  const host = String(req.headers.host || '').trim().toLowerCase();
+  if (!/^(?:localhost|127\.0\.0\.1)(?::\d+)?$/.test(host)
+      && !/^\[::1\](?::\d+)?$/.test(host)) {
+    throw Object.assign(new Error('5etools downloads are available only from the local MundusMaker app'), { status: 403 });
+  }
+  const contentType = String(req.headers['content-type'] || '').split(';', 1)[0].trim().toLowerCase();
+  if (contentType !== 'application/json') {
+    throw Object.assign(new Error('5etools downloads require an application/json request'), { status: 415 });
+  }
+  const fetchSite = String(req.headers['sec-fetch-site'] || '').toLowerCase();
+  if (fetchSite === 'cross-site') {
+    throw Object.assign(new Error('cross-site 5etools download requests are not allowed'), { status: 403 });
+  }
+  const origin = String(req.headers.origin || '').trim();
+  if (origin) {
+    let normalized;
+    try {
+      const parsed = new URL(origin);
+      normalized = `${parsed.protocol}//${parsed.host}`.toLowerCase();
+    } catch { /* rejected below */ }
+    if (normalized !== `http://${host}`) {
+      throw Object.assign(new Error('5etools downloads must be started from this MundusMaker page'), { status: 403 });
+    }
+  }
 }
 
 // ---------- per-entity version history ----------
@@ -315,6 +711,10 @@ const PACK_KEEP = {
     'entries', 'entriesHigherLevel', 'meta', 'classes', 'source'],
   item: ['name', 'type', 'rarity', 'value', 'weight', 'reqAttune', 'wondrous',
     'entries', 'dmg1', 'dmg2', 'dmgType', 'property', 'ac', 'source'],
+  class: ['name', 'source', 'hd', 'classFeatures', 'subclasses', 'spellcastingAbility'],
+  classFeature: ['name', 'source', 'className', 'classSource', 'level', 'entries'],
+  subclass: ['name', 'shortName', 'source', 'className', 'classSource', 'subclassFeatures'],
+  subclassFeature: ['name', 'source', 'className', 'classSource', 'subclassShortName', 'subclassSource', 'level', 'entries'],
 };
 
 function listLibrary() {
@@ -328,6 +728,47 @@ function listLibrary() {
     } catch { /* unreadable pack — skip */ }
   }
   return out;
+}
+
+function storeLibraryPack(name, data) {
+  const trimmed = {};
+  const counts = {};
+  for (const [kind, keep] of Object.entries(PACK_KEEP)) {
+    const arr = Array.isArray(data?.[kind]) ? data[kind] : [];
+    const rows = arr.filter((x) => x?.name && !x._copy).map((x) => {
+      const out = {};
+      for (const k of keep) if (x[k] !== undefined) out[k] = x[k];
+      return out;
+    });
+    if (rows.length) { trimmed[kind] = rows; counts[kind] = rows.length; }
+  }
+  if (!Object.keys(trimmed).length) {
+    const err = new Error('no monsters, spells, items, classes, or class features found');
+    err.status = 400;
+    throw err;
+  }
+  const wanted = String(name || 'pack');
+  const base = slugify(wanted);
+  let id = base;
+  let i = 2;
+  while (fs.existsSync(path.join(LIBRARY_DIR(), id))) id = `${base}-${i++}`;
+  const download = data?._download?.provider === '5etools' ? {
+    provider: '5etools', repo: String(data._download.repo || ''), ref: String(data._download.ref || ''),
+    categories: Array.isArray(data._download.categories) ? data._download.categories.map(String) : [],
+    sources: Array.isArray(data._download.sources) ? data._download.sources.map(String) : [],
+    fetched: String(data._download.fetched || ''), files: Number(data._download.files) || undefined,
+    bytes: Number(data._download.bytes) || undefined,
+  } : undefined;
+  const meta = {
+    mundusmakerPack: 1, id, name: wanted.slice(0, 80),
+    kinds: Object.keys(trimmed), counts, imported: new Date().toISOString(),
+    ...(download ? { download } : {}),
+  };
+  const dir = path.join(LIBRARY_DIR(), id);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify(meta, null, 2));
+  fs.writeFileSync(path.join(dir, 'pack.json'), JSON.stringify({ ...meta, ...trimmed }));
+  return meta;
 }
 
 // ---------- migration from older installs ----------
@@ -421,6 +862,15 @@ async function handleApi(req, res, pathname) {
     return sendJson(res, 200, { ok: true, copied, restartRequired: true, dataDir: target });
   }
 
+  // --- recovery browser (trash + the last seven snapshots per world) ---
+  if (pathname === '/api/recovery' && method === 'GET') {
+    return sendJson(res, 200, listRecovery());
+  }
+  if (pathname === '/api/recovery/restore' && method === 'POST') {
+    const body = JSON.parse((await readBody(req, 64 * 1024)).toString('utf8'));
+    return sendJson(res, 200, restoreRecovery(body));
+  }
+
   // --- world management ---
   if (pathname === '/api/worlds') {
     if (method === 'GET') {
@@ -458,33 +908,28 @@ async function handleApi(req, res, pathname) {
   }
   if (pathname === '/api/library' && method === 'POST') {
     const body = JSON.parse((await readBody(req, 50 * 1024 * 1024)).toString('utf8'));
-    const data = body.data || {};
-    const trimmed = {};
-    const counts = {};
-    for (const [kind, keep] of Object.entries(PACK_KEEP)) {
-      const arr = Array.isArray(data[kind]) ? data[kind] : [];
-      const rows = arr.filter((x) => x?.name && !x._copy).map((x) => {
-        const out = {};
-        for (const k of keep) if (x[k] !== undefined) out[k] = x[k];
-        return out;
+    return sendJson(res, 200, storeLibraryPack(body.name, body.data || {}));
+  }
+  if (pathname === '/api/library/download-5etools' && method === 'POST') {
+    requireLocalJsonDownload(req);
+    const body = JSON.parse((await readBody(req, 64 * 1024)).toString('utf8'));
+    if (body.confirmUse !== true) {
+      return sendJson(res, 400, { error: 'confirmUse must be true before MundusMaker downloads third-party material' });
+    }
+    if (libraryDownloadActive) {
+      return sendJson(res, 409, { error: 'a 5etools download is already running' });
+    }
+    libraryDownloadActive = true;
+    try {
+      const data = await download5etools({
+        categories: body.categories,
+        sources: body.sources,
+        ref: body.ref || 'main',
       });
-      if (rows.length) { trimmed[kind] = rows; counts[kind] = rows.length; }
+      return sendJson(res, 200, storeLibraryPack(body.name || '5etools library', data));
+    } finally {
+      libraryDownloadActive = false;
     }
-    if (!Object.keys(trimmed).length) {
-      return sendJson(res, 400, { error: 'no monsters, spells or items found in that file' });
-    }
-    let id = slugify(String(body.name || 'pack'));
-    let i = 2;
-    while (fs.existsSync(path.join(LIBRARY_DIR(), id))) id = `${slugify(String(body.name || 'pack'))}-${i++}`;
-    const meta = {
-      mundusmakerPack: 1, id, name: String(body.name || id).slice(0, 80),
-      kinds: Object.keys(trimmed), counts, imported: new Date().toISOString(),
-    };
-    const dir = path.join(LIBRARY_DIR(), id);
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify(meta, null, 2));
-    fs.writeFileSync(path.join(dir, 'pack.json'), JSON.stringify({ ...meta, ...trimmed }));
-    return sendJson(res, 200, meta);
   }
   const libMatch = pathname.match(/^\/api\/library\/([^/]+)$/);
   if (libMatch) {

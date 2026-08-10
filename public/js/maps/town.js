@@ -1113,7 +1113,8 @@ export function renderTownBase(map, model, scale = 1) {
       ctx.textAlign = 'center';
       ctx.fillStyle = th.label;
       ctx.globalAlpha = 0.85;
-      ctx.fillText(w.name.toUpperCase(), w.cx, w.cy - 2);
+      // the GM can rename any ward; overrides are data on the map itself
+      ctx.fillText((map.wardNames?.[i] || w.name).toUpperCase(), w.cx, w.cy - 2);
       ctx.globalAlpha = 1;
     });
   }

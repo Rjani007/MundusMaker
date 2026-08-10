@@ -19,7 +19,8 @@ export function render(container) {
       el('span', { style: 'color:var(--accent2)' }, 'orange'), ' — click one to create the page. Hovering a link shows a preview card. Every page lists what links to it (backlinks). ',
       kbd('**bold**'), ', ', kbd('*italic*'), ', ', kbd('- lists'), ' and ', kbd('> quotes'), ' work in any text block.'),
     p('Hover a block for its buttons: ', el('strong', {}, 'Edit'), ', a Text / Heading / Quote picker, 🔒, the arrows to move it, and ✕. ',
-      'Deleted something by accident? An ', el('strong', {}, 'Undo'), ' button appears in the corner for a few seconds.'),
+      'Deleted something by accident? An ', el('strong', {}, 'Undo'), ' button appears in the corner for a few seconds. ',
+      'Use ', el('strong', {}, '+ 🎲 Table'), ' for a weighted random table you can roll in place, including in player preview when it is not secret.'),
 
     h('📚 Type pages'),
     p('Click a type name — the sidebar heading, a dashboard card, the badge on an entry — for that type\'s own page: every entry of that kind in one table, ',
@@ -54,6 +55,8 @@ export function render(container) {
       'Markers, labels and a compass rose round it out. Anything can be 🔒 secret (the trap — or the true border — stays off the player map), and anything placed can link to an entry: double-click it to jump there. ',
       'Linked/named things become a numbered key under the map in PDF exports. ',
       'Exporting a PNG? Pick a resolution up to 4× — maps re-render sharp for printing instead of just being stretched.'),
+    p('Generated settlements on Atlas and region maps are clickable: open a linked town, or let a GM create its normal Location entry and deterministic town map. ',
+      'Building and dungeon maps can also export Universal VTT files for Foundry and compatible importers, with the current floor’s embedded image, walls and doors intact.'),
 
     h('🎭 Player characters'),
     p(el('strong', {}, 'Create a character'), ' (on the dashboard, or the Characters page) walks you through a full build for D&D 5.5e, Vampire: The Masquerade, or Call of Cthulhu. ',
@@ -61,6 +64,8 @@ export function render(container) {
       'The D&D options ship with the app. For Vampire and Cthulhu the app knows the names and the numbers, and the power text is yours to paste in from your own books; every power links to its wiki page so it\'s a short trip.'),
     p('What you get is a sheet on an ordinary entry. Click the dots to change a rating. Click a skill to roll it, and hold ', kbd('Shift'), ' for advantage or a bonus die. ',
       'Hunger dice do their ugly thing on their own. The whole sheet can be 🔒 secret, and it prints in the book.'),
+    p('Open the sheet editor after play for advancement: D&D adds the next level’s HP and SRD class/subclass features, V5 applies XP purchases to a ledger, and CoC rolls every checked skill through the development phase. ',
+      'Name fields also have a 🎲 button for people and places when you need an answer now.'),
 
     h('📅 Calendar, timeline & sessions'),
     p('Give any entry a date ("+ Add to timeline") and it appears in chronological order. The ', el('strong', {}, 'Calendar'),
@@ -69,7 +74,9 @@ export function render(container) {
     p(el('strong', {}, 'Holidays and festivals'), ' are entries, not calendar settings. Make one (an Event does nicely), give it a date and tick ',
       kbd('Repeats every year'), ' — it loses its year, reads as "Every year on 14 Harvestmoon", and gets its own section at the bottom of the Timeline. ',
       'Because it\'s an ordinary entry it can hold secret blocks, be GM-only, and be [[linked]] like anything else.'),
-    p('After each game, write a ', el('strong', {}, 'Session'), ' entry with [[links]] to whoever showed up: every NPC then automatically lists which sessions they appeared in.'),
+    p('The dashboard campaign clock shows today and the next visible annual event; GMs can advance the structured date one day through months and special days. ',
+      'After each game, write a ', el('strong', {}, 'Session'), ' entry with [[links]] to whoever showed up: every NPC then automatically lists which sessions they appeared in. ',
+      'Session entries also have a local GM initiative/HP tracker for round, turn, conditions and combatant health.'),
 
     h('📄 Sharing with players'),
     p('The Export tab builds a PDF of your world: the ', el('strong', {}, 'player edition'),
@@ -77,7 +84,8 @@ export function render(container) {
 
     h('📦 The Library'),
     p('The Library tab holds every bundled monster, spell and piece of gear, plus anything you import from your own 5e.tools files. ',
-      'A pack is imported once and every world can use it. Find the thing, click ', el('strong', {}, 'Add to world'), ', done.'),
+      'A pack is imported once and every world can use it. You can also explicitly download selected bestiary, spell, item and class-feature source codes after confirming you may use them; that is the only network step and nothing is uploaded. ',
+      'Find the thing, click ', el('strong', {}, 'Add to world'), ', done.'),
 
     h('⬇ Bring your existing world'),
     p('The Import page reads whatever your campaign lives in now: a folder of Obsidian or Markdown notes (images come along), CSV tables, ',
@@ -88,7 +96,8 @@ export function render(container) {
     p('Worlds are folders of readable JSON in the ', kbd('data'), ' folder next to the app. MundusMaker keeps a daily snapshot of each world (last 7, in ',
       kbd('data/.snapshots'), ') and deleted things go to ', kbd('data/.trash'), ' instead of vanishing. ',
       'Every entry also keeps its own history: the ⏳ History button on an entry lists the last 10 versions and restores any of them (the current state is saved first, so restoring is always safe). ',
-      'Backups and device sync live in Settings, the ⚙ in the top bar. Point the data folder at Dropbox, Drive or Syncthing there and do the same on your other machine.'),
+      'Settings also lists deleted entries, deleted worlds and the last seven snapshots with copy-safe Restore buttons. Backups and device sync live there too, behind the ⚙ in the top bar. ',
+      'Point the data folder at Dropbox, Drive or Syncthing there and do the same on your other machine.'),
 
     h('🔤 Words this app uses'),
     p(el('strong', {}, 'Wiki-link'), ' — ', kbd('[[Name]]'), ' inside any text block. It jumps to that entry, or offers to create it. ',

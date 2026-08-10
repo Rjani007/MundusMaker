@@ -241,8 +241,75 @@ export function render(container) {
     });
     packsWrap.append(el('div', { class: 'row', style: 'margin-top:8px' },
       el('button', { onclick: () => input.click() }, '📦 Import a 5e.tools JSON…'),
-      el('span', { class: 'muted small' }, 'bestiaries, spells or items from your own local files — stored once, available in every world'),
+      el('button', { onclick: open5etoolsDownloader }, '↓ Download from 5e.tools…'),
+      el('span', { class: 'muted small' }, 'bestiaries, spells, items, and class features — stored once, available in every world'),
       input));
+  }
+
+  function open5etoolsDownloader() {
+    const categories = new Map();
+    const catRows = [
+      ['bestiary', 'Bestiary', 'monster statblocks'],
+      ['spells', 'Spells', 'spell entries'],
+      ['items', 'Items', 'equipment and magic items'],
+      ['classes', 'Classes', 'class and subclass features for advancement'],
+    ].map(([key, label, desc]) => {
+      const cb = el('input', { type: 'checkbox', checked: true });
+      categories.set(key, cb);
+      return el('label', { class: 'opt' }, cb,
+        el('div', {}, el('div', {}, label), el('div', { class: 'desc' }, desc)));
+    });
+    const sources = el('input', {
+      placeholder: 'e.g. XPHB, XMM (blank downloads every source)', style: 'width:100%',
+    });
+    const packName = el('input', { value: '5etools library', style: 'width:100%' });
+    const allowed = el('input', { type: 'checkbox' });
+    const status = el('div', { class: 'small muted', style: 'min-height:20px;margin-top:8px' });
+    const runBtn = el('button', { class: 'primary' }, 'Download & import');
+    const close = () => overlay.remove();
+    runBtn.addEventListener('click', async () => {
+      const selected = [...categories].filter(([, cb]) => cb.checked).map(([key]) => key);
+      if (!selected.length) { status.textContent = 'Choose at least one category.'; return; }
+      if (!allowed.checked) { status.textContent = 'Confirm that you may use the selected material first.'; return; }
+      if (!sources.value.trim() && !confirm('Blank source codes downloads every published source in the selected categories. This can be large and should only include material you own. Continue?')) return;
+      runBtn.disabled = true;
+      status.textContent = 'Downloading from the 5etools source mirror and importing locally… large libraries can take several minutes.';
+      try {
+        const meta = await api.download5etoolsPack({
+          name: packName.value.trim() || '5etools library',
+          categories: selected,
+          sources: sources.value.split(',').map((x) => x.trim()).filter(Boolean),
+          confirmUse: true,
+        });
+        invalidateAll();
+        status.textContent = `Imported ${Object.entries(meta.counts || {}).map(([k, n]) => `${n} ${k}`).join(', ')}.`;
+        toast(`Downloaded and imported “${meta.name}”`);
+        await renderPacks();
+        renderList();
+        setTimeout(close, 900);
+      } catch (err) {
+        status.textContent = 'Download failed: ' + err.message;
+        runBtn.disabled = false;
+      }
+    });
+    const dialog = el('div', { class: 'dialog', style: 'max-width:620px' },
+      el('h3', {}, 'Download 5etools data'),
+      el('p', { class: 'muted small' },
+        'This is an explicit network action. MundusMaker downloads JSON from the public 5etools source mirror, trims it to fields the local library uses, and stores it under ',
+        el('code', {}, 'data/.library'), '. Nothing is uploaded.'),
+      el('div', { class: 'edition-cards', style: 'grid-template-columns:1fr 1fr' }, catRows),
+      el('label', { class: 'field-row', style: 'margin-top:10px' }, el('span', {}, 'Source codes'), sources),
+      el('div', { class: 'muted small', style: 'margin:4px 0 10px 160px' },
+        'Use 5etools source codes such as XPHB or XMM to keep the pack focused. Blank means all sources.'),
+      el('label', { class: 'field-row' }, el('span', {}, 'Pack name'), packName),
+      el('label', { class: 'row small', style: 'margin-top:12px;align-items:flex-start' },
+        allowed, el('span', {}, 'I own, have licensed, or am otherwise allowed to use the material I selected.')),
+      status,
+      el('div', { class: 'row', style: 'margin-top:10px' },
+        el('button', { class: 'ghost', onclick: close }, 'Cancel'), el('span', { class: 'spacer' }), runBtn));
+    const overlay = el('div', { class: 'overlay' }, dialog);
+    overlay.addEventListener('click', (ev) => { if (ev.target === overlay) close(); });
+    document.body.append(overlay);
   }
   renderPacks();
 

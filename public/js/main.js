@@ -21,6 +21,8 @@ import * as settingsView from './views/settings.js';
 import * as createView from './views/create.js';
 import * as libraryView from './views/library.js';
 import { SHEET_SYSTEMS } from './sheets/sheetcore.js';
+import { randomTableSearchText } from './randomtable.js';
+import { nameStyleForType, randomName } from './names.js';
 import { maybeShowOnboarding } from './views/onboarding.js';
 import { wireLinkPreviews } from './preview.js';
 
@@ -84,7 +86,11 @@ function renderCreate(container, name) {
   container.append(el('div', { class: 'page' },
     el('h1', {}, 'Create entry'),
     el('div', { class: 'card' },
-      el('div', { class: 'row' }, nameInput, typeSel,
+      el('div', { class: 'row' }, nameInput,
+        el('button', {
+          class: 'ghost', title: 'Suggest a fitting name',
+          onclick: () => { nameInput.value = randomName(nameStyleForType(typeSel.value)); nameInput.focus(); },
+        }, '🎲'), typeSel,
         el('button', { class: 'primary', onclick: create }, 'Create'))),
     el('p', { class: 'muted small' }, 'This link was followed from a [[wiki-link]] that doesn’t exist yet.')));
   setTimeout(() => nameInput.focus(), 0);
@@ -118,6 +124,10 @@ function buildSidebar() {
 
   listEl = el('div', {});
   sidebarEl.append(searchInput, el('div', { class: 'side-new' }, newName, newType,
+    el('button', {
+      title: 'Suggest a fitting name',
+      onclick: () => { newName.value = randomName(nameStyleForType(newType.value)); newName.focus(); },
+    }, '🎲'),
     el('button', { title: 'Create', onclick: create }, '+')), listEl);
   renderSidebarList();
 }
@@ -160,6 +170,7 @@ function renderSidebarList() {
       if (b.kind === 'sheet') {
         return (SHEET_SYSTEMS[b.system]?.searchText(b.data) || '').toLowerCase().includes(search);
       }
+      if (b.kind === 'table') return randomTableSearchText(b.table).toLowerCase().includes(search);
       return false;
     });
   };
@@ -194,6 +205,7 @@ function renderSidebarList() {
           e.map ? el('span', { title: 'has a map', style: 'font-size:11px;opacity:.7' }, '🗺') : null,
           (e.blocks || []).some((b) => b.kind === 'statblock') ? el('span', { title: 'has a statblock', style: 'font-size:11px;opacity:.7' }, '⚔') : null,
           (e.blocks || []).some((b) => b.kind === 'sheet') ? el('span', { title: 'has a character sheet', style: 'font-size:11px;opacity:.7' }, '🎭') : null,
+          (e.blocks || []).some((b) => b.kind === 'table') ? el('span', { title: 'has a rollable table', style: 'font-size:11px;opacity:.7' }, '🎲') : null,
           e.gmOnly ? el('span', { class: 'gm-mark', title: 'GM-only — invisible to players' }, '🔒') : null));
       }
     }

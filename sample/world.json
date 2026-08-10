@@ -4,7 +4,8 @@
   "era": "AR",
   "calendar": {
     "months": ["Deepwinter", "Latewinter", "Thawmarch", "Rainmoot", "Seedfall", "Highsun", "Suncrest", "Emberwane", "Harvestmoon", "Mistfall", "Frostwane", "Longdark"],
-    "today": "3 Mistfall 1026 AR"
+    "today": "3 Mistfall 1026 AR",
+    "todayDate": { "year": 1026, "month": 10, "day": 3 }
   },
   "types": {
     "character": { "label": "Character", "plural": "Characters", "color": "#e0724a", "fields": ["Role", "Species", "Status"] },

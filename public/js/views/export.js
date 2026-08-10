@@ -35,7 +35,7 @@ export function render(container) {
   const kept = all.filter((e) => !e.gmOnly);
   const nGmOnly = all.length - kept.length;
   const nSecretBlocks = kept.reduce((n, e) => n + (e.blocks || []).filter(
-    (b) => b.secret && (b.kind === 'statblock' || b.kind === 'encounter' || b.kind === 'sheet' || b.text?.trim())).length, 0);
+    (b) => b.secret && (b.kind === 'statblock' || b.kind === 'encounter' || b.kind === 'sheet' || b.kind === 'table' || b.text?.trim())).length, 0);
   const nSecretRels = kept.reduce((n, e) => n + (e.relations || []).filter((r) => r.secret).length, 0);
   const nSecretMap = kept.reduce((n, e) => n + [
     ...(e.map?.markers || []), ...(e.map?.stamps || []), ...(e.map?.paths || []),

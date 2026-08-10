@@ -87,9 +87,14 @@ Things that get used constantly at the table:
 - **Encounter blocks.** Pick monsters, set party size and level, get the XP
   math and an Easy-to-Deadly rating. Secret by default, so they never end up
   in player exports.
+- **Rollable tables.** Add a weighted table to any entry, give each result its
+  relative chance, and roll it in place. Tables can be secret and print in the
+  GM book like every other block.
 - **Session logs.** Write a recap after each game and link the people and
-  places involved. Backlinks are automatic, so every NPC quietly accumulates
-  a list of the sessions they appeared in.
+  places involved. A local initiative/HP list on session entries keeps the
+  current round, turn, conditions, and combatant health without trying to turn
+  MundusMaker into a shared VTT. Backlinks are automatic, so every NPC quietly
+  accumulates a list of the sessions they appeared in.
 - **Character creators.** A step-by-step builder walks you through a whole
   character for D&D 5.5e (the 2024 rules), Vampire: The Masquerade, or Call
   of Cthulhu, and it does the math with you: a point buy that has to add up
@@ -101,10 +106,18 @@ Things that get used constantly at the table:
   sheet living on an ordinary entry: dots you click to change, skills that
   roll themselves when you click them, hunger dice doing their ugly thing.
   Hold Shift for advantage or a bonus die. A sheet can be a GM secret like
-  anything else, and it prints in the book.
+  anything else, and it prints in the book. After play, the same sheets have
+  advancement assistants: level-by-level SRD class features and HP for D&D,
+  an applied XP-spend ledger for V5, and CoC's checked-skill development rolls.
 - **The Library.** All the bundled monsters, spells and gear in one place,
-  plus any 5e.tools files you import. A pack is imported once and every
-  world can use it. Find the thing, click Add to world, done.
+  plus any 5e.tools files you import. You can pick local JSON or explicitly
+  download the bestiary, spells, items, classes and class features you are
+  allowed to use from the 5etools source mirror. A pack is imported once and
+  every world can use it. Find the thing, click Add to world, done.
+
+Name fields have a dice button when invention fails at the table. The quick
+creator can roll people, settlements, taverns, wards, nations, regions and
+landmarks; character creators have the same person-name pool.
 
 Maps are generated from a seed and then edited by hand, and there are five
 scales of them now.
@@ -119,7 +132,9 @@ in both.
 
 Region maps are the middle scale that was always missing: one province, its
 settlements joined by roads, ruins and shrines out in the hills, and a hex
-grid if your table counts travel that way.
+grid if your table counts travel that way. Click a generated settlement on an
+Atlas or region map and MundusMaker opens its linked town map; the first GM
+click can create the normal Location entry and deterministic town map for it.
 
 Towns still come in five shapes and sizes from hamlet to metropolis, and can
 now name their own quarters. The Copper End, the Shambles, wherever your
@@ -146,6 +161,12 @@ screen size up to 4× for posters, re-rendered sharp rather than upscaled — an
 get embedded in the PDF at print quality, where linked and named things
 become a numbered key under the map.
 
+Building and dungeon maps also export Universal VTT (`.uvtt`) files. Each
+floor carries an embedded PNG plus line-of-sight walls and closed door portals,
+so Foundry and other compatible importers receive the useful geometry instead
+of just a flat image. Player-safe and GM editions apply the same secret filters
+as PNG and PDF exports.
+
 Your world keeps its own calendar. The Calendar tab is where you build a year:
 name the months and say how long each one is, add the odd day that belongs to
 no month at all (a Mid-year's Day, a Festival of Lights), and name your ages —
@@ -156,6 +177,10 @@ year" instead and you've made a holiday: it drops its year, reads as "Every
 year on 14 Harvestmoon", and collects at the bottom of the timeline with the
 other festivals. Holidays are ordinary entries, so they can have secrets and
 links like anything else.
+
+The dashboard turns that data into a campaign clock: today's formatted date,
+the next visible annual event, and a GM-only Advance a day button. Advancing
+walks through month lengths and intercalary days and updates the printed date.
 
 Nothing you've already dated ever moves. Shorten a month after the fact and
 MundusMaker keeps your dates exactly as you wrote them and quietly mentions the
@@ -201,6 +226,11 @@ top bar) backs a single world up to one JSON file, with its images if you
 tick the box. Restoring lives on the Import page and asks you to type the
 world's name first, because it replaces what's there.
 
+Settings also has a Trash & snapshots browser. Deleted entries can be copied
+back into their live world, while deleted worlds and snapshots restore as
+collision-safe world copies. Recovery never overwrites a live file and never
+consumes the source copy.
+
 To sync between computers, point the data folder at something that already
 syncs (Dropbox, Google Drive, Syncthing...) using the card in Settings, and
 do the same on the other machine. Edit on one device at a time; the last
@@ -236,7 +266,16 @@ Useful scripts: `npm run package` builds the one-click zip (downloads a Node
 runtime and bundles it; `-- --node vX.Y.Z` pins the runtime, `package:all`
 builds every platform), `npm run bestiary` regenerates the SRD 5.1 bestiary,
 `npm run srd52` regenerates the SRD 5.2 character-creation pack, `npm run
-icons` regenerates the icon set, `npm run vendor` refreshes jsPDF.
+icons` regenerates the icon set, `npm run vendor` refreshes jsPDF. The explicit
+5etools fetcher can also be run without the UI:
+
+```sh
+npm run 5etools -- --categories bestiary,classes --sources XMM,XPHB --out 5etools-pack.json
+```
+
+Import the resulting JSON from Library. A blank `--sources` selection means
+every source in the chosen categories, so only request material you own,
+licensed, or are otherwise allowed to use.
 
 The server binds to 127.0.0.1 only, so nothing is ever reachable from the
 network.

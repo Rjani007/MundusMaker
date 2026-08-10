@@ -5,12 +5,19 @@
 //   all kinds: draggable markers/stamps/labels/paths with GM-secret flags
 
 import { el, toast, debounce, downloadBlob, clamp } from '../util.js';
-import { state, getEntity, visibleEntities, scheduleSave } from '../state.js';
 import {
-  MAP_KINDS, newMarker, newLabel, MARKER_SHAPES, MARKER_COLORS,
+  state, getEntity, visibleEntities, scheduleSave, saveEntity, newEntity, types,
+} from '../state.js';
+import {
+  MAP_KINDS, newMap, newMarker, newLabel, MARKER_SHAPES, MARKER_COLORS,
   newStamp, STAMP_KINDS, STAMP_COLORS, FURNITURE_STAMPS, newPath, PATH_STYLES,
   drawOverlay, renderMap,
 } from '../maps/mapcore.js';
+import {
+  settlementSites, settlementLinkId, linkSettlement,
+  townSizeForSettlement, townSeedForSettlement,
+} from '../maps/crossscale.js';
+import { supportsUniversalVtt, universalVttText } from '../maps/uvtt.js';
 import { api } from '../api.js';
 
 export function render(container, id) {
@@ -49,6 +56,81 @@ export function render(container, id) {
   const canvas = el('canvas');
   const ctx = canvas.getContext('2d');
 
+  const currentSettlements = () => settlementSites(map, model, [W, H]);
+  const linkedTown = (site) => {
+    const target = getEntity(settlementLinkId(map, site));
+    if (!target || target.map?.kind !== 'town') return null;
+    return state.gm || !target.gmOnly ? target : null;
+  };
+  const hitSettlement = (p) => {
+    let best = null, distance = Infinity;
+    for (const site of currentSettlements()) {
+      const d = Math.hypot(site.x - p.x, site.y - p.y);
+      if (d < 17 && d < distance) { best = site; distance = d; }
+    }
+    return best;
+  };
+
+  let openingSettlement = false;
+  async function openSettlement(site) {
+    if (openingSettlement) return;
+    const linked = linkedTown(site);
+    if (linked) { location.hash = `#/map/${linked.id}`; return; }
+    if (readOnly) return;
+    openingSettlement = true;
+    try {
+      // Reuse an existing same-name town map before offering to create another.
+      const existing = [...state.entities.values()].find((candidate) =>
+        candidate.name.trim().toLowerCase() === site.name.trim().toLowerCase()
+        && candidate.map?.kind === 'town');
+      if (existing) {
+        linkSettlement(map, site, existing.id);
+        await saveEntity(e);
+        location.hash = `#/map/${existing.id}`;
+        return;
+      }
+      if (!confirm(`Create a location entry and town map for ${site.name}?`)) return;
+      const worldTypes = types();
+      const locationType = worldTypes.location ? 'location'
+        : (Object.entries(worldTypes).find(([, spec]) =>
+          String(spec?.label || '').trim().toLowerCase() === 'location')?.[0] || 'note');
+      let town = newEntity(site.name, locationType);
+      town.fields.Kind = site.capital ? 'Capital settlement' : 'Settlement';
+      town.map = newMap('town');
+      town.map.seed = townSeedForSettlement(map, site);
+      town.map.params.size = townSizeForSettlement(site);
+      town = await saveEntity(town);
+      linkSettlement(map, site, town.id);
+      await saveEntity(e);
+      toast(`Created ${town.name}'s town map`);
+      location.hash = `#/map/${town.id}`;
+    } catch (err) {
+      console.error(err);
+      toast('Could not create the town map');
+    } finally {
+      openingSettlement = false;
+    }
+  }
+
+  function drawSettlementLinkHints() {
+    ctx.save();
+    for (const site of currentSettlements()) {
+      if (!linkedTown(site)) continue;
+      ctx.beginPath();
+      ctx.arc(site.x, site.y, 12, 0, Math.PI * 2);
+      ctx.strokeStyle = '#7fd7ff';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([3, 3]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.arc(site.x + 9, site.y - 9, 3, 0, Math.PI * 2);
+      ctx.fillStyle = '#7fd7ff';
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
   function rebuild() {
     const count = kind.levelCount ? kind.levelCount(map) : 1;
     if (level >= count) level = count - 1;
@@ -58,8 +140,28 @@ export function render(container, id) {
     canvas.width = W;
     canvas.height = H;
     refreshLevelChips?.();
+    refreshExtraPanel?.();
     redraw();
   }
+
+  // a kind may declare its own panel section (town uses it for ward names);
+  // it re-renders whenever the model does
+  const extraWrap = el('div', {});
+  var refreshExtraPanel = () => {
+    if (!kind.extraPanel) return;
+    extraWrap.innerHTML = '';
+    const section = kind.extraPanel({
+      map,
+      model,
+      readOnly,
+      save,
+      refreshBase: () => {
+        base = kind.renderBase(map, model);
+        redraw();
+      },
+    });
+    if (section) extraWrap.append(section);
+  };
 
   let rafPending = false;
   function redraw() {
@@ -69,6 +171,7 @@ export function render(container, id) {
       rafPending = false;
       ctx.drawImage(base, 0, 0);
       drawOverlay(ctx, map, W, H, { gm: state.gm, selected, level });
+      drawSettlementLinkHints();
     });
   }
 
@@ -267,11 +370,24 @@ export function render(container, id) {
     const obj = (hitRes?.list === 'markers' || hitRes?.list === 'stamps') ? hitRes.obj : null;
     if (obj?.to && getEntity(obj.to)) location.hash = `#/e/${obj.to}`;
   });
+  // Generated atlas/region settlements are real navigation targets too. A
+  // linked site opens on one click; the first GM click explicitly offers to
+  // create and persist a normal Location with its own town map.
+  canvas.addEventListener('click', (ev) => {
+    if (tool !== 'move') return;
+    const p = pos(ev);
+    if (hitOverlay(p)) return;
+    const site = hitSettlement(p);
+    if (site) void openSettlement(site);
+  });
   canvas.addEventListener('mousemove', (ev) => {
     if (painting || dragging) return;
     if (!readOnly && tool !== 'move') return; // brush/marker tools keep their crosshair
-    const hitRes = hitOverlay(pos(ev));
-    canvas.style.cursor = hitRes?.obj?.to ? 'pointer' : 'default';
+    const p = pos(ev);
+    const hitRes = hitOverlay(p);
+    const site = !hitRes ? hitSettlement(p) : null;
+    const siteClickable = site && (state.gm || linkedTown(site));
+    canvas.style.cursor = hitRes?.obj?.to || siteClickable ? 'pointer' : 'default';
   });
 
   const onKey = (ev) => {
@@ -494,6 +610,24 @@ export function render(container, id) {
       },
     }, '✕');
 
+    const generatedSites = currentSettlements();
+    const shownSites = state.gm ? generatedSites : generatedSites.filter((site) => linkedTown(site));
+    if (shownSites.length) {
+      listsWrap.append(el('h3', {}, 'Settlement maps'));
+      const sitesList = el('div', { class: 'marker-list' });
+      for (const site of shownSites) {
+        const target = linkedTown(site);
+        sitesList.append(el('div', { class: 'mk-row' },
+          el('span', { style: 'flex:1;font-size:12.5px' }, site.name),
+          el('button', {
+            class: 'ghost small',
+            title: target ? `Open ${target.name}'s town map` : `Create a Location and town map for ${site.name}`,
+            onclick: () => { void openSettlement(site); },
+          }, target ? 'Open town' : 'Create town')));
+      }
+      listsWrap.append(sitesList);
+    }
+
     if (shown(map.markers).length) {
       listsWrap.append(el('h3', {}, 'Markers'));
       const ml = el('div', { class: 'marker-list' });
@@ -586,6 +720,34 @@ export function render(container, id) {
     }, 'image/png');
   }
 
+  async function exportUvtt(gm) {
+    const out = el('canvas');
+    renderMap(out, map, { gm, scale: exportScale, level });
+    const imageBase64 = out.toDataURL('image/png').split(',')[1];
+    const text = universalVttText(map, imageBase64, {
+      gm, level, scale: exportScale, model,
+    });
+    const floor = (kind.levelCount ? kind.levelCount(map) : 1) > 1 ? `-L${level + 1}` : '';
+    const edition = gm ? 'gm' : 'player';
+    const name = `${e.name.replace(/\W+/g, '-').toLowerCase()}-map${floor}-${edition}.uvtt`;
+    const blob = new Blob([text], { type: 'application/json' });
+    downloadBlob(blob, name);
+    try {
+      const res = await api.exportFile(name, await blobToBase64(blob));
+      toast(`Saved UVTT to ${res.path}`);
+    } catch {
+      toast('Downloaded UVTT (server copy failed)');
+    }
+  }
+
+  const vttExportSection = supportsUniversalVtt(map) ? el('div', {},
+    el('h3', {}, 'Export to VTT'),
+    el('div', { class: 'muted small', style: 'margin-bottom:6px' },
+      `Universal VTT for the ${kind.levelCount ? 'current floor' : 'map'}: embedded PNG, grid-aligned walls, doors, and visible drawn wall paths.`),
+    el('div', { class: 'tool-row' },
+      el('button', { onclick: () => exportUvtt(false) }, 'UVTT · player-safe'),
+      state.gm ? el('button', { onclick: () => exportUvtt(true) }, 'UVTT · GM') : el('span'))) : el('span');
+
   panel.append(
     el('div', { class: 'row', style: 'margin-bottom:6px' },
       el('a', { href: `#/e/${e.id}` }, `← ${e.name}`),
@@ -627,6 +789,7 @@ export function render(container, id) {
     readOnly ? el('div', { class: 'muted small' }, 'Editing disabled in player preview.') : toolRow,
     brushOptsRow, markerOptsRow, labelOptsRow, stampOptsRow, drawOptsRow,
     listsWrap,
+    extraWrap,
     el('h3', {}, 'Export image'),
     paramRow('Resolution', el('select', {
       title: 'Higher resolutions re-render the map sharper — pick 2× or more if you plan to print it',
@@ -637,6 +800,7 @@ export function render(container, id) {
     el('div', { class: 'tool-row' },
       el('button', { onclick: () => exportPng(false) }, 'PNG · player-safe'),
       state.gm ? el('button', { onclick: () => exportPng(true) }, 'PNG · GM') : el('span')),
+    vttExportSection,
     el('div', { class: 'muted small', style: 'margin-top:10px' },
       'Everything autosaves. Anything marked 🔒 never appears to players. 🏰 Place drops buildings and landmarks, ✏️ Draw sketches roads, rivers, borders (end a border where it started to enclose a territory), routes and walls. Link a placed thing or marker to an entry and double-click it to jump there; linked items become the numbered key in the PDF. Select something and press Delete to remove it.'));
 
