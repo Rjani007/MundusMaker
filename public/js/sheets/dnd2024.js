@@ -4,6 +4,7 @@
 import { el, esc, makeRng } from '../util.js';
 import { api } from '../api.js';
 import { nameFor } from '../names.js';
+import { normalizeSpell } from '../importers.js';
 import { linkDice } from '../render.js';
 import {
   dotsHtml, boxesHtml, rollBtn, kvHtml, sectionHtml,
@@ -154,6 +155,152 @@ export async function loadAdvancementClass(className, subclassName = '') {
     subclassFeatures: importedSubclassFeatures,
   };
 }
+
+// ---------- creator data: bundled SRD + the user's imported library (1.2) ----------
+
+const CAP = (s) => String(s || '').replace(/\b\w/g, (ch) => ch.toUpperCase());
+// 5etools writes skills lowercase; match ours by name ("sleight of hand" must
+// land on "Sleight of Hand", which plain CAP would miss)
+const canonSkill = (s) => SKILLS.map(([n]) => n).find((n) => lower(n) === lower(s)) || CAP(s);
+const SIZE_WORDS = { T: 'Tiny', S: 'Small', M: 'Medium', L: 'Large' };
+
+function normalizeImportedSpecies(raw, packName) {
+  if (!raw?.name) return null;
+  return {
+    name: clean5eText(raw.name),
+    size: (Array.isArray(raw.size) ? raw.size : ['M']).map((s) => SIZE_WORDS[s] || s).join(' or '),
+    speed: typeof raw.speed === 'number' ? raw.speed : raw.speed?.walk || 30,
+    darkvision: raw.darkvision || 0,
+    traits: (raw.entries || []).filter((e) => e?.name)
+      .map((e) => ({ name: clean5eText(e.name), text: entriesText(e.entries) })),
+    _pack: packName,
+  };
+}
+
+function normalizeImportedBackground(raw, packName) {
+  if (!raw?.name) return null;
+  const abilities = [...new Set((raw.ability || [])
+    .flatMap((a) => a.choose?.weighted?.from || a.choose?.from || Object.keys(a).filter((k) => k !== 'choose')))]
+    .filter((a) => ABILITIES.includes(a));
+  return {
+    name: clean5eText(raw.name),
+    // 2014-era backgrounds declare no ability bonuses; the wizard then offers all six
+    abilities,
+    skills: (raw.skillProficiencies || []).flatMap((s) => Object.keys(s).filter((k) => k !== 'choose' && k !== 'any')).map(canonSkill),
+    tool: (raw.toolProficiencies || []).flatMap((t) => Object.keys(t)).join(', '),
+    feat: (raw.feats || []).flatMap((f) => Object.keys(f)).map((f) => CAP(f.split('|')[0])).join(', '),
+    equipment: entriesText((raw.entries || []).filter((e) => /equipment/i.test(e?.name || ''))),
+    text: entriesText((raw.entries || []).filter((e) => !e?.name || !/equipment/i.test(e.name))).slice(0, 400),
+    _pack: packName,
+  };
+}
+
+function normalizeImportedCreatorClass(raw, pack, packName) {
+  if (!raw?.name) return null;
+  const skills = raw.startingProficiencies?.skills?.[0]?.choose || {};
+  const from = (skills.from || []).map(canonSkill).filter((n) => SKILLS.some(([sk]) => sk === n));
+  const features = (pack.classFeature || [])
+    .filter((f) => lower(importedClassName(f)) === lower(raw.name) && Number(f.level) === 1)
+    .map((f) => ({ level: 1, name: clean5eText(f.name), text: entriesText(f.entries) }));
+  return {
+    name: clean5eText(raw.name),
+    hitDie: Number(raw.hd?.faces || 8),
+    saves: (raw.proficiency || []).filter((a) => ABILITIES.includes(a)),
+    armor: [], weapons: [],
+    skills: { choose: skills.count || 2, from: from.length ? from : SKILLS.map(([n]) => n) },
+    startingEquipment: entriesText(raw.startingEquipment?.entries || raw.startingEquipment?.default || []),
+    spellcasting: raw.spellcastingAbility
+      ? { ability: raw.spellcastingAbility, progression: raw.casterProgression || 'full' } : null,
+    features,
+    subclass: null,
+    subclasses: [],
+    _pack: packName,
+  };
+}
+
+let creatorCache = null;
+export function invalidateCreatorData() { creatorCache = null; }
+
+/**
+ * What the creation wizard sees: bundled SRD 5.2 plus everything
+ * creation-shaped from the user's imported library packs. Bundled entries win
+ * on a name clash; imported subclasses attach as extra options on any
+ * matching class (including the bundled ones).
+ */
+export async function loadCreatorData() {
+  if (creatorCache) return creatorCache;
+  const base = await loadData();
+  const merged = {
+    ...base,
+    classes: base.classes.map((c) => ({
+      ...c,
+      subclasses: c.subclass ? [{ name: c.subclass.name, _pack: 'SRD 5.2' }] : [],
+    })),
+    species: [...base.species],
+    backgrounds: [...base.backgrounds],
+    feats: [...base.feats],
+    spells: base.spells.map((s) => ({ ...s })),
+  };
+  let packs = [];
+  try {
+    const metas = await api.library();
+    packs = (await Promise.all(metas.map(async (meta) => {
+      try { return { meta, pack: await api.libraryPack(meta.id) }; } catch { return null; }
+    }))).filter(Boolean);
+  } catch { /* older server, or no imported library */ }
+
+  const seen = (arr) => new Set(arr.map((x) => lower(x.name)));
+  const classNames = seen(merged.classes);
+  const speciesNames = seen(merged.species);
+  const bgNames = seen(merged.backgrounds);
+  const featNames = seen(merged.feats);
+  const spellNames = seen(merged.spells);
+
+  const pendingSubclasses = [];
+  for (const { meta, pack } of packs) {
+    const packName = meta.name || 'Imported pack';
+    for (const raw of pack.class || []) {
+      if (classNames.has(lower(raw.name))) continue;
+      const norm = normalizeImportedCreatorClass(raw, pack, packName);
+      if (norm) { merged.classes.push(norm); classNames.add(lower(norm.name)); }
+    }
+    for (const sub of pack.subclass || []) {
+      if (sub?.name && sub.className) pendingSubclasses.push({ sub, packName });
+    }
+    for (const raw of pack.race || []) {
+      if (!raw?.name || speciesNames.has(lower(raw.name))) continue;
+      const norm = normalizeImportedSpecies(raw, packName);
+      if (norm) { merged.species.push(norm); speciesNames.add(lower(norm.name)); }
+    }
+    for (const raw of pack.background || []) {
+      if (!raw?.name || bgNames.has(lower(raw.name))) continue;
+      const norm = normalizeImportedBackground(raw, packName);
+      if (norm) { merged.backgrounds.push(norm); bgNames.add(lower(norm.name)); }
+    }
+    for (const raw of pack.feat || []) {
+      if (!raw?.name || featNames.has(lower(raw.name))) continue;
+      merged.feats.push({ name: clean5eText(raw.name), category: String(raw.category || ''), text: entriesText(raw.entries), _pack: packName });
+      featNames.add(lower(raw.name));
+    }
+    for (const raw of pack.spell || []) {
+      if (!raw?.name || spellNames.has(lower(raw.name))) continue;
+      merged.spells.push({ ...normalizeSpell(raw), _pack: packName });
+      spellNames.add(lower(raw.name));
+    }
+  }
+  for (const { sub, packName } of pendingSubclasses) {
+    const target = merged.classes.find((c) => lower(c.name) === lower(sub.className));
+    if (!target || target.subclasses.some((x) => lower(x.name) === lower(sub.name))) continue;
+    target.subclasses.push({ name: clean5eText(sub.name), _pack: packName });
+  }
+  merged.species.sort((a, b) => a.name.localeCompare(b.name));
+  merged.backgrounds.sort((a, b) => a.name.localeCompare(b.name));
+  creatorCache = merged;
+  return merged;
+}
+
+// the wizard loads this instead of plain loadData (create.js prefers wizardData)
+export const wizardData = loadCreatorData;
 
 // ---------- rules constants ----------
 
@@ -603,14 +750,21 @@ function pickCards(items, get, isSel, onPick) {
     }));
 }
 
+// the subclass the draft will actually get: an explicit pick wins ('' = decide
+// at level 3), a lone option is automatic, and old bundled classes keep theirs
+function chosenSubclass(draft) {
+  return draft.subclassPick
+    ?? (draft.klass.subclasses?.length === 1 ? draft.klass.subclasses[0].name : (draft.klass.subclass?.name || ''));
+}
+
 export const wizard = {
-  intro: 'A level-1 character by the 2024 book: species, class, abilities, background, skills, gear, spells. Every option here ships with the app.',
+  intro: 'A level-1 character by the 2024 book: species, class, abilities, background, skills, gear, spells. Options come from the bundled SRD plus any packs you’ve added in the Library.',
   steps: [
     {
       key: 'species', title: 'Species',
       render(draft, ctx) {
         return pickCards(ctx.data.species,
-          (s) => ({ title: s.name, sub: `${s.size} · ${s.speed} ft.${s.darkvision ? ` · darkvision ${s.darkvision}` : ''}` }),
+          (s) => ({ title: s.name, sub: `${s.size} · ${s.speed} ft.${s.darkvision ? ` · darkvision ${s.darkvision}` : ''}${s._pack ? ` · ${s._pack}` : ''}` }),
           (s) => draft.species?.name === s.name,
           (s) => { draft.species = s; ctx.update(); });
       },
@@ -619,10 +773,29 @@ export const wizard = {
     {
       key: 'class', title: 'Class',
       render(draft, ctx) {
-        return pickCards(ctx.data.classes,
-          (c) => ({ title: c.name, sub: `d${c.hitDie} hit die · ${c.saves.map((s) => s.toUpperCase()).join('/')} saves${c.spellcasting ? ' · spellcaster' : ''}` }),
+        const wrap = el('div', {});
+        wrap.append(pickCards(ctx.data.classes,
+          (c) => ({
+            title: c.name,
+            sub: `d${c.hitDie} hit die · ${c.saves.map((s) => s.toUpperCase()).join('/')} saves`
+              + `${c.spellcasting ? ' · spellcaster' : ''}`
+              + `${c.subclasses?.length > 1 ? ` · ${c.subclasses.length} subclasses` : ''}`
+              + `${c._pack ? ` · ${c._pack}` : ''}`,
+          }),
           (c) => draft.klass?.name === c.name,
-          (c) => { draft.klass = c; ctx.update(); });
+          (c) => { draft.klass = c; draft.subclassPick = undefined; ctx.update(); }));
+        // imported packs can add subclasses beyond the SRD's one-per-class
+        if (draft.klass?.subclasses?.length > 1) {
+          const sel = el('select', {},
+            el('option', { value: '' }, 'Decide at level 3'),
+            draft.klass.subclasses.map((s) => el('option', { value: s.name },
+              `${s.name}${s._pack && s._pack !== 'SRD 5.2' ? ` (${s._pack})` : ''}`)));
+          sel.value = draft.subclassPick || '';
+          sel.addEventListener('change', () => { draft.subclassPick = sel.value; });
+          wrap.append(el('div', { class: 'row', style: 'margin-top:10px' },
+            el('span', { class: 'small muted' }, 'Subclass — the rules pick one at level 3, but note it now if you already know:'), sel));
+        }
+        return wrap;
       },
       validate: (draft) => draft.klass ? null : 'Pick a class.',
     },
@@ -711,14 +884,21 @@ export const wizard = {
       render(draft, ctx) {
         const wrap = el('div', {});
         wrap.append(pickCards(ctx.data.backgrounds,
-          (b) => ({ title: b.name, sub: `${b.abilities.map((a) => a.toUpperCase()).join('/')} · ${b.skills.join(', ')} · feat: ${b.feat}` }),
+          (b) => ({
+            title: b.name,
+            sub: `${b.abilities.length ? b.abilities.map((a) => a.toUpperCase()).join('/') : 'any abilities'}`
+              + `${b.skills.length ? ` · ${b.skills.join(', ')}` : ''}${b.feat ? ` · feat: ${b.feat}` : ''}`
+              + `${b._pack ? ` · ${b._pack}` : ''}`,
+          }),
           (b) => draft.background?.name === b.name,
           (b) => { draft.background = b; draft.bgBonus = null; ctx.update(); }));
         if (draft.background) {
           const b = draft.background;
-          draft.bgBonus ??= { mode: '2+1', two: b.abilities[0], one: b.abilities[1] };
+          // 2014-era imported backgrounds declare no abilities — offer all six
+          const abilityOpts = b.abilities?.length ? b.abilities : ABILITIES;
+          draft.bgBonus ??= { mode: '2+1', two: abilityOpts[0], one: abilityOpts[1] };
           const mk = (key) => {
-            const sel = el('select', {}, b.abilities.map((a) => el('option', { value: a }, a.toUpperCase())));
+            const sel = el('select', {}, abilityOpts.map((a) => el('option', { value: a }, a.toUpperCase())));
             sel.value = draft.bgBonus[key];
             sel.addEventListener('change', () => { draft.bgBonus[key] = sel.value; });
             return sel;
@@ -789,7 +969,10 @@ export const wizard = {
         const counts = CASTER_L1[c.name] || { cantrips: 2, prepared: 2 };
         draft.cantrips ??= [];
         draft.spells ??= [];
-        const list = ctx.data.spells.filter((s) => s.classes.includes(c.name) && s.level <= 1);
+        // pack spells without a class list (no lookup data) show for every
+        // caster, tagged with their pack, rather than hiding entirely
+        const list = ctx.data.spells.filter((s) => s.level <= 1
+          && ((s.classes || []).includes(c.name) || (!(s.classes || []).length && s._pack)));
         const wrap = el('div', {},
           el('p', { class: 'small muted' },
             `${c.name}s start with ${counts.cantrips ? `${counts.cantrips} cantrips and ` : ''}${counts.prepared} prepared level-1 spells.`));
@@ -806,7 +989,8 @@ export const wizard = {
             },
           });
           grid.append(el('label', { class: 'small', title: s.text.slice(0, 400) },
-            cb, ` ${s.name} `, el('span', { class: 'muted' }, s.level === 0 ? 'cantrip' : `L1 ${s.school}`)));
+            cb, ` ${s.name} `, el('span', { class: 'muted' },
+              `${s.level === 0 ? 'cantrip' : `L1 ${s.school}`}${s._pack ? ` · ${s._pack}` : ''}`)));
         }
         wrap.append(grid, el('div', { class: 'small muted' },
           `${draft.cantrips.length}/${counts.cantrips} cantrips · ${draft.spells.length}/${counts.prepared} spells`));
@@ -835,7 +1019,7 @@ export const wizard = {
         return el('div', {},
           el('div', { class: 'row' }, el('label', {}, 'Name'), nameInput, nameRoll),
           el('div', { class: 'card', style: 'margin-top:10px' },
-            el('div', {}, `${draft.species.name} ${draft.klass.name} (${draft.klass.subclass?.name || ''}) — ${draft.background.name}`),
+            el('div', {}, `${draft.species.name} ${draft.klass.name}${chosenSubclass(draft) ? ` (${chosenSubclass(draft)})` : ''} — ${draft.background.name}`),
             el('div', { class: 'small muted' }, ABILITIES.map((a) => `${a.toUpperCase()} ${abs[a]}`).join('  ')),
             el('div', { class: 'small muted' }, `HP ${draft.klass.hitDie + conMod} · Speed ${draft.species.speed} ft. · Origin feat: ${draft.background.feat}`),
             el('div', { class: 'row small', style: 'margin-top:6px' }, el('span', {}, 'AC (adjust for your armor):'), acInput)));
@@ -847,12 +1031,14 @@ export const wizard = {
     const abs = finalAbilities(draft);
     const d = defaults();
     d.species = { name: draft.species.name, size: draft.species.size, speed: draft.species.speed };
-    d.klass = { name: draft.klass.name, level: 1, hitDie: draft.klass.hitDie, subclass: draft.klass.subclass?.name || '' };
+    d.klass = { name: draft.klass.name, level: 1, hitDie: draft.klass.hitDie, subclass: chosenSubclass(draft) };
     d.background = { name: draft.background.name, feat: draft.background.feat };
     d.abilityMethod = draft.abilityMethod;
     d.abilities = abs;
     d.saves = draft.klass.saves;
-    d.skills = [...(draft.background.skills || []), ...(draft.skillPicks || [])].map((key) => ({ key, prof: 'prof' }));
+    // canonSkill: bundled srd52 data says "Sleight of hand" — the sheet matches
+    // skill keys exactly, so normalize casing here or the proficiency vanishes
+    d.skills = [...(draft.background.skills || []), ...(draft.skillPicks || [])].map((key) => ({ key: canonSkill(key), prof: 'prof' }));
     d.ac = draft.acFinal ?? 10 + mod(abs.dex);
     d.speed = draft.species.speed;
     d.hp = { max: draft.klass.hitDie + mod(abs.con), current: draft.klass.hitDie + mod(abs.con), temp: 0 };

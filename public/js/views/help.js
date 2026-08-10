@@ -84,7 +84,8 @@ export function render(container) {
 
     h('📦 The Library'),
     p('The Library tab holds every bundled monster, spell and piece of gear, plus anything you import from your own 5e.tools files. ',
-      'A pack is imported once and every world can use it. You can also explicitly download selected bestiary, spell, item and class-feature source codes after confirming you may use them; that is the only network step and nothing is uploaded. ',
+      'A pack is imported once and every world can use it. You can also explicitly download selected sources — bestiaries, spells, items, classes, species, backgrounds and feats — after confirming you may use them; that is the only network step and nothing is uploaded. ',
+      'Downloaded classes, subclasses, species, backgrounds and spells show up as extra options in the character creator, tagged with the pack they came from. ',
       'Find the thing, click ', el('strong', {}, 'Add to world'), ', done.'),
 
     h('⬇ Bring your existing world'),

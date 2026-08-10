@@ -10,8 +10,8 @@ const fs = require('fs');
 const path = require('path');
 
 const REPO = 'https://raw.githubusercontent.com/5etools-mirror-3/5etools-src';
-const ARRAY_KINDS = ['monster', 'spell', 'item', 'class', 'classFeature', 'subclass', 'subclassFeature'];
-const VALID_CATEGORIES = new Set(['bestiary', 'spells', 'items', 'classes']);
+const ARRAY_KINDS = ['monster', 'spell', 'item', 'class', 'classFeature', 'subclass', 'subclassFeature', 'race', 'background', 'feat'];
+const VALID_CATEGORIES = new Set(['bestiary', 'spells', 'items', 'classes', 'races', 'backgrounds', 'feats']);
 const MAX_FILE_BYTES = 48 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 256 * 1024 * 1024;
 const MAX_FILES = 300;
@@ -28,10 +28,10 @@ function cleanList(value) {
 
 function optionsOf(opts = {}) {
   const requestedCategories = Object.prototype.hasOwnProperty.call(opts, 'categories')
-    ? opts.categories : ['bestiary', 'spells', 'items', 'classes'];
+    ? opts.categories : ['bestiary', 'spells', 'items', 'classes', 'races', 'backgrounds', 'feats'];
   const categories = cleanList(requestedCategories)
     .map((x) => x.toLowerCase()).filter((x) => VALID_CATEGORIES.has(x));
-  if (!categories.length) throw inputError('choose at least one category: bestiary, spells, items, or classes');
+  if (!categories.length) throw inputError('choose at least one category: bestiary, spells, items, classes, races, backgrounds, or feats');
   const ref = String(opts.ref || 'main').trim();
   if (!/^[A-Za-z0-9._-]+$/.test(ref)) throw inputError('invalid 5etools ref');
   const sources = new Set(cleanList(opts.sources).map((x) => x.toUpperCase()));
@@ -190,6 +190,10 @@ async function download5etools(opts = {}) {
     const files = await classFiles(ctx);
     jobs.push(...files.map((job) => ({ ...job, filterRows: true })));
   }
+  // single-file categories that feed the character creator
+  if (chosen.categories.includes('races')) jobs.push({ rel: 'races.json', filterRows: true });
+  if (chosen.categories.includes('backgrounds')) jobs.push({ rel: 'backgrounds.json', filterRows: true });
+  if (chosen.categories.includes('feats')) jobs.push({ rel: 'feats.json', filterRows: true });
   if (!jobs.length) throw inputError('no 5etools files matched those source codes');
   if (jobs.length > MAX_FILES) {
     throw Object.assign(new Error(`that selection expands to ${jobs.length} files; the safety limit is ${MAX_FILES}. Add source codes to make a focused pack.`), { status: 413 });
@@ -211,6 +215,25 @@ async function download5etools(opts = {}) {
   }, () => {
     for (const controller of controllers) controller.abort();
   });
+  // Spell entries in 5etools-src carry no class lists (those live in a
+  // generated lookup). The character creator filters spells per class, so
+  // enrich the stored spells once at download time. Best effort: a missing
+  // lookup degrades to spells without class lists, never to a failed pack.
+  if (Array.isArray(out.spell) && out.spell.length) {
+    try {
+      const lookup = await fetchJson('generated/gendata-spell-source-lookup.json', ctx);
+      for (const spell of out.spell) {
+        if (spell?.classes?.fromClassList?.length) continue;
+        const entry = lookup?.[String(spell.source || '').toLowerCase()]?.[String(spell.name || '').toLowerCase()];
+        if (!entry?.class) continue;
+        const names = new Set();
+        for (const bySource of Object.values(entry.class)) {
+          for (const className of Object.keys(bySource || {})) names.add(className);
+        }
+        if (names.size) spell.classes = { fromClassList: [...names].sort().map((name) => ({ name })) };
+      }
+    } catch { /* lookup unavailable — spells stay classless */ }
+  }
   out._download.categories = chosen.categories;
   out._download.sources = [...chosen.sources];
   out._download.files = jobs.length;
@@ -235,7 +258,7 @@ function parseArgs(argv) {
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (opts.help) {
-    console.log('Usage: node scripts/fetch-5etools.js [--categories bestiary,spells,items,classes] [--sources XPHB,XMM] [--ref main] [--out 5etools-pack.json]');
+    console.log('Usage: node scripts/fetch-5etools.js [--categories bestiary,spells,items,classes,races,backgrounds,feats] [--sources XPHB,XMM] [--ref main] [--out 5etools-pack.json]');
     console.log('Only download material you own or are otherwise allowed to use. Blank --sources means every source in the selected categories.');
     return;
   }

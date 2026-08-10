@@ -9,6 +9,7 @@ import {
   normalizeSpell, spellToEntity, normalizeItem, itemToEntity,
 } from '../importers.js';
 import { crFromStat } from '../encounter.js';
+import { invalidateCreatorData } from '../sheets/dnd2024.js';
 import { api } from '../api.js';
 
 let spellsCache = null, itemsCache = null;
@@ -53,6 +54,7 @@ function invalidateAll() {
   spellsCache = null;
   itemsCache = null;
   invalidateLibraryCache();
+  invalidateCreatorData(); // the wizard's merged class/species/spell lists
 }
 
 export function render(container) {
@@ -242,7 +244,7 @@ export function render(container) {
     packsWrap.append(el('div', { class: 'row', style: 'margin-top:8px' },
       el('button', { onclick: () => input.click() }, '📦 Import a 5e.tools JSON…'),
       el('button', { onclick: open5etoolsDownloader }, '↓ Download from 5e.tools…'),
-      el('span', { class: 'muted small' }, 'bestiaries, spells, items, and class features — stored once, available in every world'),
+      el('span', { class: 'muted small' }, 'bestiaries, spells, items, classes, species, backgrounds and feats — stored once, used by every world and the character creator'),
       input));
   }
 
@@ -250,9 +252,12 @@ export function render(container) {
     const categories = new Map();
     const catRows = [
       ['bestiary', 'Bestiary', 'monster statblocks'],
-      ['spells', 'Spells', 'spell entries'],
+      ['spells', 'Spells', 'spell entries, with class lists for the character creator'],
       ['items', 'Items', 'equipment and magic items'],
-      ['classes', 'Classes', 'class and subclass features for advancement'],
+      ['classes', 'Classes', 'classes and subclasses — creator options and level-ups'],
+      ['races', 'Species', 'species options for the character creator'],
+      ['backgrounds', 'Backgrounds', 'background options for the character creator'],
+      ['feats', 'Feats', 'feat descriptions for creation and level-ups'],
     ].map(([key, label, desc]) => {
       const cb = el('input', { type: 'checkbox', checked: true });
       categories.set(key, cb);

@@ -711,10 +711,18 @@ const PACK_KEEP = {
     'entries', 'entriesHigherLevel', 'meta', 'classes', 'source'],
   item: ['name', 'type', 'rarity', 'value', 'weight', 'reqAttune', 'wondrous',
     'entries', 'dmg1', 'dmg2', 'dmgType', 'property', 'ac', 'source'],
-  class: ['name', 'source', 'hd', 'classFeatures', 'subclasses', 'spellcastingAbility'],
+  // proficiency/startingProficiencies/startingEquipment/casterProgression feed
+  // the character creator (1.2) — packs downloaded before then lack them and
+  // simply need re-downloading to become creator-usable
+  class: ['name', 'source', 'hd', 'classFeatures', 'subclasses', 'spellcastingAbility',
+    'proficiency', 'startingProficiencies', 'startingEquipment', 'casterProgression',
+    'cantripProgression', 'primaryAbility'],
   classFeature: ['name', 'source', 'className', 'classSource', 'level', 'entries'],
   subclass: ['name', 'shortName', 'source', 'className', 'classSource', 'subclassFeatures'],
   subclassFeature: ['name', 'source', 'className', 'classSource', 'subclassShortName', 'subclassSource', 'level', 'entries'],
+  race: ['name', 'source', 'size', 'speed', 'darkvision', 'entries', 'ability'],
+  background: ['name', 'source', 'ability', 'skillProficiencies', 'toolProficiencies', 'feats', 'entries'],
+  feat: ['name', 'source', 'category', 'prerequisite', 'entries'],
 };
 
 function listLibrary() {

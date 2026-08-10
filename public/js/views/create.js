@@ -105,9 +105,10 @@ function renderWizard(container, systemKey, sys) {
       el('div', { style: 'flex:1;min-width:0' }, body, errEl,
         el('div', { class: 'row', style: 'margin-top:14px' }, backBtn, el('span', { class: 'spacer' }), nextBtn)))));
 
-  // system data loads async; steps render once it's here
+  // system data loads async; steps render once it's here — wizardData, when a
+  // system provides it, folds the user's imported library packs into the picks
   body.append(el('p', { class: 'muted' }, 'Loading game data…'));
-  sys.loadData().then((loaded) => { data = loaded; show(); }).catch((err) => {
+  (sys.wizardData ? sys.wizardData() : sys.loadData()).then((loaded) => { data = loaded; show(); }).catch((err) => {
     body.innerHTML = '';
     body.append(el('div', { class: 'notice warn' }, 'Could not load this system’s data: ', err.message));
   });
