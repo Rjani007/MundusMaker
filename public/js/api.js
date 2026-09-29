@@ -7,7 +7,9 @@ const writes = new Map();
 
 async function req(method, url, body, revisionUrl = null, record = true) {
   const payload = body ? JSON.stringify(body) : undefined;
-  const headers = payload ? { 'Content-Type': 'application/json' } : {};
+  // The server refuses any write not declared as JSON, even one with no body
+  // (server.js guardRequest), so other web pages cannot post to it.
+  const headers = method === 'GET' ? {} : { 'Content-Type': 'application/json' };
   if (revisionUrl) {
     const known = revisions.get(revisionUrl);
     if (known) headers['If-Match'] = known;

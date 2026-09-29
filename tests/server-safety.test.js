@@ -34,7 +34,7 @@ test('local API preserves stale drafts, reports unreadable files, and restores s
   }
   assert.ok(ready, logs);
   const request = async (url, method = 'GET', body, headers = {}) => {
-    const response = await fetch(base + url, { method, headers: { ...headers, ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
+    const response = await fetch(base + url, { method, headers: { ...headers, ...(method !== 'GET' ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
     return { status: response.status, revision: response.headers.get('etag'), body: await response.json() };
   };
   const created = await request('/api/worlds', 'POST', { name: 'Safety fixture' });

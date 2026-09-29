@@ -97,8 +97,16 @@ test('container persists real worlds, assets, library and conflicts across resta
   entry = { ...entry, name: 'Captain updated' };
   assert.equal((await request(prefix + '/entities/captain', 'PUT', entry, { 'If-Match': first.etag })).status, 200);
   assert.equal((await request(prefix + '/entities/captain', 'PUT', { ...entry, name: 'Stale draft' }, { 'If-Match': first.etag })).status, 409);
-  const asset = await request(prefix + '/assets', 'POST', { name: 'seal.png', dataBase64: Buffer.from('persistent asset fixture').toString('base64') });
+  const asset = await request(prefix + '/assets', 'POST', { name: 'seal.png', dataBase64: Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.from('persistent asset fixture')]).toString('base64') });
   assert.equal(asset.status, 200, JSON.stringify(asset.body));
+  // The backend's own request guard still runs behind the gateway's rewritten Origin and Host.
+  const plain = await fetch(base + '/api/worlds', { method: 'POST', headers: { Authorization, Origin: base, 'Content-Type': 'text/plain' }, body: '{"name":"Planted"}' });
+  assert.equal(plain.status, 415);
+  assert.equal((await request('/api/worlds', 'POST', { name: 'Same site' }, { 'Sec-Fetch-Site': 'same-site' })).status, 403);
+  const planted = await request(prefix + '/assets', 'POST', { name: 'probe.html', dataBase64: Buffer.from('<p>probe</p>').toString('base64') });
+  assert.equal(planted.status, 415);
+  const served = await fetch(`${base}/assets/${world.body.id}/${asset.body.file}`, { headers: { Authorization } });
+  assert.equal(served.headers.get('content-type'), 'image/png'); assert.match(served.headers.get('content-security-policy'), /sandbox/);
   const library = await request('/api/library', 'POST', { name: 'NAS pack', data: { spell: [{ name: 'Fixture Spell', source: 'TEST', level: 0, school: 'V', entries: ['Fixture'] }] } });
   assert.equal(library.status, 200, JSON.stringify(library.body));
   const download = await request('/api/library/download-5etools', 'POST', { confirmUse: false });

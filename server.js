@@ -695,37 +695,55 @@ function sendJson(res, status, obj) {
   res.end(JSON.stringify(obj));
 }
 
-/**
- * The 5etools route is the app's only API mutation that initiates outbound
- * network traffic. Keep it callable by this localhost UI and scripts, but not
- * by an arbitrary web page posting a simple request to the user's loopback.
- */
-function requireLocalJsonDownload(req) {
+// ---------- request guard ----------
+// The server listens on 127.0.0.1 only, yet any web page the GM has open can
+// send it requests. A cross-site "simple" POST (text/plain, a form) needs no
+// CORS preflight, and a DNS-rebinding page can even read the replies because
+// the browser thinks they are its own. So before any route runs:
+//  - every request must be addressed to localhost, 127.0.0.1 or [::1] (a
+//    rebinding page names its own domain in Host);
+//  - API and asset requests marked cross-site or same-site are refused, reads
+//    included, so no other page (another localhost port too) can embed them;
+//  - anything but GET and HEAD must come from this app's own page (an Origin,
+//    when sent, is exactly this host) and be declared application/json, which
+//    another page cannot send here without a preflight this server never grants.
+// Native clients (the tray, installer, launchers and tests) send no Origin or
+// Sec-Fetch headers and pass. The Docker gateway checks the public origin
+// itself, then forwards an Origin rewritten to this host (scripts/container.js).
+const LOOPBACK_HOST = /^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d{1,5})?$/;
+
+function guardRequest(req, pathname) {
+  const refuse = (status, message) => Object.assign(new Error(message), { status });
   const host = String(req.headers.host || '').trim().toLowerCase();
-  if (!/^(?:localhost|127\.0\.0\.1)(?::\d+)?$/.test(host)
-      && !/^\[::1\](?::\d+)?$/.test(host)) {
-    throw Object.assign(new Error('5etools downloads are available only from the local MundusMaker app'), { status: 403 });
+  if (!LOOPBACK_HOST.test(host)) throw refuse(403, `MundusMaker answers only at http://localhost:${PORT}.`);
+  const site = String(req.headers['sec-fetch-site'] || '').toLowerCase();
+  const write = req.method !== 'GET' && req.method !== 'HEAD';
+  if ((site === 'cross-site' || site === 'same-site') && (write || pathname.startsWith('/api/') || pathname.startsWith('/assets/'))) {
+    throw refuse(403, 'Only MundusMaker’s own pages can use its data. Open MundusMaker directly instead.');
   }
-  const contentType = String(req.headers['content-type'] || '').split(';', 1)[0].trim().toLowerCase();
-  if (contentType !== 'application/json') {
-    throw Object.assign(new Error('5etools downloads require an application/json request'), { status: 415 });
+  if (!write) return;
+  if (req.headers.origin !== undefined && String(req.headers.origin).trim().toLowerCase() !== `http://${host}`) {
+    throw refuse(403, 'Only MundusMaker’s own pages can make changes. Open MundusMaker directly instead.');
   }
-  const fetchSite = String(req.headers['sec-fetch-site'] || '').toLowerCase();
-  if (fetchSite === 'cross-site') {
-    throw Object.assign(new Error('cross-site 5etools download requests are not allowed'), { status: 403 });
-  }
-  const origin = String(req.headers.origin || '').trim();
-  if (origin) {
-    let normalized;
-    try {
-      const parsed = new URL(origin);
-      normalized = `${parsed.protocol}//${parsed.host}`.toLowerCase();
-    } catch { /* rejected below */ }
-    if (normalized !== `http://${host}`) {
-      throw Object.assign(new Error('5etools downloads must be started from this MundusMaker page'), { status: 403 });
-    }
-  }
+  const type = String(req.headers['content-type'] || '').split(';', 1)[0].trim().toLowerCase();
+  if (type !== 'application/json') throw refuse(415, 'MundusMaker accepts changes only as JSON sent by its own pages.');
 }
+
+// Uploads are raster images only (portraits, handout art, pictures brought in
+// by the Markdown import), and the bytes must really be one of these formats.
+// SVG is refused: opened on its own it is a page that can run script.
+const RASTER_TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif' };
+function isRasterImage(buf) {
+  const ascii = (from, to) => buf.subarray(from, to).toString('latin1');
+  return ascii(0, 8) === '\x89PNG\r\n\x1a\n'
+    || (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff)
+    || /^GIF8[79]a$/.test(ascii(0, 6))
+    || (ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP');
+}
+
+// Exports are the files the Export page and the map editor make. They are
+// never served, but the GM opens them from the folder, so nothing else lands there.
+const EXPORT_TYPES = new Set(['.pdf', '.png', '.zip', '.uvtt']);
 
 // ---------- per-entity version history ----------
 // Kept in <worldDir>/.history/<entityId>/<stamp>.json — deliberately outside
@@ -1016,15 +1034,11 @@ async function handleApi(req, res, pathname) {
         : config.dataDir ? path.basename(configPathUsed) : 'default',
     });
   }
-  // Quit: Settings, the tray and the upgrade screen stop the server here.
-  // In-flight saves finish first (gracefulQuit). Docker owns a container.
+  // Quit: Settings, the tray and the upgrade screen stop the server here, and
+  // guardRequest keeps every other page out. In-flight saves finish first
+  // (gracefulQuit). Docker owns a container.
   if (pathname === '/api/quit' && method === 'POST') {
     if (CONTAINER) return sendJson(res, 409, { error: 'Docker manages this server. Stop it with Docker instead.' });
-    const origin = String(req.headers.origin || '');
-    const ownPage = !origin || [`http://localhost:${PORT}`, `http://127.0.0.1:${PORT}`].includes(origin.toLowerCase());
-    if (!ownPage || String(req.headers['sec-fetch-site'] || '').toLowerCase() === 'cross-site') {
-      return sendJson(res, 403, { error: 'MundusMaker can only be stopped from its own pages.' });
-    }
     sendJson(res, 200, { ok: true, stopping: true });
     setImmediate(() => gracefulQuit('Quit was chosen'));
     return;
@@ -1135,7 +1149,6 @@ async function handleApi(req, res, pathname) {
     return sendJson(res, 200, storeLibraryPack(body.name, body.data || {}));
   }
   if (pathname === '/api/library/download-5etools' && method === 'POST') {
-    requireLocalJsonDownload(req);
     const body = JSON.parse((await readBody(req, 64 * 1024)).toString('utf8'));
     if (body.confirmUse !== true) {
       return sendJson(res, 400, { error: 'confirmUse must be true before MundusMaker downloads third-party material' });
@@ -1321,12 +1334,18 @@ async function handleApi(req, res, pathname) {
   // image assets (portraits etc.) live inside the world folder → sync/backup just work
   if (route === '/assets' && method === 'POST') {
     const body = JSON.parse((await readBody(req, 20 * 1024 * 1024)).toString('utf8'));
-    const safe = String(body.name || 'image.png').replace(/[^\w.\-]+/g, '_').slice(-80);
+    const safe = String(body.name || 'image.png').replace(/[^\w.\-]+/g, '_').slice(-80)
+      .replace(/\.{2,}/g, '.').replace(/^\.+/, ''); // serveAsset refuses '..' names
+    if (!RASTER_TYPES[path.extname(safe).toLowerCase()]) {
+      return sendJson(res, 415, { error: 'Only PNG, JPEG, WebP and GIF images can be uploaded.' });
+    }
+    const bytes = Buffer.from(String(body.dataBase64 || ''), 'base64');
+    if (!isRasterImage(bytes)) return sendJson(res, 415, { error: 'That file is not a PNG, JPEG, WebP or GIF image.' });
     const assetsDir = path.join(dir, 'assets');
     fs.mkdirSync(assetsDir, { recursive: true });
     let name = safe;
     if (fs.existsSync(path.join(assetsDir, name))) name = `${Date.now().toString(36)}-${safe}`;
-    fs.writeFileSync(path.join(assetsDir, name), Buffer.from(String(body.dataBase64 || ''), 'base64'));
+    fs.writeFileSync(path.join(assetsDir, name), bytes);
     return sendJson(res, 200, { ok: true, file: name });
   }
 
@@ -1369,7 +1388,10 @@ async function handleApi(req, res, pathname) {
 
   if (route === '/export-file' && method === 'POST') {
     const body = JSON.parse((await readBody(req, 100 * 1024 * 1024)).toString('utf8'));
-    const name = String(body.name || 'export.pdf').replace(/[^\w.\- ]+/g, '_');
+    const name = String(body.name || 'export.pdf').replace(/[^\w.\- ]+/g, '_').replace(/^[. ]+|[. ]+$/g, '');
+    if (!EXPORT_TYPES.has(path.extname(name).toLowerCase())) {
+      return sendJson(res, 415, { error: 'Exports are saved only as PDF, PNG, ZIP or Universal VTT files.' });
+    }
     const target = path.join(dir, 'exports', name);
     fs.writeFileSync(target, Buffer.from(String(body.dataBase64 || ''), 'base64'));
     return sendJson(res, 200, { ok: true, path: target });
@@ -1425,7 +1447,22 @@ function serveAsset(req, res, pathname) {
   const file = path.join(WORLDS_DIR, wid, 'assets', name);
   fs.readFile(file, (err, buf) => {
     if (err) return fail(404, 'not found');
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream' });
+    // Files reach assets/ by other paths than the upload route (older versions,
+    // backups, sync, a hand copy), so no asset may ever run as a page on this
+    // origin: the sandbox gives one opened directly no script and no access.
+    // Raster images display as usual, an older SVG still shows in <img> but
+    // loads nothing when opened, and anything else is only offered as a download.
+    const ext = path.extname(file).toLowerCase();
+    const headers = { 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': 'sandbox' };
+    if (RASTER_TYPES[ext]) headers['Content-Type'] = RASTER_TYPES[ext];
+    else if (ext === '.svg') {
+      headers['Content-Type'] = 'image/svg+xml';
+      headers['Content-Security-Policy'] = "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:";
+    } else {
+      headers['Content-Type'] = 'application/octet-stream';
+      headers['Content-Disposition'] = 'attachment';
+    }
+    res.writeHead(200, headers);
     res.end(buf);
   });
 }
@@ -1464,11 +1501,14 @@ const server = http.createServer(async (req, res) => {
   inFlight++;
   res.on('close', () => { inFlight--; });
   await ready;
-  const pathname = decodeURI((req.url || '/').split('?')[0]);
-  if (quitting && pathname.startsWith('/api/')) {
-    return sendJson(res, 503, { error: 'MundusMaker is stopping. Start it again to keep working.' });
-  }
+  let pathname = (req.url || '/').split('?')[0];
   try {
+    // any page can send a malformed %-escape (an <img> will do): answer it, never crash
+    try { pathname = decodeURI(pathname); } catch { throw Object.assign(new Error('That address is not valid.'), { status: 400 }); }
+    guardRequest(req, pathname);
+    if (quitting && pathname.startsWith('/api/')) {
+      return sendJson(res, 503, { error: 'MundusMaker is stopping. Start it again to keep working.' });
+    }
     if (pathname.startsWith('/api/')) {
       await handleApi(req, res, pathname);
     } else if (req.method === 'GET' && pathname.startsWith('/assets/')) {

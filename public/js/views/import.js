@@ -23,6 +23,32 @@ async function fileToBase64(f) {
   return btoa(bin);
 }
 
+// The server stores raster images only (an SVG opened on its own can run
+// script), so an SVG embed is drawn to a PNG first. Loaded as an <img>, an SVG
+// runs no script and fetches nothing, so drawing it here is safe and local.
+async function svgToPng(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    let w = img.naturalWidth, h = img.naturalHeight;
+    if (!w || !h) { // no width/height attributes: fall back to the viewBox
+      const box = new DOMParser().parseFromString(await file.text(), 'image/svg+xml')
+        .documentElement.getAttribute('viewBox')?.trim().split(/[\s,]+/).map(Number);
+      if (box?.length === 4 && box[2] > 0 && box[3] > 0) [w, h] = [box[2], box[3]];
+    }
+    if (!w || !h) throw new Error('the SVG has no size');
+    const scale = Math.min(2048, Math.max(512, w, h)) / Math.max(w, h); // vector: small icons stay crisp
+    const canvas = el('canvas', { width: Math.max(1, Math.round(w * scale)), height: Math.max(1, Math.round(h * scale)) });
+    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('the SVG could not be converted'))), 'image/png'));
+    return new File([blob], file.name.replace(/\.svg$/i, '.png'), { type: 'image/png' });
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 // ---------- markdown / Obsidian (with images) ----------
 
 function markdownImporter() {
@@ -49,11 +75,17 @@ function markdownImporter() {
     },
     async commit({ typeKey, setStatus }) {
       const { md, imgs } = staged;
-      const uploaded = new Map(); // File -> asset file name (upload once, reuse)
+      const uploaded = new Map(); // File -> asset file name, or null if refused (upload once, reuse)
       const ensureUploaded = async (file) => {
         if (!uploaded.has(file)) {
-          const res = await api.uploadAsset(file.name, await fileToBase64(file));
-          uploaded.set(file, res.file);
+          let asset = null;
+          try {
+            const image = /\.svg$/i.test(file.name) ? await svgToPng(file) : file;
+            asset = (await api.uploadAsset(image.name, await fileToBase64(image))).file;
+          } catch (err) {
+            console.warn(`[import] could not bring in ${file.name}: ${err.message}`);
+          }
+          uploaded.set(file, asset);
         }
         return uploaded.get(file);
       };
@@ -79,9 +111,10 @@ function markdownImporter() {
           const ref = m[1] || m[3];
           const alt = m[2] || '';
           const file = findImg(ref);
+          const asset = file ? await ensureUploaded(file) : null;
           text += body.slice(last, m.index);
-          if (file) text += `![${alt}](/assets/${encodeURIComponent(state.worldId)}/${encodeURIComponent(await ensureUploaded(file))})`;
-          else text += m[0]; // image not in the folder — leave the reference as written
+          if (asset) text += `![${alt}](/assets/${encodeURIComponent(state.worldId)}/${encodeURIComponent(asset)})`;
+          else text += m[0]; // image not in the folder, or refused — leave the reference as written
           last = m.index + m[0].length;
         }
         text += body.slice(last);
@@ -93,13 +126,16 @@ function markdownImporter() {
         const tags = new Set([...(Array.isArray(meta.tags) ? meta.tags : meta.tags ? [meta.tags] : []), ...segs]);
         e.tags = [...tags].filter(Boolean).slice(0, 6);
         const portrait = imgs.find((im) => im.name.replace(IMG_EXT, '').toLowerCase() === name.toLowerCase());
-        if (portrait) e.image = await ensureUploaded(portrait);
+        const image = portrait ? await ensureUploaded(portrait) : null;
+        if (image) e.image = image;
         await saveEntity(e);
         imported++;
         if (imported % 20 === 0) setStatus(`Importing… ${imported}/${md.length}`);
       }
       staged = null;
-      return { done: `Done: imported ${imported}, skipped ${skipped} (already existed or unnamed), uploaded ${uploaded.size} image${uploaded.size === 1 ? '' : 's'}. [[Links]] between notes resolve automatically.` };
+      const images = [...uploaded.values()].filter(Boolean).length;
+      const refused = uploaded.size - images;
+      return { done: `Done: imported ${imported}, skipped ${skipped} (already existed or unnamed), uploaded ${images} image${images === 1 ? '' : 's'}${refused ? `; ${refused} image${refused === 1 ? '' : 's'} could not be brought in, so ${refused === 1 ? 'its reference was' : 'their references were'} left as written` : ''}. [[Links]] between notes resolve automatically.` };
     },
   };
 }

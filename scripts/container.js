@@ -62,8 +62,9 @@ function createGateway({ username, password, backendPort, origin = '' }) {
     const headers = cleanHeaders(req.headers);
     for (const key of Object.keys(headers)) if (key === 'authorization' || key === 'forwarded' || key.startsWith('x-forwarded-')) delete headers[key];
     headers.host = `localhost:${backendPort}`;
-    // Only after the public origin check: the guarded 5etools downloader sees
-    // this trusted local hop, while its explicit consent/body checks still run.
+    // Only after the public origin check: the backend's request guard (server.js
+    // guardRequest) sees this trusted local hop as its own page, while its
+    // Sec-Fetch-Site and JSON-only checks still run on the forwarded headers.
     if (headers.origin) headers.origin = `http://localhost:${backendPort}`;
     const upstream = http.request({ hostname: '127.0.0.1', port: backendPort, path: req.url, method: req.method, headers }, response => {
       const responseHeaders = cleanHeaders(response.headers);
