@@ -6,7 +6,7 @@ import { el, esc, makeRng } from '../util.js';
 import { nameFor } from '../names.js';
 import {
   dotsHtml, trackHtml, rollBtn, kvHtml, sectionHtml,
-  frow, textInput, numInput, areaInput, listEdit,
+  frow, textInput, numInput, areaInput, listEdit, surprisePickButton,
 } from './sheetlib.js';
 
 export const label = 'Vampire: The Masquerade 5e';
@@ -489,11 +489,21 @@ export const wizard = {
     {
       key: 'clan', title: 'Clan',
       render(draft, ctx) {
+        const pickClan = (c) => {
+          if (draft.clan && draft.clan.name !== c.name) {
+            // the discipline picks belong to the old clan's options
+            draft.discDots = null;
+            draft.powerPicks = {};
+          }
+          draft.clan = c;
+          ctx.update();
+        };
         return el('div', {},
+          el('div', { class: 'wiz-card-actions' }, surprisePickButton(ctx.data.clans, pickClan)),
           el('div', { class: 'edition-cards wiz-cards' },
             ctx.data.clans.map((c) => el('div', {
               class: `edition-card${draft.clan?.name === c.name ? ' sel' : ''}`,
-              onclick: () => { draft.clan = c; ctx.update(); },
+              onclick: () => pickClan(c),
             },
               el('div', { style: 'font-weight:600' }, c.name),
               el('div', { class: 'muted small' }, c.disciplines.join(' · ') || c.note || ''),
@@ -542,11 +552,18 @@ export const wizard = {
           note.textContent = `${dists[draft.skillDist].label}: ${spreadLabel(spread)}. ` + (ok ? '✓ spread is legal' : 'Keep assigning…');
           note.style.color = ok ? 'var(--ok)' : 'var(--muted)';
         };
-        const distCards = el('div', { class: 'edition-cards' },
-          Object.entries(dists).map(([key, dist]) => el('div', {
-            class: `edition-card${draft.skillDist === key ? ' sel' : ''}`,
-            onclick: () => { draft.skillDist = key; ctx.update(); },
-          }, el('div', { style: 'font-weight:600' }, dist.label), el('div', { class: 'muted small' }, spreadLabel(dist.spread)))));
+        const distChoices = Object.entries(dists);
+        const pickDist = ([key]) => { draft.skillDist = key; ctx.update(); };
+        const distCards = el('div', {},
+          el('div', { class: 'wiz-card-actions' }, surprisePickButton(distChoices, pickDist)),
+          el('div', { class: 'edition-cards' },
+            distChoices.map((choice) => {
+              const [key, dist] = choice;
+              return el('div', {
+                class: `edition-card${draft.skillDist === key ? ' sel' : ''}`,
+                onclick: () => pickDist(choice),
+              }, el('div', { style: 'font-weight:600' }, dist.label), el('div', { class: 'muted small' }, spreadLabel(dist.spread)));
+            })));
         const cols = el('div', { class: 'sheet-cols' },
           Object.entries(SKILL_GROUPS).map(([group, skills]) => el('div', { class: 'sheet-col' },
             el('div', { class: 'sheet-sec-title' }, cap(group)),
@@ -618,11 +635,13 @@ export const wizard = {
     {
       key: 'predator', title: 'Predator type',
       render(draft, ctx) {
+        const pickPredator = (p) => { draft.predator = p; ctx.update(); };
         return el('div', {},
+          el('div', { class: 'wiz-card-actions' }, surprisePickButton(ctx.data.predatorTypes, pickPredator)),
           el('div', { class: 'edition-cards wiz-cards' },
             ctx.data.predatorTypes.map((p) => el('div', {
               class: `edition-card${draft.predator?.name === p.name ? ' sel' : ''}`,
-              onclick: () => { draft.predator = p; ctx.update(); },
+              onclick: () => pickPredator(p),
             }, el('div', { style: 'font-weight:600' }, p.name),
               el('ul', { class: 'muted small', style: 'margin:4px 0 0 16px;padding:0' },
                 p.gains.map((g) => el('li', {}, g)))))),
@@ -677,7 +696,7 @@ export const wizard = {
               el('input', { type: 'number', min: 1, max: 5, value: a.dots, style: 'width:60px', oninput: (ev) => { a.dots = Number(ev.target.value) || 1; refresh(); } }),
               el('button', { class: 'ghost danger small', onclick: () => { draft.advantages.splice(i, 1); redraw(); refresh(); } }, '✕')));
           });
-          list.append(el('button', { class: 'ghost small', style: 'margin-top:6px', onclick: () => { draft.advantages.push({ name: '', dots: 1, flaw: false }); redraw(); } }, '+ Add'));
+          list.append(el('button', { class: 'ghost small', style: 'margin-top:6px', onclick: () => { draft.advantages.push({ name: '', dots: 1, flaw: false }); redraw(); refresh(); } }, '+ Add'));
         };
         redraw();
         refresh();

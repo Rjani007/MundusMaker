@@ -6,7 +6,7 @@
 // bestiary browser, old-install migration, backup restore) render themselves.
 
 import { el, uid, toast } from '../util.js';
-import { state, types, newEntity, saveEntity, findByName, refreshWorlds } from '../state.js';
+import { state, types, newEntity, saveEntity, findByName, refreshWorlds, requireSaved } from '../state.js';
 import {
   parseFrontmatter, mdToBlocks, parseCsv, monsterToStat, loadBundledBestiary,
   parseWorldAnvil, htmlToBlocks, parseFoundryText, foundryJournalToBlocks, foundryActorToStat,
@@ -484,6 +484,9 @@ function migrateCard() {
             const res = await api.migrateInstall(inst.dataDir, ids);
             await refreshWorlds();
             const names = res.migrated.map((m) => `“${m.name}”`).join(', ');
+            // copying is recorded, so a world already brought over unchanged is not duplicated
+            const already = (res.skipped || []).filter((s) => s.reason === 'already copied');
+            if (already.length) toast(`Already copied earlier, so not duplicated: ${already.map((s) => `“${s.name}”`).join(', ')}`, 6000);
             status.textContent = `✓ Copied ${res.migrated.length} world${res.migrated.length === 1 ? '' : 's'} in: ${names}. Open them from the world menu in the top bar. The old install still has its own copy.`;
             toast(`Copied ${res.migrated.length} world(s) in`);
           } catch (err) {
@@ -536,6 +539,7 @@ function restoreCard() {
     try {
       status.textContent = 'Restoring…';
       const payload = JSON.parse(await file.text());
+      await requireSaved();
       await api.restore(payload);
       location.reload();
     } catch (err) {

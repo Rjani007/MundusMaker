@@ -1,8 +1,17 @@
 # MundusMaker
 
-A worldbuilding wiki for tabletop GMs that runs entirely on your own machine.
-Your campaign is a folder of plain text files on your disk. There's no account,
-no subscription, and nothing you write ever leaves your computer.
+A worldbuilding wiki for tabletop GMs that runs on your own computer or server.
+Your campaign is a folder of plain text files on your disk. There's no hosted
+service or subscription. The desktop app stays local; optional Docker hosting
+lets your browsers connect to your own NAS using a DM password.
+
+Version **1.8.1** fixes the Mac app's `NSNull count` startup error and adds
+[Docker / NAS hosting](docs/docker.md). See the [patch notes](docs/1.8.1-release.md).
+Version **1.8.0** brings new world geography, detailed linked provinces, towns
+with streets and working districts, safer map editing, and a printable handout
+workshop. See the [release notes](docs/1.8.0-release.md). Character creation,
+level advancement, system sheets, custom categories and DM Screen references
+from [1.7.0](docs/1.7.0-release.md) remain included.
 
 The reason it exists: I wanted a campaign wiki where GM secrets are part of the
 design instead of an afterthought. Any paragraph, relationship, or map marker
@@ -12,12 +21,60 @@ bar that shows you exactly what the players would see before you hit export.
 
 ## Getting started
 
-Grab the `MundusMaker-x.y.z-windows-x64.zip` build, unzip it anywhere, and
-double-click `Start-MundusMaker.bat`. Your browser opens by itself. Keep the
-black window open while you play, close it when you're done. That build has
-everything inside it, nothing to install.
+Saving, conflict recovery, and backup restore are described in the
+[data-safety guide](docs/data-safety.md). If a save fails, keep the page open:
+the GM warning lets you download pending edits before reloading.
 
-If you'd rather it didn't live in a browser tab: Edge and Chrome have an
+Download **`MundusMaker-x.y.z.zip`** and extract the whole folder. One download
+works on Windows, Mac and Linux; the launchers choose the bundled runtime for
+your computer automatically. No separate Node installation is needed.
+
+**Windows:** double-click `Start-MundusMaker.bat`. Your browser opens by itself.
+MundusMaker runs in the background with an icon in the Windows tray, so closing
+the browser doesn't stop it. Quit it from that icon or from Settings; saves in
+progress finish first. `MundusMaker-Console.bat` runs it in a window that shows
+every message, for troubleshooting. Requires Windows 10 or later on x64.
+
+**Mac:** move **MundusMaker.app** to Applications and double-click it.
+It includes both Apple silicon and Intel runtimes. The familiar
+`Start-MundusMaker.command` is also included as a shortcut to the app.
+The **MM** menu opens the browser, shows the startup log and quits the server.
+Normal startup does not use Terminal. These builds require macOS 13.5 or later.
+Unsigned tester builds may need a one-time **Privacy & Security → Open Anyway**
+approval following [Apple’s instructions](https://support.apple.com/en-us/102445).
+Worlds and settings live in `~/Library/Application Support/MundusMaker`, outside
+the app, so replacing the app preserves them. Use Import to copy worlds from
+an older portable Mac installation, or select an existing custom data folder
+in Settings.
+
+If 1.7 or 1.8 reported **`-[NSNull count]: unrecognized selector`**, replace
+the old app with the 1.8.1 app and open it from Finder. This fixes a native
+launcher argument; installing another Node version or changing your worlds
+is unnecessary. The app remains unsigned, so the one-time macOS approval above
+may still apply.
+
+**Linux:** run `start-mundusmaker.sh`; it selects Intel/AMD x64 or ARM64
+automatically and starts MundusMaker in the background, so the terminal can be
+closed. Quit it from Settings. `--install-desktop` adds an applications-menu
+entry; `--foreground` keeps it in the terminal. The ZIP preserves executable permissions for the script and
+runtimes. Requires glibc 2.28+ and kernel 4.18+. **README-FIRST.html** includes
+startup and upgrade instructions for every system.
+
+**Upgrading:** extract the new version next to the old folder and start it. On
+its first start it copies your worlds from the older MundusMaker beside it and
+tells you what came along; when that's ambiguous (several old folders, a synced
+data folder, or the old one still running) it asks instead. The old folder is
+never changed.
+
+**Docker / NAS:** the same download includes `Dockerfile`, `compose.yaml`, and
+the [hosting guide](docs/docker.md). Set a password file, then build with
+`docker compose up -d --build`. A persistent volume holds your worlds, assets,
+library and recovery history. Use the same server address on each device.
+Access away from home goes through your private VPN or an HTTPS reverse proxy;
+the supplied port mapping starts on the NAS's loopback interface. Everyone
+with the password has full DM access, including GM secrets.
+
+If you'd rather not use a browser tab, Edge and Chrome have an
 install icon at the right end of the address bar, and clicking it gives
 MundusMaker its own window and a Start Menu entry. There's also an
 `Install-MundusMaker.bat` that copies the app somewhere permanent and makes
@@ -45,6 +102,40 @@ dropdown in the top-right corner. The Help tab inside the app covers the rest.
 
 ## What it does
 
+The **Handouts** tab makes letters, old books and journals, scrolls, item cards
+and notices. Write in ordinary entry blocks, attach local illustrations or a
+seal, and choose which linked campaign material to include. Preview the player
+edition while keeping GM annotations secret. Export selectable-text PDFs or
+page images in a ZIP, individually or as an ordered packet. Cards can share A4
+or US Letter sheets with cutting guides. Fonts and artwork stay local.
+
+New **maps** use the 1.8 generator: continental and island compositions,
+mountain ranges, drainage, terrain-aware provincial roads and parcel-based
+towns with markets, workshops, gardens and working quays. Linked provinces
+retain their parent coast, territory outline, rivers and capital. Building
+presets have connected rooms; generated dungeon floors have paired stairs.
+Preview regeneration before applying it, undo edits, and export at up to 4×
+resolution. Existing maps keep their original generation until you choose
+**1.8 · improved generation** in the editor. The sample world includes a linked
+world → province → capital example and all five handout templates.
+
+The **DM Screen** tab puts rules references, cheat sheets, notes, and statblocks
+on a saved board for each world. **Browse ready-written rules** offers 36 local
+references for D&D 2024, Vampire V5 and Call of Cthulhu 7e. Filter by system and
+topic, search the text, preview a rule and pin an editable GM-only copy.
+D&D includes all fifteen conditions, abilities/skills, combat, magic and
+exploration; V5 covers pools, Hunger, Willpower and conflicts; CoC covers tests,
+combat, wounds, Sanity and development. Each copy includes source attribution.
+Re-pinning reuses your saved copy and keeps your edits. You can also pin existing
+entries, reorder them, or write a reference. Unpinning never deletes an entry.
+
+The **Encounter** tab gives each session's initiative and HP tracker its own
+page. Add combatants manually, from characters/statblocks, or from a prepared
+encounter; track turns, damage, healing, and conditions, with undo for the last
+action. It shares the tracker on the session entry. Starting HP is copied from
+supported entries, and combat changes stay in the session. Both tabs are
+GM-only; tracker details are excluded from PDF exports.
+
 Entries are typed: characters, NPCs, locations, factions, items, events,
 creatures, sessions, notes. Each type has its own fields, and you can add your
 own types. Click a type anywhere you see it — the sidebar heading, a card on
@@ -52,6 +143,15 @@ the dashboard, the badge on an entry — and you get that type's own page: every
 location in one sortable table, with the columns that matter for locations
 (Region, Population, and so on) already filled in. It's the fastest way to see
 what you've actually written and what's still an empty stub.
+
+Open **Categories** in the sidebar to create a category such as Gods, choose
+its color and suggested facts, or change the order of categories. The sidebar
+jump menu and the switcher on category pages move directly between them.
+Category tables can search names, tags and facts, filter by a related entry,
+or group entries by their connections or shared tags. For example, characters
+linked to the same guild appear together. An open entry's visible connections
+also appear near the top of the sidebar. Secret connections and hidden entries
+stay out of player navigation.
 
 Writing works like a wiki. Type `[[Port Vellen]]` and it becomes a link, with
 autocomplete popping up as soon as you type `[[`. Hover a link and a card
@@ -95,20 +195,32 @@ Things that get used constantly at the table:
   current round, turn, conditions, and combatant health without trying to turn
   MundusMaker into a shared VTT. Backlinks are automatic, so every NPC quietly
   accumulates a list of the sessions they appeared in.
-- **Character creators.** A step-by-step builder walks you through a whole
-  character for D&D 5.5e (the 2024 rules), Vampire: The Masquerade, or Call
-  of Cthulhu, and it does the math with you: a point buy that has to add up
-  to 27, occupation points that have to be spent, attribute spreads the
-  rulebook would sign off on. The D&D options ship with the app, courtesy of
-  the freely licensed SRD. For Vampire and Cthulhu the app knows the names
-  and the numbers, and the power text is yours to paste in from your own
-  books, because those words aren't free to bundle. What comes out is a
-  sheet living on an ordinary entry: dots you click to change, skills that
-  roll themselves when you click them, hunger dice doing their ugly thing.
-  Hold Shift for advantage or a bonus die. A sheet can be a GM secret like
-  anything else, and it prints in the book. After play, the same sheets have
-  advancement assistants: level-by-level SRD class features and HP for D&D,
-  an applied XP-spend ledger for V5, and CoC's checked-skill development rolls.
+- **Character creators.** D&D 2024 now has a full-page builder with a step
+  navigator and live summary. Choose allowed local sources; search classes,
+  species, backgrounds, feats, spells and equipment; compare descriptions;
+  assign standard, rolled, manual or 27-point-buy scores; then choose skills,
+  languages, origin feats, starting gear and spells. Wizard spellbooks and
+  Magic Initiate selections have their own checks. The builder calculates
+  starting HP, equipment-based AC and weapon attacks. Drafts resume per world
+  and system in the same browser tab; no entry is saved until Finish. Vampire
+  and Cthulhu keep their system-specific creation math and interactive sheets.
+  Their power descriptions come from your own books and local notes.
+- **Advancement.** **Level up…** on a D&D sheet walks through HP, subclass,
+  ability increases or feats, expertise, new skills, fighting styles and
+  spells. Review the result before applying one level. Constitution increases
+  adjust earlier HP, Wizard spellbooks gain spells, and spent spell slots
+  remain spent. The twelve SRD classes have progression tables through level
+  20; local 5etools packs supply additional classes and subclasses. This is a
+  single-class 2024 builder: conditional feature choices and unusual imported
+  mechanics can be recorded as notes and adjusted in the sheet editor.
+  V5 retains its XP ledger and CoC its checked-skill development rolls.
+- **Character PDFs.** Each sheet can export directly to A4 or US Letter,
+  using an original layout with its game's familiar fields: D&D abilities,
+  saves, skills, combat and spellcasting; V5 attribute/skill dots and damage
+  tracks; CoC characteristic and skill success thresholds. Long descriptions
+  continue onto extra pages. Player and GM copies use the existing secrecy
+  flags. World exports append these sheets by default; a compact text option
+  is still available.
 - **The Library.** All the bundled monsters, spells and gear in one place,
   plus any 5e.tools files you import. You can pick local JSON or explicitly
   download the bestiary, spells, items, classes and class features you are
@@ -135,6 +247,24 @@ settlements joined by roads, ruins and shrines out in the hills, and a hex
 grid if your table counts travel that way. Click a generated settlement on an
 Atlas or region map and MundusMaker opens its linked town map; the first GM
 click can create the normal Location entry and deterministic town map for it.
+
+World and region maps now form one editable chain. A generated nation or a
+region you place yourself can open a region map carved from the terrain under
+it. The region inherits the towns, capital, rivers and lakes inside that area.
+Its terrain crop stays fixed until a GM chooses **Refresh terrain from world**,
+so later changes to the world never alter a region unexpectedly.
+
+Sites can be moved, renamed, added, hidden and restored from the map editor.
+Moving a capital redraws its nation's territory. Names and map links carry
+across the world, region and town views, and both drill paths for a settlement
+open the same town map. MundusMaker warns before a generator change can strand
+site links or edits, and Settings includes a read-only report for links whose
+target entry has been deleted.
+
+New town maps also use their parent geography. Coastal towns put the sea on
+the matching side of the map, river settlements use the riverside layout, and
+the terrain colors follow the local climate. Existing maps keep their previous
+rendering unless these newer fields are present.
 
 Towns still come in five shapes and sizes from hamlet to metropolis, and can
 now name their own quarters. The Copper End, the Shambles, wherever your
@@ -189,7 +319,7 @@ ones that now hang past the end — it will not silently rewrite your history.
 There's also a graph view of how everything connects, portraits on any entry,
 and search over everything including your quick-facts fields (Ctrl+K).
 
-The Import page reads whatever your campaign lives in now: a folder of
+The Import page reads wherever your campaign is stored now: a folder of
 Obsidian or Markdown notes (the images come along, and a picture named after
 a note becomes its portrait), CSV tables if your world is secretly a
 spreadsheet, World Anvil article exports, Foundry VTT journals and actors
@@ -223,7 +353,7 @@ data/
 
 Copy the folder, put it in git, whatever you like. Settings (the ⚙ in the
 top bar) backs a single world up to one JSON file, with its images if you
-tick the box. Restoring lives on the Import page and asks you to type the
+tick the box. Restore is on the Import page and asks you to type the
 world's name first, because it replaces what's there.
 
 Settings also has a Trash & snapshots browser. Deleted entries can be copied
@@ -262,9 +392,12 @@ The server is one Node file, the frontend is vanilla ES modules, and the only
 vendored library is jsPDF for the exports. Clone it, run `node server.js`,
 edit, refresh.
 
-Useful scripts: `npm run package` builds the one-click zip (downloads a Node
-runtime and bundles it; `-- --node vX.Y.Z` pins the runtime, `package:all`
-builds every platform), `npm run bestiary` regenerates the SRD 5.1 bestiary,
+Useful scripts: `npm run package` builds the single universal ZIP (downloads
+and bundles all supported Node runtimes; `-- --node vX.Y.Z` pins the runtime).
+`npm run package:all` is an alias for the same single download. Developers can
+optionally build separate platform archives with `npm run package:platforms`,
+or pass a target such as `npm run package -- linux-x64`.
+`npm run bestiary` regenerates the SRD 5.1 bestiary,
 `npm run srd52` regenerates the SRD 5.2 character-creation pack, `npm run
 icons` regenerates the icon set, `npm run vendor` refreshes jsPDF. The explicit
 5etools fetcher can also be run without the UI:
@@ -272,6 +405,14 @@ icons` regenerates the icon set, `npm run vendor` refreshes jsPDF. The explicit
 ```sh
 npm run 5etools -- --categories bestiary,classes --sources XMM,XPHB --out 5etools-pack.json
 ```
+
+Packaging checks each bundled runtime against Node’s official SHA-256 list,
+includes its license, writes Unix executable modes into all ZIPs, and inspects
+the completed archives. Contributor instructions (including AGENTS.md and
+CLAUDE.md at any depth), test artifacts, local packs and real data never ship.
+The macOS menu uses built-in AppKit/JXA; no additional runtime library is needed.
+`npm run test:references` checks the reference catalog and editable copies;
+`npm run test:package` checks ZIP contents/modes and installed data configuration.
 
 Import the resulting JSON from Library. A blank `--sources` selection means
 every source in the chosen categories, so only request material you own,

@@ -1,15 +1,23 @@
 #!/bin/bash
-# MundusMaker launcher for macOS. If double-clicking says the file can't run,
-# open Terminal and run:  bash "Start-MundusMaker.command"
-cd "$(dirname "$0")"
+# Compatibility shortcut. Opening MundusMaker.app directly avoids Terminal.
+cd "$(dirname "$0")" || exit 1
 
-# Prefer the bundled runtime if this is a one-click download
-if [ -x "./runtime/bin/node" ]; then
+if [ -d "./MundusMaker.app" ]; then
+  exec /usr/bin/open "./MundusMaker.app"
+fi
+if [ -d "/Applications/MundusMaker.app" ]; then
+  exec /usr/bin/open "/Applications/MundusMaker.app"
+fi
+
+# Source checkouts and older portable installations can still run directly.
+. ./scripts/unix-runtime.sh
+mm_node=$(mundusmaker_runtime "./runtime") || mm_node=''
+if [ -n "$mm_node" ]; then
   echo ""
   echo "Starting MundusMaker... your browser will open in a moment."
   echo "Keep this window open while you use it. Close it to stop."
   echo ""
-  exec ./runtime/bin/node server.js
+  exec "$mm_node" server.js
 fi
 
 if ! command -v node >/dev/null 2>&1; then

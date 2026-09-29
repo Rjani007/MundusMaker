@@ -1,0 +1,78 @@
+{
+  "id": "lighthouse-keepers-journal",
+  "name": "Journal of the last lighthouse keeper",
+  "type": "handout",
+  "tags": [
+    "1.8 example"
+  ],
+  "gmOnly": false,
+  "fields": {},
+  "date": null,
+  "blocks": [
+    {
+      "id": "oo6cw2",
+      "kind": "heading",
+      "text": "Journal of the last lighthouse keeper",
+      "secret": false
+    },
+    {
+      "id": "ed78qv",
+      "kind": "text",
+      "text": "The private journal of Elian Vale",
+      "secret": false
+    },
+    {
+      "id": "m4rlrp",
+      "kind": "heading",
+      "text": "I. The light across the water",
+      "secret": false
+    },
+    {
+      "id": "sqlk5k",
+      "kind": "text",
+      "text": "At dusk a second lighthouse appeared beyond the reef. Its beam swept the harbor once, then rested on my window. There has been no tower on that shore since the Drowning War.\n\nI searched the charts until morning. Every captain gives the reef a different name, yet each marks the same small inlet on its northern side. Beside it, in ink faded almost to nothing, someone has drawn a door.\n\nThe keeper before me left three rules inside the lamp room: keep the glass clean, count the returning boats, and never answer a light that shines from beneath the sea. I have followed two of them.",
+      "secret": false
+    },
+    {
+      "id": "chapter-two",
+      "kind": "heading",
+      "text": "II. A chart with no shore",
+      "secret": false
+    },
+    {
+      "id": "journal-two",
+      "kind": "text",
+      "text": "The ferryman brought me a parcel wrapped in sailcloth. Inside lay a brass key and a sheet of paper as pale as the belly of a fish. At first the paper seemed blank. Held against the lamp, it showed our coast as it had been before the sea came.\n\nRoads crossed the drowned fields. The old bridge was whole. And at the end of a narrow lane stood my lighthouse, though its foundations would not be laid for another hundred years.\n\nI have put the chart between these pages. If I fail to return, take it to someone who still remembers the old names. Names endure when stone does not.",
+      "secret": false
+    },
+    {
+      "id": "gm-annotation",
+      "kind": "text",
+      "text": "GM annotation: this clue points toward the old observatory. Change or remove this note for your campaign.",
+      "secret": true
+    }
+  ],
+  "relations": [
+    {
+      "to": "port-vellen",
+      "label": "found in",
+      "secret": false
+    }
+  ],
+  "map": null,
+  "created": "2026-09-10T00:00:00.000Z",
+  "updated": "2026-09-10T00:00:00.000Z",
+  "handout": {
+    "kind": "book",
+    "paper": "aged",
+    "border": "double",
+    "cover": true,
+    "dropCap": true,
+    "slots": {
+      "oo6cw2": "title",
+      "ed78qv": "author",
+      "m4rlrp": "heading",
+      "sqlk5k": "body"
+    }
+  }
+}

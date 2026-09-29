@@ -40,6 +40,7 @@ function fetchJson(url, redirects = 0) {
 
 function cleanTags(s) {
   return String(s)
+    .replace(/\{@filter ([^}|]+)[^}]*\}/g, '$1')
     .replace(/\{@dc ([^}|]+)[^}]*\}/g, 'DC $1')
     .replace(/\{@(?:damage|dice|scaledamage|scaledice) ([^}|]+)[^}]*\}/g, '$1')
     .replace(/\{@\w+ ([^}]+)\}/g, (_, inner) => {
@@ -96,7 +97,7 @@ async function buildClasses() {
       primaryAbility: cls.primaryAbility?.[0] ? Object.keys(cls.primaryAbility[0]).filter((k) => cls.primaryAbility[0][k]) : [],
       saves: cls.proficiency || [],
       armor: (cls.startingProficiencies?.armor || []).map((a) => (typeof a === 'string' ? a : a?.proficiency || '')).filter(Boolean),
-      weapons: (cls.startingProficiencies?.weapons || []).map((w) => (typeof w === 'string' ? w : w?.proficiency || '')).filter(Boolean),
+      weapons: (cls.startingProficiencies?.weapons || []).map((w) => cleanTags(typeof w === 'string' ? w : w?.proficiency || '')).filter(Boolean),
       skills: { choose: skills.count || 2, from: (skills.from || []).map((s) => s[0].toUpperCase() + s.slice(1)) },
       startingEquipment: flattenEntries(cls.startingEquipment?.entries || cls.startingEquipment?.default || []),
       spellcasting: cls.spellcastingAbility ? {

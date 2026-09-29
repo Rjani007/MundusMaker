@@ -3,6 +3,7 @@
 // map (map.grid) and used instead of regenerating from the seed.
 
 import { makeRng } from '../util.js';
+import { connectRooms, dungeonPurpose } from './floorplans.js';
 
 export const CELL = 22;
 export const FLOOR = 1, SOLID = 0, DOOR = 2, STAIR_DOWN = 3, STAIR_UP = 4;
@@ -229,6 +230,12 @@ function generateSewer(p, seedStr) {
 
 /** Generate one level's grid from seed + params. Level 0 consumes exactly what it always has. */
 export function generateDungeonGrid(map, level = 0) {
+  if (map.params?.generation==='1.8') {
+    const legacy={...map,seed:map.seed+':v18:topology',params:{...map.params,generation:'legacy'}};
+    const model=generateDungeonGrid(legacy,level);
+    connectRooms(model.grid,model.cols,model.rows);
+    return {...model,...dungeonPurpose(model.grid,model.cols,model.rows),generation:'1.8'};
+  }
   const p = { ...defaultDungeonParams(), ...(map.params || {}) };
   const seedStr = level ? `${map.seed}:L${level}` : map.seed;
   if (p.style === 'caves') return generateCaves(p, seedStr);
@@ -327,7 +334,7 @@ function parseGrid(str, p) {
  * whatever the user painted, via the stair tools.
  */
 function carveStairs(all, generated, map, cols, rows) {
-  const rng = makeRng(map.seed + ':stairs');
+  const rng = makeRng(map.seed + (map.params?.generation==='1.8'?':v18:stairs':':stairs'));
   for (let n = 0; n < all.length - 1; n++) {
     if (!generated[n] || !generated[n + 1]) continue;
     const a = all[n].grid, b = all[n + 1].grid;
@@ -351,6 +358,10 @@ function carveStairs(all, generated, map, cols, rows) {
     }
     a[c] = STAIR_DOWN;
     b[c] = STAIR_UP;
+    if (map.params?.generation==='1.8') {
+      connectRooms(a,cols,rows);connectRooms(b,cols,rows);
+      Object.assign(all[n],dungeonPurpose(a,cols,rows));Object.assign(all[n+1],dungeonPurpose(b,cols,rows));
+    }
   }
 }
 
@@ -390,8 +401,9 @@ export function gridToString(grid, cols, rows) {
   return lines.join('\n');
 }
 
-/** Number distinct floor areas (flood fill) so rooms get labels even after edits. */
-function numberRooms(grid, cols, rows) {
+/** Number distinct floor areas (flood fill) so rooms get labels even after edits.
+ *  Room n is areas[n - 1]; map keys (mapkeys.js) find a room by its cells. */
+export function dungeonRooms(grid, cols, rows) {
   const seen = new Uint8Array(cols * rows);
   const areas = [];
   // stairs count as walkable floor here — a stair in a room must not split it
@@ -417,15 +429,19 @@ function numberRooms(grid, cols, rows) {
       const xs = cells.map((c) => c[0]), ys = cells.map((c) => c[1]);
       const bw = Math.max(...xs) - Math.min(...xs) + 1, bh = Math.max(...ys) - Math.min(...ys) + 1;
       if (cells.length >= 9 && cells.length / (bw * bh) > 0.6 && bw >= 3 && bh >= 3) {
-        areas.push({ cx: (Math.min(...xs) + Math.max(...xs)) / 2, cy: (Math.min(...ys) + Math.max(...ys)) / 2 });
+        areas.push({ cx: (Math.min(...xs) + Math.max(...xs)) / 2, cy: (Math.min(...ys) + Math.max(...ys)) / 2, cells });
       }
     }
   }
   return areas;
 }
 
-export function renderDungeonBase(map, model, scale = 1) {
-  const { grid, cols, rows } = model || dungeonGrid(map);
+// `show` limits the generator's annotations for player renders; absent means
+// a GM render (room numbers and 1.8 guidance), so callers that pass nothing
+// draw exactly as before. See baseAnnotations() in mapcore.js.
+export function renderDungeonBase(map, model, scale = 1, show = {}) {
+  const m = model || dungeonGrid(map);
+  const { grid, cols, rows } = m;
   const W = cols * CELL, H = rows * CELL;
   const base = document.createElement('canvas');
   base.width = W * scale; base.height = H * scale;
@@ -542,13 +558,20 @@ export function renderDungeonBase(map, model, scale = 1) {
   }
 
   // room numbers
-  ctx.font = `bold ${Math.round(CELL * 0.55)}px Georgia, serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  numberRooms(grid, cols, rows).forEach((room, i) => {
-    ctx.fillStyle = 'rgba(60, 40, 20, 0.75)';
-    ctx.fillText(String(i + 1), (room.cx + 0.5) * CELL, (room.cy + 0.5) * CELL);
-  });
+  if (show.roomNumbers !== false) {
+    ctx.font = `bold ${Math.round(CELL * 0.55)}px Georgia, serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    dungeonRooms(grid, cols, rows).forEach((room, i) => {
+      ctx.fillStyle = 'rgba(60, 40, 20, 0.75)';
+      ctx.fillText(String(i + 1), (room.cx + 0.5) * CELL, (room.cy + 0.5) * CELL);
+    });
+  }
+  // IN/GOAL would point players straight at the adventure's destination
+  if (m.generation==='1.8' && show.guidance !== false) {
+    ctx.font='bold 10px Georgia';ctx.textAlign='left';
+    for(const [point,label] of [[m.entrance,'IN'],[m.goal,'GOAL']])if(point){ctx.fillStyle='#552917';ctx.fillText(label,(point[0]+.1)*CELL,(point[1]+.2)*CELL);}
+  }
 
   return base;
 }

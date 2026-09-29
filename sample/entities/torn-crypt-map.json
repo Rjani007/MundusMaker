@@ -1,0 +1,61 @@
+{
+  "id": "torn-crypt-map",
+  "name": "A torn map of the Undercrypt",
+  "type": "handout",
+  "tags": [
+    "1.9 example"
+  ],
+  "gmOnly": false,
+  "fields": {},
+  "date": null,
+  "blocks": [
+    {
+      "id": "tm-title",
+      "kind": "heading",
+      "text": "A torn map of the Undercrypt",
+      "secret": false
+    },
+    {
+      "id": "tm-body",
+      "kind": "text",
+      "text": "Scrawled on the back in a hurried hand: “Not all the tunnels are on this map. Mind the east door.”",
+      "secret": false
+    },
+    {
+      "id": "tm-gm",
+      "kind": "text",
+      "text": "GM annotation: the fragment is drawn from the player version of the crypt map, so secret markers and the key never appear on it. Move the crop in the handout designer.",
+      "secret": true
+    }
+  ],
+  "relations": [
+    {
+      "to": "undercrypt-of-maro",
+      "label": "a map of",
+      "secret": false
+    }
+  ],
+  "map": null,
+  "created": "2026-09-28T00:00:00.000Z",
+  "updated": "2026-09-28T00:00:00.000Z",
+  "handout": {
+    "kind": "mapfragment",
+    "paper": "aged",
+    "border": "none",
+    "cover": false,
+    "slots": {
+      "tm-title": "title",
+      "tm-body": "body"
+    },
+    "map": {
+      "id": "undercrypt-of-maro",
+      "crop": {
+        "x": 0.02,
+        "y": 0.05,
+        "w": 0.55,
+        "h": 0.62
+      },
+      "level": 0
+    }
+  }
+}

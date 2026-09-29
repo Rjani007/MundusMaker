@@ -1,0 +1,89 @@
+{
+  "id": "lantern-seas-capital",
+  "name": "Hornstead",
+  "type": "location",
+  "tags": [
+    "1.8 example"
+  ],
+  "gmOnly": false,
+  "fields": {},
+  "date": null,
+  "blocks": [
+    {
+      "id": "yldo8i",
+      "kind": "text",
+      "text": "",
+      "secret": false
+    },
+    {
+      "id": "tde61x",
+      "kind": "heading",
+      "text": "What you see",
+      "secret": false
+    },
+    {
+      "id": "pswdtt",
+      "kind": "text",
+      "text": "",
+      "secret": false
+    },
+    {
+      "id": "t49463",
+      "kind": "heading",
+      "text": "Who you meet",
+      "secret": false
+    },
+    {
+      "id": "7axorw",
+      "kind": "text",
+      "text": "",
+      "secret": false
+    },
+    {
+      "id": "o1efec",
+      "kind": "heading",
+      "text": "Secrets",
+      "secret": true
+    },
+    {
+      "id": "mzkj1k",
+      "kind": "text",
+      "text": "",
+      "secret": true
+    }
+  ],
+  "relations": [
+    {
+      "to": "lantern-seas-province",
+      "label": "capital of",
+      "secret": false
+    }
+  ],
+  "map": {
+    "kind": "town",
+    "seed": "silver-coast:town:world:8:hornstead",
+    "params": {
+      "size": 3,
+      "density": 1,
+      "walls": true,
+      "river": false,
+      "layout": "coastal",
+      "terrain": "desert",
+      "paving": "auto",
+      "wards": true,
+      "generation": "1.8",
+      "seaSide": "north",
+      "title": "Hornstead"
+    },
+    "compass": false,
+    "strokes": [],
+    "grid": null,
+    "markers": [],
+    "labels": [],
+    "stamps": [],
+    "paths": [],
+    "parentId": "lantern-seas-province"
+  },
+  "created": "2026-09-10T00:00:00.000Z",
+  "updated": "2026-09-10T00:00:00.000Z"
+}

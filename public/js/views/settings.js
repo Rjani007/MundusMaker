@@ -3,8 +3,10 @@
 // own pages — this page is about the app itself.
 
 import { el, toast, downloadBlob } from '../util.js';
-import { state, loadAll, refreshWorlds } from '../state.js';
+import { state, loadAll, refreshWorlds, requireSaved } from '../state.js';
 import { api } from '../api.js';
+import { quitMundusMaker } from '../quit.js';
+import { folderBackupCard } from './folderbackup.js';
 
 async function recoveryRequest(method, body) {
   const response = await fetch(method === 'GET' ? '/api/recovery' : '/api/recovery/restore', {
@@ -51,11 +53,18 @@ export function render(container) {
   const aboutWrap = el('div', {}, el('span', { class: 'muted small' }, 'Loading…'));
 
   const recoveryWrap = el('div', {}, el('span', { class: 'muted small' }, 'Loading...'));
+  // Quit: launchers start MundusMaker without a window, so this is one way to
+  // stop it. Hidden for a Docker server, whose lifecycle Docker owns.
+  const runCard = el('div', { class: 'card', hidden: true }, el('h3', {}, 'Running MundusMaker'),
+    el('p', { class: 'muted small' }, 'MundusMaker keeps running in the background, so closing this tab does not stop it or lose anything. ',
+      'Quit it here when you are done; saves in progress finish first. The MundusMaker icon in the Windows tray or the Mac menu bar can quit it too.'),
+    el('button', { onclick: () => quitMundusMaker() }, 'Quit MundusMaker'));
+  const integrityWrap = el('div', {}, el('span', { class: 'muted small' }, 'Checking map links...'));
 
   (async () => {
     let status;
     try { status = await api.status(); } catch {
-      syncWrap.textContent = 'Status unavailable — is the local server running?';
+      syncWrap.textContent = 'Status unavailable. Is the local server running?';
       aboutWrap.textContent = '';
       return;
     }
@@ -70,8 +79,9 @@ export function render(container) {
         if (!target) { pathInput.focus(); return; }
         if (!confirm(`Copy your worlds into:\n\n${target}\n\nand make it the data folder from the next start? Your current data stays where it is as a fallback.`)) return;
         try {
+          await requireSaved();
           const res = await api.setDataDir(target, true);
-          syncNote.textContent = `✓ Copied ${res.copied} world(s) to ${res.dataDir}. Restart MundusMaker (close the black window, start it again) to finish.`;
+          syncNote.textContent = `✓ Copied ${res.copied} world(s) to ${res.dataDir}. Restart MundusMaker to finish: quit it (below, or from its tray or menu-bar icon) and start it again.`;
           syncNote.style.color = 'var(--ok)';
         } catch (err) {
           toast('Could not set data folder: ' + err.message, 5000);
@@ -80,18 +90,28 @@ export function render(container) {
     }, 'Copy data there & use it');
     syncWrap.innerHTML = '';
     syncWrap.append(
-      el('div', { class: 'small' }, 'Your worlds live in: ', el('code', {}, status.dataDir),
+      el('div', { class: 'small' }, 'Your worlds are stored in: ', el('code', {}, status.dataDir),
         el('span', { class: 'muted' }, ` (set via ${status.configuredVia})`)),
       el('p', { class: 'muted small', style: 'margin:10px 0 6px' },
         'To sync between devices: point the data folder at a folder that Dropbox, Google Drive, OneDrive or Syncthing already syncs. Do the same on your other device (edit ',
-        el('code', {}, 'mundusmaker.config.json'), ' next to the app, or use the box below). Only edit on one device at a time — the last save wins.'),
+        el('code', {}, 'mundusmaker.config.json'), ' next to the app, or use the box below). Only edit on one device at a time and let syncing finish before opening another. MundusMaker detects file changes already on disk and preserves conflicting drafts in the data folder’s .conflicts folder.'),
       el('div', { class: 'row' }, pathInput, moveBtn),
       syncNote);
+    runCard.hidden = status.deployment === 'container';
+    if (status.deployment === 'container') {
+      syncWrap.replaceChildren(
+        el('div', { class: 'small' }, 'Your worlds are stored on your server in ', el('code', {}, status.dataDir), '.'),
+        el('p', { class: 'muted small' }, 'Open this same server address on your other devices to use the same worlds. Wait for Saved before switching devices.'),
+        el('p', { class: 'muted small' }, 'Docker manages this data volume. To change its location or back up every world and library pack, follow docs/docker.md in your download. Folder paths here refer to the server, not this browser’s computer.'),
+        el('p', { class: 'muted small' }, 'Anyone with the server password has full DM access. Give players exported handouts or the player handbook; player preview does not restrict their access to the server.'));
+    }
 
     aboutWrap.innerHTML = '';
     aboutWrap.append(
       el('div', { class: 'small' }, el('strong', {}, `MundusMaker ${status.version}`),
-        el('span', { class: 'muted' }, ` — running locally on ${status.platform}; your world data never leaves this machine.`)),
+        el('span', { class: 'muted' }, status.deployment === 'container'
+          ? ` — hosted on your ${status.platform} server; your browsers connect to its saved worlds.`
+          : ` — running locally on ${status.platform}; your world data never leaves this machine.`)),
       el('div', { class: 'row', style: 'margin-top:6px' },
         el('button', {
           class: 'ghost small', title: 'Show the three welcome panes again',
@@ -101,15 +121,20 @@ export function render(container) {
         'Free and open source under the MIT license. Third-party material bundled with the app:'),
       el('ul', { class: 'muted small', style: 'margin:4px 0 0 18px;padding:0' },
         el('li', {}, 'jsPDF — MIT license (vendored, used for the exported books).'),
-        el('li', {}, 'Monster statblocks from the System Reference Document 5.1, and D&D 2024 character options from the System Reference Document 5.2 — both © Wizards of the Coast LLC, ',
+        el('li', {}, 'DejaVu Serif and Sans 2.37 — offline handout fonts, based on Bitstream Vera with DejaVu and Arev contributions. ',
+          el('a', { href: '/vendor/fonts/LICENSE.txt', target: '_blank', rel: 'noopener' }, 'Font copyright and license'), '.'),
+        el('li', {}, 'Monster statblocks from the System Reference Document 5.1, D&D 2024 character options from SRD 5.2, and DM Screen reminders adapted from SRD 5.2.1 — by Wizards of the Coast LLC, ',
           'licensed under the Creative Commons Attribution 4.0 International License (CC-BY-4.0).'),
         el('li', {}, 'The optional Library downloader makes an explicit request to the public 5etools source mirror only when you press Download & import. ',
           'It uploads nothing and stores only your selected, locally trimmed pack; use it only for material you are allowed to use.'),
-        el('li', {}, 'The Vampire: The Masquerade creator is unofficial fan material under the World of Darkness Dark Pack. ',
+        el('li', {}, el('img', { src: '/vendor/dark-pack.webp', alt: 'World of Darkness Dark Pack', width: 100, style: 'display:block;margin:12px 0' }),
+          'The Vampire: The Masquerade creator and references are unofficial fan material under the ',
+          el('a', { href: 'https://www.paradoxinteractive.com/games/world-of-darkness/community/dark-pack-agreement', target: '_blank', rel: 'noopener' }, 'World of Darkness Dark Pack'), '. ',
           'Portions of the materials are the copyrights and trademarks of Paradox Interactive AB, and are used with permission. All rights reserved. ',
           'For more information please visit ', el('a', { href: 'https://www.worldofdarkness.com', target: '_blank', rel: 'noopener' }, 'worldofdarkness.com'), '.'),
         el('li', {}, 'The Call of Cthulhu creator is unofficial fan material under Chaosium’s Fan Material Policy. ',
-          'Call of Cthulhu is a trademark of Chaosium Inc. Neither creator bundles any rules text — descriptions are yours to fill in from your own books.')));
+          'Call of Cthulhu is a trademark of Chaosium Inc. The V5 and CoC DM Screen references are original mechanical summaries with source links; no publisher rulebook prose or power descriptions are reproduced.'),
+        el('li', {}, 'The familiar character sheet layouts are drawn for MundusMaker. They follow the arrangement and field names of each game’s character sheet so players can find their numbers, but they are not official sheets and contain no publisher logos, artwork or fonts.')));
   })();
 
   // ---------- backup ----------
@@ -118,19 +143,22 @@ export function render(container) {
     el('div', { class: 'row' },
       el('button', {
         onclick: async () => {
-          const data = await api.backup(withImages.checked);
-          const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-          if (blob.size > 64 * 1024 * 1024) {
-            toast('That backup is over 64 MB — for image-heavy worlds, syncing or copying the data folder itself is the better tool.', 7000);
-          }
-          downloadBlob(blob, `${(state.world.name || 'world').replace(/\W+/g, '-').toLowerCase()}-backup.json`);
-          toast('Backup downloaded');
+          try {
+            await requireSaved();
+            const data = await api.backup(withImages.checked);
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            if (blob.size > 64 * 1024 * 1024) {
+              toast('That backup is over 64 MB — for image-heavy worlds, syncing or copying the data folder itself is the better tool.', 7000);
+            }
+            downloadBlob(blob, `${(state.world.name || 'world').replace(/\W+/g, '-').toLowerCase()}-backup.json`);
+            toast('Backup downloaded');
+          } catch (err) { toast('Backup could not be made: ' + err.message, 8000); }
         },
       }, 'Download backup (.json)'),
       el('label', { class: 'small', style: 'display:flex;align-items:center;gap:6px' },
         withImages, 'Include images (portraits & uploads)')),
     el('p', { class: 'muted small', style: 'margin:8px 0 0' },
-      'Backs up the current world. Restoring lives on the ', el('a', { href: '#/import' }, 'Import page'),
+      'Backs up the current world. Restore is on the ', el('a', { href: '#/import' }, 'Import page'),
       '. Each world is also plain JSON files in the data folder — copy it anywhere, or put it in git.'));
 
   // ---------- trash & snapshots ----------
@@ -157,6 +185,7 @@ export function render(container) {
       button.disabled = true;
       button.textContent = 'Restoring...';
       try {
+        await requireSaved();
         const result = await recoveryRequest('POST', { ...payload, confirm: true });
         const restored = result.restored;
         if (result.kind === 'entity') {
@@ -236,11 +265,62 @@ export function render(container) {
   }
   loadRecovery();
 
+  // ---------- map link integrity ----------
+  async function loadLinkIntegrity() {
+    if (!state.gm) {
+      integrityWrap.innerHTML = '';
+      integrityWrap.append(el('div', { class: 'notice warn' },
+        'Map link details are available in GM view because they may name hidden maps and entries.'));
+      return;
+    }
+
+    integrityWrap.innerHTML = '';
+    integrityWrap.append(el('span', { class: 'muted small' }, 'Checking map links...'));
+    let data;
+    try {
+      data = await api.linkIntegrity();
+    } catch (err) {
+      integrityWrap.textContent = 'Could not check map links: ' + err.message;
+      return;
+    }
+
+    const worlds = Array.isArray(data.worlds) ? data.worlds : [];
+    const checked = worlds.reduce((sum, world) => sum + Number(world.links || 0), 0);
+    const broken = worlds.reduce((sum, world) => sum + (world.danglingLinks?.length || 0), 0);
+    integrityWrap.innerHTML = '';
+
+    if (!broken) {
+      integrityWrap.append(el('div', { class: 'notice' },
+        `Checked ${checked} map link${checked === 1 ? '' : 's'} in ${worlds.length} world${worlds.length === 1 ? '' : 's'}. Every linked entry is present.`));
+      return;
+    }
+
+    integrityWrap.append(el('div', { class: 'notice warn' },
+      `Checked ${checked} map link${checked === 1 ? '' : 's'} in ${worlds.length} world${worlds.length === 1 ? '' : 's'} and found ${broken} broken link${broken === 1 ? '' : 's'}. This report is read-only.`));
+    for (const world of worlds.filter((item) => item.danglingLinks?.length)) {
+      const rows = world.danglingLinks.map((item) => {
+        const site = item.siteName ? `“${item.siteName}” (${item.siteKey})` : item.siteKey;
+        const mapTitle = item.mapName === item.mapId ? item.mapName : `${item.mapName} (${item.mapId})`;
+        return recoveryRow(mapTitle,
+          `${item.mapKind} map. Site ${site}. Missing entry ID: ${item.targetId}.`,
+          null);
+      });
+      const worldTitle = world.name === world.id ? world.name : `${world.name} (${world.id})`;
+      integrityWrap.append(recoveryList(
+        worldTitle,
+        `${world.danglingLinks.length} broken link${world.danglingLinks.length === 1 ? '' : 's'} in this world.`,
+        rows));
+    }
+  }
+  loadLinkIntegrity();
+
   container.append(el('div', { class: 'page' },
     el('h1', {}, 'Settings'),
     el('div', { class: 'card' }, el('h3', {}, 'Data folder & sync'), syncWrap),
     el('div', { class: 'card' }, el('h3', {}, 'Backup'), backupCard),
+    folderBackupCard(),
+    el('div', { class: 'card' }, el('h3', {}, 'Map link check'), integrityWrap),
     el('div', { class: 'card' }, el('h3', {}, 'Trash & snapshots'), recoveryWrap),
-    // migration-from-older-installs card lands here in 0.11 (plan phase B5)
+    runCard,
     el('div', { class: 'card' }, el('h3', {}, 'About'), aboutWrap)));
 }

@@ -1,14 +1,15 @@
+import { levelUpPanel } from './dndlevelup.js';
 // D&D 5.5e (2024 rules) character sheet + creation wizard, powered by the
 // bundled SRD 5.2 content pack (public/srd52/, CC-BY-4.0).
 
 import { el, esc, makeRng } from '../util.js';
 import { api } from '../api.js';
 import { nameFor } from '../names.js';
-import { normalizeSpell } from '../importers.js';
+import { normalizeSpell, normalizeItem } from '../importers.js';
 import { linkDice } from '../render.js';
 import {
   dotsHtml, boxesHtml, rollBtn, kvHtml, sectionHtml,
-  frow, textInput, numInput, areaInput, listEdit,
+  frow, textInput, numInput, areaInput, listEdit, surprisePickButton,
 } from './sheetlib.js';
 
 export const label = 'D&D 5.5e (2024)';
@@ -20,24 +21,29 @@ const cache = {};
 async function fetchPack(name) {
   if (!cache[name]) {
     const res = await fetch(`/srd52/${name}.json`);
-    if (!res.ok) throw new Error(`srd52/${name}.json missing — run npm run srd52`);
+    if (!res.ok) throw new Error(`srd52/${name}.json is missing. Run npm run srd52.`);
     cache[name] = await res.json();
   }
   return cache[name];
 }
 export async function loadData() {
-  const [classes, species, backgrounds, feats, spells, equipment] = await Promise.all(
-    ['classes', 'species', 'backgrounds', 'feats', 'spells', 'equipment'].map(fetchPack));
+  const [classes, species, backgrounds, feats, spells, equipment, progression] = await Promise.all(
+    ['classes', 'species', 'backgrounds', 'feats', 'spells', 'equipment', 'progression'].map(fetchPack));
   return {
-    classes: classes.classes, species: species.species, backgrounds: backgrounds.backgrounds,
-    feats: feats.feats, spells: spells.spells, equipment: equipment.equipment,
+    classes: classes.classes.map(c => {
+      const p = progression.classes.find(p => p.name === c.name) || {};
+      const sk = p.startingProficiencies?.skills?.[0] || {};
+      return { ...c, subclass: c.subclass ? { ...c.subclass, ...p.subclassRules?.find(s => s.name === c.subclass.name) } : null,
+        progression: p, skills: { choose: sk.any || sk.choose?.count || c.skills.choose,
+        from: (sk.any ? SKILLS.map(([n]) => n) : sk.choose?.from || c.skills.from).map(canonSkill) } };
+    }), species: species.species, backgrounds: backgrounds.backgrounds.map(b => ({ ...b,
+      skills: b.skills.map(canonSkill), equipment: b.equipment || b.text.match(/Equipment:\.?\s*([^\n]+)/i)?.[1] || '' })),
+    feats: feats.feats.map(f => ({ ...f, ...progression.feats?.find(p => p.name === f.name) })), spells: spells.spells, equipment: equipment.equipment,
   };
 }
 
-// The creation wizard deliberately stays on the bundled SRD. Advancement may
-// also read a user's own local 5etools packs, but bundled classes win whenever
-// both sources contain the same class. That keeps the shipped, attributed SRD
-// path predictable while still letting an imported subclass advance.
+// Bundled classes win name clashes; the creator and advancement also read
+// the user's local packs through loadCreatorData().
 const lower = (s) => String(s || '').trim().toLowerCase();
 const personName = () => nameFor(makeRng(`dnd-wizard:${Date.now()}:${Math.random()}`), 'person');
 
@@ -173,7 +179,7 @@ function normalizeImportedSpecies(raw, packName) {
     darkvision: raw.darkvision || 0,
     traits: (raw.entries || []).filter((e) => e?.name)
       .map((e) => ({ name: clean5eText(e.name), text: entriesText(e.entries) })),
-    _pack: packName,
+    _pack: packName, _source: raw.source || '',
   };
 }
 
@@ -191,30 +197,36 @@ function normalizeImportedBackground(raw, packName) {
     feat: (raw.feats || []).flatMap((f) => Object.keys(f)).map((f) => CAP(f.split('|')[0])).join(', '),
     equipment: entriesText((raw.entries || []).filter((e) => /equipment/i.test(e?.name || ''))),
     text: entriesText((raw.entries || []).filter((e) => !e?.name || !/equipment/i.test(e.name))).slice(0, 400),
-    _pack: packName,
+    skillChoices: (raw.skillProficiencies || []).flatMap(s => s.choose ? [s.choose] : s.any ? [{ count: s.any, from: SKILLS.map(([n]) => n) }] : []),
+    _pack: packName, _source: raw.source || '',
   };
 }
 
 function normalizeImportedCreatorClass(raw, pack, packName) {
   if (!raw?.name) return null;
-  const skills = raw.startingProficiencies?.skills?.[0]?.choose || {};
+  const skillSpec = raw.startingProficiencies?.skills?.[0] || {};
+  const skills = skillSpec.choose || {};
   const from = (skills.from || []).map(canonSkill).filter((n) => SKILLS.some(([sk]) => sk === n));
   const features = (pack.classFeature || [])
-    .filter((f) => lower(importedClassName(f)) === lower(raw.name) && Number(f.level) === 1)
-    .map((f) => ({ level: 1, name: clean5eText(f.name), text: entriesText(f.entries) }));
+    .filter((f) => lower(importedClassName(f)) === lower(raw.name) && (!f.classSource || !raw.source || f.classSource === raw.source))
+    .map((f) => ({ level: Number(f.level), name: clean5eText(f.name), text: entriesText(f.entries) }));
   return {
     name: clean5eText(raw.name),
     hitDie: Number(raw.hd?.faces || 8),
     saves: (raw.proficiency || []).filter((a) => ABILITIES.includes(a)),
-    armor: [], weapons: [],
-    skills: { choose: skills.count || 2, from: from.length ? from : SKILLS.map(([n]) => n) },
+    armor: (raw.startingProficiencies?.armor || []).map(x => clean5eText(typeof x === 'string' ? x : x.full || '')),
+    weapons: (raw.startingProficiencies?.weapons || []).map(x => clean5eText(typeof x === 'string' ? x : x.full || '')),
+    tools: (raw.startingProficiencies?.tools || []).map(x => clean5eText(typeof x === 'string' ? x : x.full || '')),
+    skills: { choose: skillSpec.any || skills.count || 2, from: from.length ? from : SKILLS.map(([n]) => n) },
+    primaryAbility: [...new Set((raw.primaryAbility || []).flatMap(a => typeof a === 'string' ? [a] : Object.keys(a)))].filter(a => ABILITIES.includes(a)),
+    progression: raw,
     startingEquipment: entriesText(raw.startingEquipment?.entries || raw.startingEquipment?.default || []),
     spellcasting: raw.spellcastingAbility
       ? { ability: raw.spellcastingAbility, progression: raw.casterProgression || 'full' } : null,
     features,
     subclass: null,
     subclasses: [],
-    _pack: packName,
+    _pack: packName, _source: raw.source || '',
   };
 }
 
@@ -234,20 +246,24 @@ export async function loadCreatorData() {
     ...base,
     classes: base.classes.map((c) => ({
       ...c,
-      subclasses: c.subclass ? [{ name: c.subclass.name, _pack: 'SRD 5.2' }] : [],
+      subclasses: c.subclass ? [{ ...c.subclass, _pack: 'SRD 5.2' }] : [],
     })),
     species: [...base.species],
     backgrounds: [...base.backgrounds],
     feats: [...base.feats],
     spells: base.spells.map((s) => ({ ...s })),
+    equipment: base.equipment.map(e => ({ ...e, kind: e.category })),
+    warnings: [],
   };
   let packs = [];
   try {
-    const metas = await api.library();
+    // Re-importing an old pack must make its newer progression available.
+    // Bundled rows still win; other name clashes use the newest local import.
+    const metas = (await api.library()).sort((a, b) => String(b.imported || '').localeCompare(String(a.imported || '')) || String(a.id).localeCompare(String(b.id)));
     packs = (await Promise.all(metas.map(async (meta) => {
-      try { return { meta, pack: await api.libraryPack(meta.id) }; } catch { return null; }
+      try { return { meta, pack: await api.libraryPack(meta.id) }; } catch { merged.warnings.push(`Could not load ${meta.name || meta.id}. Reopen the creator after checking the Library.`); return null; }
     }))).filter(Boolean);
-  } catch { /* older server, or no imported library */ }
+  } catch { merged.warnings.push('The local Library could not be read. Bundled SRD choices are still available.'); }
 
   const seen = (arr) => new Set(arr.map((x) => lower(x.name)));
   const classNames = seen(merged.classes);
@@ -255,6 +271,7 @@ export async function loadCreatorData() {
   const bgNames = seen(merged.backgrounds);
   const featNames = seen(merged.feats);
   const spellNames = seen(merged.spells);
+  const equipmentNames = seen(merged.equipment);
 
   const pendingSubclasses = [];
   for (const { meta, pack } of packs) {
@@ -265,7 +282,7 @@ export async function loadCreatorData() {
       if (norm) { merged.classes.push(norm); classNames.add(lower(norm.name)); }
     }
     for (const sub of pack.subclass || []) {
-      if (sub?.name && sub.className) pendingSubclasses.push({ sub, packName });
+      if (sub?.name && sub.className) pendingSubclasses.push({ sub, packName, pack });
     }
     for (const raw of pack.race || []) {
       if (!raw?.name || speciesNames.has(lower(raw.name))) continue;
@@ -279,19 +296,29 @@ export async function loadCreatorData() {
     }
     for (const raw of pack.feat || []) {
       if (!raw?.name || featNames.has(lower(raw.name))) continue;
-      merged.feats.push({ name: clean5eText(raw.name), category: String(raw.category || ''), text: entriesText(raw.entries), _pack: packName });
+      merged.feats.push({ name: clean5eText(raw.name), category: ({ O: 'Origin', G: 'General', FS: 'Fighting Style', EB: 'Epic Boon' })[raw.category] || String(raw.category || ''),
+        text: entriesText(raw.entries), prerequisite: raw.prerequisite, ability: raw.ability, repeatable: raw.repeatable, _pack: packName, _source: raw.source || '' });
       featNames.add(lower(raw.name));
     }
     for (const raw of pack.spell || []) {
       if (!raw?.name || spellNames.has(lower(raw.name))) continue;
-      merged.spells.push({ ...normalizeSpell(raw), _pack: packName });
+      merged.spells.push({ ...normalizeSpell(raw), _pack: packName, _source: raw.source || '' });
       spellNames.add(lower(raw.name));
     }
+    for (const raw of pack.item || []) {
+      if (!raw?.name || equipmentNames.has(lower(raw.name))) continue;
+      merged.equipment.push({ ...normalizeItem(raw), properties: raw.property || [], mastery: raw.mastery || [], weaponCategory: raw.weaponCategory || '', _pack: packName, _source: raw.source || '' });
+      equipmentNames.add(lower(raw.name));
+    }
   }
-  for (const { sub, packName } of pendingSubclasses) {
+  for (const { sub, packName, pack } of pendingSubclasses) {
     const target = merged.classes.find((c) => lower(c.name) === lower(sub.className));
     if (!target || target.subclasses.some((x) => lower(x.name) === lower(sub.name))) continue;
-    target.subclasses.push({ name: clean5eText(sub.name), _pack: packName });
+    target.subclasses.push({ name: clean5eText(sub.name), _pack: packName, _source: sub.source || '', additionalSpells: sub.additionalSpells,
+      features: (pack.subclassFeature || []).filter(f => lower(f.className) === lower(sub.className)
+        && [lower(sub.shortName), lower(sub.name)].includes(lower(f.subclassShortName || f.subclassName))
+        && (!f.subclassSource || !sub.source || f.subclassSource === sub.source))
+        .map(f => ({ name: clean5eText(f.name), level: Number(f.level), text: entriesText(f.entries) })) });
   }
   merged.species.sort((a, b) => a.name.localeCompare(b.name));
   merged.backgrounds.sort((a, b) => a.name.localeCompare(b.name));
@@ -304,50 +331,8 @@ export const wizardData = loadCreatorData;
 
 // ---------- rules constants ----------
 
-export const ABILITIES = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
-const ABILITY_NAMES = { str: 'Strength', dex: 'Dexterity', con: 'Constitution', int: 'Intelligence', wis: 'Wisdom', cha: 'Charisma' };
-export const SKILLS = [
-  ['Acrobatics', 'dex'], ['Animal Handling', 'wis'], ['Arcana', 'int'], ['Athletics', 'str'],
-  ['Deception', 'cha'], ['History', 'int'], ['Insight', 'wis'], ['Intimidation', 'cha'],
-  ['Investigation', 'int'], ['Medicine', 'wis'], ['Nature', 'int'], ['Perception', 'wis'],
-  ['Performance', 'cha'], ['Persuasion', 'cha'], ['Religion', 'int'], ['Sleight of Hand', 'dex'],
-  ['Stealth', 'dex'], ['Survival', 'wis'],
-];
-const STANDARD_ARRAY = [15, 14, 13, 12, 10, 8];
-const POINT_BUY_COST = { 8: 0, 9: 1, 10: 2, 11: 3, 12: 4, 13: 5, 14: 7, 15: 9 };
-// starting cantrips-known / prepared-spells for level-1 casters (2024 tables)
-const CASTER_L1 = {
-  Bard: { cantrips: 2, prepared: 4 }, Cleric: { cantrips: 3, prepared: 4 },
-  Druid: { cantrips: 2, prepared: 4 }, Paladin: { cantrips: 0, prepared: 2 },
-  Ranger: { cantrips: 0, prepared: 2 }, Sorcerer: { cantrips: 4, prepared: 2 },
-  Warlock: { cantrips: 2, prepared: 2 }, Wizard: { cantrips: 3, prepared: 4 },
-};
-const L1_SLOTS = { Bard: 2, Cleric: 2, Druid: 2, Sorcerer: 2, Wizard: 2, Warlock: 1, Paladin: 2, Ranger: 2 };
-
-export const mod = (score) => Math.floor((score ?? 10) / 2) - 5;
-const fmtMod = (m) => (m >= 0 ? `+${m}` : String(m));
-export const profBonus = (level) => 2 + Math.floor(((level || 1) - 1) / 4);
-
-// ---------- data shape ----------
-
-export function defaults() {
-  return {
-    species: { name: '', size: 'Medium', speed: 30 },
-    klass: { name: '', level: 1, hitDie: 8, subclass: '' },
-    background: { name: '', feat: '' },
-    abilityMethod: 'standard',
-    abilities: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 },
-    saves: [], skills: [], languages: [],
-    ac: 10, speed: 30,
-    hp: { max: 8, current: 8, temp: 0 },
-    hitDice: { spent: 0 },
-    attacks: [], equipment: [], coins: { gp: 0, sp: 0, cp: 0 },
-    spellcasting: null,
-    features: [], personality: { traits: '', ideals: '', bonds: '', flaws: '' },
-    advancement: { log: [] },
-    notes: '',
-  };
-}
+export { ABILITIES, SKILLS, mod, profBonus, defaults } from './dndrules.js';
+import { ABILITIES, ABILITY_NAMES, SKILLS, mod, profBonus, defaults, fmtMod, passivePerception, skillBonus } from './dndrules.js';
 
 /** Mutates a sheet by exactly one level and returns the applied changes. */
 export function advanceLevel(data, classData, { hpGain, addToCurrent = true } = {}) {
@@ -432,7 +417,7 @@ export function html(data) {
 
   const skillRows = SKILLS.map(([name, a]) => {
     const entry = (d.skills || []).find((s) => s.key === name);
-    const bonus = mod(d.abilities[a]) + (entry ? pb * (entry.prof === 'expert' ? 2 : 1) : 0);
+    const bonus = skillBonus(d, name, pb);
     const mark = entry ? (entry.prof === 'expert' ? '◉' : '●') : '○';
     return `<div class="sheet-skill">${mark} ${rollBtn({ kind: 'check', mod: bonus, label: name }, `${esc(name)} ${fmtMod(bonus)}`, 'Roll — Shift/Ctrl for adv/dis')} <span class="muted">(${a.toUpperCase()})</span></div>`;
   }).join('');
@@ -454,13 +439,15 @@ export function html(data) {
       slotRows +
       ((sc.cantrips || []).length ? kvHtml('Cantrips', esc(sc.cantrips.join(', '))) : '') +
       ((sc.prepared || []).length ? kvHtml('Prepared', esc(sc.prepared.join(', '))) : ''));
+    if (sc.alwaysPrepared?.length) spellsHtml += sectionHtml('Always prepared · subclass', esc(sc.alwaysPrepared.join(', ')));
+    if (sc.spellbook?.length) spellsHtml += sectionHtml('Spellbook', esc(sc.spellbook.join(', ')));
   }
 
   const features = (d.features || []).map((f) =>
     `<div class="sheet-feature"><strong>${esc(f.name)}</strong>${f.source ? ` <span class="muted small">(${esc(f.source)})</span>` : ''}<div class="sheet-feature-text">${esc(f.text || '').replace(/\n/g, '<br>')}</div></div>`).join('');
 
   const equipment = (d.equipment || []).map((e) => `${esc(e.name)}${e.qty > 1 ? ` ×${e.qty}` : ''}`).join(', ');
-  const initiative = fmtMod(mod(d.abilities.dex));
+  const initiative = fmtMod(mod(d.abilities.dex) + (d.initiativeBonus || 0));
 
   return `<div class="sheet sheet-dnd">
     <div class="sheet-head">
@@ -469,15 +456,18 @@ export function html(data) {
     </div>
     <div class="sb-abilities">${abilityTiles}</div>
     ${sectionHtml('Combat',
-      kvHtml('AC', `${d.ac}`) + kvHtml('Initiative', rollBtn({ kind: 'check', mod: mod(d.abilities.dex), label: 'Initiative' }, initiative, 'Roll initiative')) +
+      kvHtml('AC', `${d.ac}`) + kvHtml('Initiative', rollBtn({ kind: 'check', mod: mod(d.abilities.dex) + (d.initiativeBonus || 0), label: 'Initiative' }, initiative, 'Roll initiative')) +
       kvHtml('Speed', `${d.speed} ft.`) +
       kvHtml('Hit points', `${d.hp.current} / ${d.hp.max}${d.hp.temp ? ` (+${d.hp.temp} temp)` : ''}`) +
       kvHtml('Hit dice', `${boxesHtml(d.klass.level, d.hitDice.spent || 0, 'hitDice.spent')} d${d.klass.hitDie}`) +
+      kvHtml('Death saves', `${boxesHtml(3, d.deathSaves?.success || 0, 'deathSaves.success')} successes · ${boxesHtml(3, d.deathSaves?.failure || 0, 'deathSaves.failure')} failures`) +
       kvHtml('Proficiency', fmtMod(pb)))}
     ${sectionHtml('Saving throws', `<div class="sheet-pills">${saveRow}</div>`)}
-    ${sectionHtml('Skills', `<div class="sheet-skills">${skillRows}</div>`)}
+    ${sectionHtml('Skills', `<div class="sheet-skills">${skillRows}</div>` + kvHtml('Passive Perception', String(passivePerception(d, pb))))}
     ${sectionHtml('Attacks', attacks)}
     ${spellsHtml}
+    ${d.innateSpells?.length ? sectionHtml('Species & feat spells', d.innateSpells.map(s => kvHtml(esc(s.name), `${esc(s.source)} · ${esc((s.ability || '').toUpperCase())}${s.uses ? ` · ${s.uses}/Long Rest` : ''}`)).join('')) : ''}
+    ${d.languages?.length ? sectionHtml('Languages & proficiencies', kvHtml('Languages', esc(d.languages.join(', '))) + kvHtml('Training', esc([...(d.proficiencies?.armor || []), ...(d.proficiencies?.weapons || []), ...(d.proficiencies?.tools || [])].join(', ')))) : ''}
     ${features ? sectionHtml('Features & traits', features) : ''}
     ${equipment ? sectionHtml('Equipment', `<div class="small">${equipment}</div>` + kvHtml('Coins', `${d.coins.gp || 0} gp, ${d.coins.sp || 0} sp, ${d.coins.cp || 0} cp`)) : ''}
     ${Object.values(d.personality || {}).some(Boolean) ? sectionHtml('Personality',
@@ -505,7 +495,7 @@ export function editor(block, save) {
       ...ABILITIES.map((a) => el('label', {}, a.toUpperCase(),
         numInput(d.abilities[a], (v) => { d.abilities[a] = v; save(); if (a === 'con') invalidateAdvancePreview(); }, { min: 1, max: 30 })))),
     el('div', { class: 'row' },
-      frow('AC', numInput(d.ac, (v) => { d.ac = v; save(); })),
+      frow('AC', numInput(d.ac, (v) => { d.ac = v; if (d.defense) d.defense.automatic = false; save(); })),
       frow('Speed', numInput(d.speed, (v) => { d.speed = v; save(); })),
       frow('HP max', numInput(d.hp.max, (v) => { d.hp.max = v; save(); })),
       frow('HP now', numInput(d.hp.current, (v) => { d.hp.current = v; save(); })),
@@ -520,110 +510,10 @@ export function editor(block, save) {
           },
         }), a.toUpperCase()))));
 
-  const advanceBody = el('div', {});
-  const advanceDetails = el('details', {},
-    el('summary', {}, `Level-up assistant${d.klass.level < 20 ? ` · next: ${Number(d.klass.level) + 1}` : ''}`),
-    advanceBody);
-  let advanceLoad = 0;
-  function invalidateAdvancePreview() {
-    advanceLoad++;
-    advanceDetails.querySelector('summary').textContent = `Level-up assistant${d.klass.level < 20 ? ` · next: ${Number(d.klass.level) + 1}` : ''}`;
-    if (advanceDetails.open) renderAdvance();
-  }
-  async function renderAdvance() {
-    const token = ++advanceLoad;
-    advanceBody.replaceChildren(el('p', { class: 'muted small' }, 'Loading class features…'));
-    if ((Number(d.klass.level) || 1) >= 20) {
-      advanceBody.replaceChildren(el('div', { class: 'notice' }, 'Level 20 reached — this class has no further level to add.'));
-      return;
-    }
-    let classData;
-    try { classData = await loadAdvancementClass(d.klass.name, d.klass.subclass); }
-    catch (err) {
-      if (token !== advanceLoad) return;
-      advanceBody.replaceChildren(el('div', { class: 'notice warn' }, `Could not load advancement data: ${err.message}`));
-      return;
-    }
-    if (token !== advanceLoad) return;
-    if (!classData) {
-      advanceBody.replaceChildren(el('div', { class: 'notice warn' },
-        `No bundled or imported class named “${d.klass.name || '—'}”. Match the class name to an SRD class or import its 5etools class data.`));
-      return;
-    }
-
-    const from = Math.max(1, Number(d.klass.level) || 1), to = from + 1;
-    const previewClass = lower(d.klass.name), previewSubclass = lower(d.klass.subclass);
-    const conMod = mod(d.abilities.con);
-    const averageGain = Math.max(1, Math.floor((Number(classData.hitDie) || 8) / 2) + 1 + conMod);
-    const hpInput = numInput(averageGain, () => {}, { min: 1, max: 99, title: 'Hit points gained' });
-    const addCurrent = el('input', { type: 'checkbox', checked: true });
-    const features = [...(classData.features || []), ...(classData.subclassFeatures || [])]
-      .filter((f) => Number(f.level) === to);
-    const featureList = features.length
-      ? el('ul', { class: 'small' }, features.map((f) => el('li', {},
-          el('strong', {}, f.name),
-          f.kind === 'subclass' ? ` — ${d.klass.subclass || 'subclass'}` : '',
-          f.pack && f.pack !== 'SRD 5.2' ? el('span', { class: 'muted' }, ` · ${f.pack}`) : null)))
-      : el('p', { class: 'muted small' }, 'No new named class features at this level; proficiency and hit dice still advance.');
-    const choiceNames = features.filter((f) => /subclass|ability score|feat|expertise|fighting style|epic boon|mastery/i.test(f.name));
-    const status = el('div', { class: 'muted small' });
-    const apply = el('button', {
-      class: 'primary',
-      onclick: () => {
-        if ((Number(d.klass.level) || 1) !== from
-            || lower(d.klass.name) !== previewClass
-            || lower(d.klass.subclass) !== previewSubclass) {
-          renderAdvance();
-          return;
-        }
-        try {
-          const result = advanceLevel(d, classData, {
-            hpGain: Number(hpInput.value), addToCurrent: addCurrent.checked,
-          });
-          save();
-          status.textContent = `Advanced to level ${result.to}: +${result.hpGain} HP and ${result.features.length} feature${result.features.length === 1 ? '' : 's'} added.`;
-          wrap.dispatchEvent(new CustomEvent('sheet-reopen', { bubbles: true }));
-        } catch (err) {
-          status.textContent = err.message;
-          status.style.color = 'var(--danger)';
-        }
-      },
-    }, `Advance to level ${to}`);
-    const rollHp = el('button', {
-      class: 'ghost small',
-      title: `Roll 1d${classData.hitDie} and add CON (${fmtMod(conMod)}), minimum 1`,
-      onclick: () => {
-        const die = 1 + Math.floor(Math.random() * (Number(classData.hitDie) || 8));
-        hpInput.value = String(Math.max(1, die + conMod));
-        status.textContent = `Rolled ${die} on the d${classData.hitDie}${conMod ? ` ${fmtMod(conMod)} CON` : ''}.`;
-      },
-    }, `🎲 Roll d${classData.hitDie}`);
-
-    advanceBody.replaceChildren(
-      el('p', { class: 'small' },
-        el('strong', {}, `${classData.name} ${from} → ${to}`),
-        el('span', { class: 'muted' }, ` · ${classData.source}`)),
-      el('p', { class: 'muted small' },
-        'This applies the level, HP gain, hit-die count, and named class/subclass features. Spell-slot maxima, prepared spells, ability increases, feats, and other choices remain manual.'),
-      el('div', { class: 'card' },
-        el('div', { class: 'small muted' }, `Features gained at level ${to}`),
-        featureList),
-      choiceNames.length ? el('div', { class: 'notice warn small' },
-        `Choice needed after advancing: ${choiceNames.map((f) => f.name).join(', ')}. The feature text is added to the sheet; make the actual choice in Abilities, Skills, Subclass, or Features.`) : null,
-      el('div', { class: 'row', style: 'margin-top:8px' },
-        frow('HP gained', hpInput),
-        el('span', { class: 'muted small' }, `average ${averageGain} (d${classData.hitDie}, CON ${fmtMod(conMod)})`),
-        rollHp),
-      el('label', { class: 'small', style: 'display:flex;align-items:center;gap:5px' },
-        addCurrent, 'Also add the gain to current HP'),
-      el('div', { class: 'row', style: 'margin-top:8px' }, apply,
-        el('button', { class: 'ghost small', onclick: renderAdvance }, 'Refresh preview')),
-      status);
-  }
-  advanceDetails.addEventListener('toggle', () => {
-    if (advanceDetails.open) renderAdvance();
-  });
+  const advanceDetails = levelUpPanel(d, save, loadCreatorData);
+  function invalidateAdvancePreview() { advanceDetails.dispatchEvent(new Event('advance-refresh')); }
   wrap.append(advanceDetails);
+  wrap.append(el('p', { class: 'small muted' }, 'Changing AC or an attack’s numbers here makes them manual. Level-up preserves those overrides.'));
 
   // skills: none / proficient / expertise
   const skillsWrap = el('div', { class: 'sheet-edit-skills' });
@@ -642,11 +532,14 @@ export function editor(block, save) {
   }
   wrap.append(el('details', {}, el('summary', {}, 'Skills'), skillsWrap));
 
+  function manualAttack(atk) {
+    for (const key of ['ability', 'baseDamage', 'monkWeapon', 'weaponDamage', 'proficient', 'ranged']) delete atk[key];
+  }
   wrap.append(el('details', {}, el('summary', {}, 'Attacks'),
     listEdit(d.attacks, (atk) => el('span', { class: 'row', style: 'flex:1' },
       textInput(atk.name, (v) => { atk.name = v; save(); }, { placeholder: 'Name', style: 'flex:1' }),
-      numInput(atk.bonus, (v) => { atk.bonus = v; save(); }, { title: 'to hit' }),
-      textInput(atk.damage, (v) => { atk.damage = v; save(); }, { placeholder: '1d8+3 slashing', style: 'flex:1' })),
+      numInput(atk.bonus, (v) => { atk.bonus = v; manualAttack(atk); save(); }, { title: 'to hit' }),
+      textInput(atk.damage, (v) => { atk.damage = v; manualAttack(atk); save(); }, { placeholder: '1d8+3 slashing', style: 'flex:1' })),
       () => ({ name: '', bonus: 0, damage: '' }), save)));
 
   wrap.append(el('details', {}, el('summary', {}, 'Equipment & coins'),
@@ -678,7 +571,7 @@ export function editor(block, save) {
         frow('Attack', numInput(sc.attackBonus, (v) => { sc.attackBonus = v; save(); })),
         el('button', { class: 'ghost danger small', onclick: () => { d.spellcasting = null; save(); renderSc(); } }, 'Remove')),
       el('div', { class: 'row' },
-        ...[1, 2, 3, 4, 5].map((lvl) => frow(`L${lvl} slots`, numInput(sc.slots?.[lvl]?.max ?? 0, (v) => {
+        ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((lvl) => frow(`L${lvl} slots`, numInput(sc.slots?.[lvl]?.max ?? 0, (v) => {
           sc.slots ??= {};
           sc.slots[lvl] = { max: v, used: Math.min(sc.slots[lvl]?.used || 0, v) };
           save();
@@ -714,6 +607,7 @@ export function writePdf(w, data) {
   if (d.background.name) w.line(`${d.background.name} background${d.background.feat ? ` — ${d.background.feat}` : ''}`);
   w.line(ABILITIES.map((a) => `${a.toUpperCase()} ${d.abilities[a]} (${fmtMod(mod(d.abilities[a]))})`).join('   '));
   w.line(`AC ${d.ac}   Initiative ${fmtMod(mod(d.abilities.dex))}   Speed ${d.speed} ft.   HP ${d.hp.max}   Hit dice ${d.klass.level}d${d.klass.hitDie}   Proficiency ${fmtMod(pb)}`);
+  w.line(`Passive Perception ${passivePerception(d, pb)}   Death saves: ${d.deathSaves?.success || 0} successes, ${d.deathSaves?.failure || 0} failures`);
   w.line(`Saves: ${ABILITIES.map((a) => `${a.toUpperCase()} ${fmtMod(mod(d.abilities[a]) + (d.saves.includes(a) ? pb : 0))}${d.saves.includes(a) ? '*' : ''}`).join(', ')}`);
   const profSkills = SKILLS.filter(([n]) => d.skills.some((s) => s.key === n));
   if (profSkills.length) {
@@ -737,341 +631,4 @@ export function writePdf(w, data) {
   if (d.notes) w.para(d.notes);
 }
 
-// ---------- wizard ----------
-
-function pickCards(items, get, isSel, onPick) {
-  return el('div', { class: 'edition-cards wiz-cards' },
-    items.map((item) => {
-      const { title, sub } = get(item);
-      const card = el('div', { class: `edition-card${isSel(item) ? ' sel' : ''}`, onclick: () => onPick(item) },
-        el('div', { style: 'font-weight:600' }, title),
-        sub ? el('div', { class: 'muted small' }, sub) : null);
-      return card;
-    }));
-}
-
-// the subclass the draft will actually get: an explicit pick wins ('' = decide
-// at level 3), a lone option is automatic, and old bundled classes keep theirs
-function chosenSubclass(draft) {
-  return draft.subclassPick
-    ?? (draft.klass.subclasses?.length === 1 ? draft.klass.subclasses[0].name : (draft.klass.subclass?.name || ''));
-}
-
-export const wizard = {
-  intro: 'A level-1 character by the 2024 book: species, class, abilities, background, skills, gear, spells. Options come from the bundled SRD plus any packs you’ve added in the Library.',
-  steps: [
-    {
-      key: 'species', title: 'Species',
-      render(draft, ctx) {
-        return pickCards(ctx.data.species,
-          (s) => ({ title: s.name, sub: `${s.size} · ${s.speed} ft.${s.darkvision ? ` · darkvision ${s.darkvision}` : ''}${s._pack ? ` · ${s._pack}` : ''}` }),
-          (s) => draft.species?.name === s.name,
-          (s) => { draft.species = s; ctx.update(); });
-      },
-      validate: (draft) => draft.species ? null : 'Pick a species.',
-    },
-    {
-      key: 'class', title: 'Class',
-      render(draft, ctx) {
-        const wrap = el('div', {});
-        wrap.append(pickCards(ctx.data.classes,
-          (c) => ({
-            title: c.name,
-            sub: `d${c.hitDie} hit die · ${c.saves.map((s) => s.toUpperCase()).join('/')} saves`
-              + `${c.spellcasting ? ' · spellcaster' : ''}`
-              + `${c.subclasses?.length > 1 ? ` · ${c.subclasses.length} subclasses` : ''}`
-              + `${c._pack ? ` · ${c._pack}` : ''}`,
-          }),
-          (c) => draft.klass?.name === c.name,
-          (c) => { draft.klass = c; draft.subclassPick = undefined; ctx.update(); }));
-        // imported packs can add subclasses beyond the SRD's one-per-class
-        if (draft.klass?.subclasses?.length > 1) {
-          const sel = el('select', {},
-            el('option', { value: '' }, 'Decide at level 3'),
-            draft.klass.subclasses.map((s) => el('option', { value: s.name },
-              `${s.name}${s._pack && s._pack !== 'SRD 5.2' ? ` (${s._pack})` : ''}`)));
-          sel.value = draft.subclassPick || '';
-          sel.addEventListener('change', () => { draft.subclassPick = sel.value; });
-          wrap.append(el('div', { class: 'row', style: 'margin-top:10px' },
-            el('span', { class: 'small muted' }, 'Subclass — the rules pick one at level 3, but note it now if you already know:'), sel));
-        }
-        return wrap;
-      },
-      validate: (draft) => draft.klass ? null : 'Pick a class.',
-    },
-    {
-      key: 'abilities', title: 'Abilities',
-      render(draft, ctx) {
-        draft.abilities ??= { str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 };
-        draft.abilityMethod ??= 'standard';
-        const wrap = el('div', {});
-        const methodSel = el('select', {},
-          el('option', { value: 'standard' }, 'Standard array (15 14 13 12 10 8)'),
-          el('option', { value: 'pointbuy' }, 'Point buy (27 points)'),
-          el('option', { value: 'roll' }, 'Roll 4d6, drop lowest'));
-        methodSel.value = draft.abilityMethod;
-        methodSel.addEventListener('change', () => { draft.abilityMethod = methodSel.value; ctx.update(); });
-        const note = el('div', { class: 'small muted', style: 'margin:8px 0' });
-        const grid = el('div', { class: 'sb-abrow' });
-
-        const redraw = () => {
-          grid.innerHTML = '';
-          if (draft.abilityMethod === 'roll') {
-            for (const a of ABILITIES) {
-              grid.append(el('label', {}, a.toUpperCase(),
-                el('input', { type: 'number', value: draft.abilities[a], min: 3, max: 18, oninput: (ev) => { draft.abilities[a] = Number(ev.target.value) || 8; refreshNote(); } })));
-            }
-          } else if (draft.abilityMethod === 'pointbuy') {
-            for (const a of ABILITIES) {
-              const inp = el('input', { type: 'number', min: 8, max: 15, value: Math.min(15, Math.max(8, draft.abilities[a])) });
-              inp.addEventListener('input', () => { draft.abilities[a] = Math.min(15, Math.max(8, Number(inp.value) || 8)); refreshNote(); });
-              grid.append(el('label', {}, a.toUpperCase(), inp));
-            }
-          } else {
-            for (const a of ABILITIES) {
-              const sel = el('select', {}, el('option', { value: '' }, '—'),
-                STANDARD_ARRAY.map((v) => el('option', { value: v }, v)));
-              sel.value = STANDARD_ARRAY.includes(draft.abilities[a]) ? String(draft.abilities[a]) : '';
-              sel.addEventListener('change', () => { draft.abilities[a] = Number(sel.value) || 8; refreshNote(); });
-              grid.append(el('label', {}, a.toUpperCase(), sel));
-            }
-          }
-          refreshNote();
-        };
-        const refreshNote = () => {
-          if (draft.abilityMethod === 'pointbuy') {
-            const spent = ABILITIES.reduce((s, a) => s + (POINT_BUY_COST[draft.abilities[a]] ?? 0), 0);
-            note.textContent = `${spent} / 27 points spent${spent > 27 ? ' — over budget!' : ''}`;
-            note.style.color = spent > 27 ? 'var(--danger)' : 'var(--muted)';
-          } else if (draft.abilityMethod === 'standard') {
-            const used = ABILITIES.map((a) => draft.abilities[a]).filter((v) => STANDARD_ARRAY.includes(v));
-            const dup = new Set(used).size !== used.length;
-            note.textContent = dup ? 'Each array value can be used once.' : `${used.length} / 6 assigned`;
-            note.style.color = dup ? 'var(--danger)' : 'var(--muted)';
-          } else note.textContent = 'Click Roll to roll 4d6-drop-lowest for each, then swap freely.';
-        };
-        const rollBtnEl = el('button', {
-          class: 'ghost small',
-          onclick: () => {
-            for (const a of ABILITIES) {
-              const rolls = [0, 0, 0, 0].map(() => 1 + Math.floor(Math.random() * 6)).sort((x, y) => x - y);
-              draft.abilities[a] = rolls[1] + rolls[2] + rolls[3];
-            }
-            draft.abilityMethod = 'roll';
-            ctx.update();
-          },
-        }, '🎲 Roll 4d6dl1 ×6');
-        wrap.append(el('div', { class: 'row' }, methodSel, rollBtnEl), note, grid);
-        redraw();
-        return wrap;
-      },
-      validate(draft) {
-        const abs = draft.abilities || {};
-        if (draft.abilityMethod === 'pointbuy') {
-          const spent = ABILITIES.reduce((s, a) => s + (POINT_BUY_COST[abs[a]] ?? 99), 0);
-          if (spent > 27) return `Point buy is over budget (${spent}/27).`;
-          if (ABILITIES.some((a) => abs[a] < 8 || abs[a] > 15)) return 'Point-buy scores run 8–15.';
-        }
-        if (draft.abilityMethod === 'standard') {
-          const vals = ABILITIES.map((a) => abs[a]);
-          if (!STANDARD_ARRAY.every((v) => vals.includes(v))) return 'Assign each standard-array value exactly once.';
-        }
-        return null;
-      },
-    },
-    {
-      key: 'background', title: 'Background',
-      render(draft, ctx) {
-        const wrap = el('div', {});
-        wrap.append(pickCards(ctx.data.backgrounds,
-          (b) => ({
-            title: b.name,
-            sub: `${b.abilities.length ? b.abilities.map((a) => a.toUpperCase()).join('/') : 'any abilities'}`
-              + `${b.skills.length ? ` · ${b.skills.join(', ')}` : ''}${b.feat ? ` · feat: ${b.feat}` : ''}`
-              + `${b._pack ? ` · ${b._pack}` : ''}`,
-          }),
-          (b) => draft.background?.name === b.name,
-          (b) => { draft.background = b; draft.bgBonus = null; ctx.update(); }));
-        if (draft.background) {
-          const b = draft.background;
-          // 2014-era imported backgrounds declare no abilities — offer all six
-          const abilityOpts = b.abilities?.length ? b.abilities : ABILITIES;
-          draft.bgBonus ??= { mode: '2+1', two: abilityOpts[0], one: abilityOpts[1] };
-          const mk = (key) => {
-            const sel = el('select', {}, abilityOpts.map((a) => el('option', { value: a }, a.toUpperCase())));
-            sel.value = draft.bgBonus[key];
-            sel.addEventListener('change', () => { draft.bgBonus[key] = sel.value; });
-            return sel;
-          };
-          const modeSel = el('select', {},
-            el('option', { value: '2+1' }, '+2 and +1'),
-            el('option', { value: '1+1+1' }, '+1 to all three'));
-          modeSel.value = draft.bgBonus.mode;
-          modeSel.addEventListener('change', () => { draft.bgBonus.mode = modeSel.value; ctx.update(); });
-          wrap.append(el('div', { class: 'row', style: 'margin-top:10px' },
-            el('span', { class: 'small muted' }, 'Ability increases:'), modeSel,
-            ...(draft.bgBonus.mode === '2+1' ? [el('span', { class: 'small' }, '+2 to'), mk('two'), el('span', { class: 'small' }, '+1 to'), mk('one')] : [])));
-        }
-        return wrap;
-      },
-      validate(draft) {
-        if (!draft.background) return 'Pick a background.';
-        if (draft.bgBonus?.mode === '2+1' && draft.bgBonus.two === draft.bgBonus.one) return 'The +2 and +1 must go to different abilities.';
-        return null;
-      },
-    },
-    {
-      key: 'skills', title: 'Skills',
-      render(draft, ctx) {
-        const c = draft.klass;
-        draft.skillPicks ??= [];
-        const granted = draft.background?.skills || [];
-        const wrap = el('div', {},
-          el('p', { class: 'small muted' }, `Your background grants ${granted.join(' and ') || 'no skills'}. Choose ${c.skills.choose} more from the ${c.name} list:`));
-        const grid = el('div', { class: 'sheet-edit-skills' });
-        for (const s of c.skills.from) {
-          const taken = granted.includes(s);
-          const cb = el('input', {
-            type: 'checkbox', checked: taken || draft.skillPicks.includes(s), disabled: taken,
-            onchange: (ev) => {
-              draft.skillPicks = ev.target.checked
-                ? [...draft.skillPicks, s] : draft.skillPicks.filter((x) => x !== s);
-              ctx.update();
-            },
-          });
-          grid.append(el('label', { class: 'small' }, cb, ` ${s}${taken ? ' (background)' : ''}`));
-        }
-        wrap.append(grid, el('div', { class: 'small muted' }, `${draft.skillPicks.length} / ${c.skills.choose} chosen`));
-        return wrap;
-      },
-      validate: (draft) => (draft.skillPicks || []).length === draft.klass.skills.choose
-        ? null : `Choose exactly ${draft.klass.skills.choose} class skills.`,
-    },
-    {
-      key: 'equipment', title: 'Equipment',
-      render(draft, ctx) {
-        draft.equipmentText ??= draft.klass.startingEquipment || '';
-        const area = el('textarea', { rows: 6, style: 'width:100%' });
-        area.value = draft.equipmentText;
-        area.addEventListener('input', () => { draft.equipmentText = area.value; });
-        return el('div', {},
-          el('p', { class: 'small muted' }, 'What your class starts with. Edit it freely; each line becomes an item on the sheet.'),
-          area,
-          draft.background?.equipment ? el('p', { class: 'small muted' }, `Your background adds: ${draft.background.equipment}`) : null);
-      },
-      validate: () => null,
-    },
-    {
-      key: 'spells', title: 'Spells',
-      when: (draft) => !!draft.klass?.spellcasting,
-      render(draft, ctx) {
-        const c = draft.klass;
-        const counts = CASTER_L1[c.name] || { cantrips: 2, prepared: 2 };
-        draft.cantrips ??= [];
-        draft.spells ??= [];
-        // pack spells without a class list (no lookup data) show for every
-        // caster, tagged with their pack, rather than hiding entirely
-        const list = ctx.data.spells.filter((s) => s.level <= 1
-          && ((s.classes || []).includes(c.name) || (!(s.classes || []).length && s._pack)));
-        const wrap = el('div', {},
-          el('p', { class: 'small muted' },
-            `${c.name}s start with ${counts.cantrips ? `${counts.cantrips} cantrips and ` : ''}${counts.prepared} prepared level-1 spells.`));
-        const grid = el('div', { class: 'wiz-spells' });
-        for (const s of list) {
-          const target = s.level === 0 ? draft.cantrips : draft.spells;
-          const cb = el('input', {
-            type: 'checkbox', checked: target.includes(s.name),
-            onchange: (ev) => {
-              const arr = s.level === 0 ? draft.cantrips : draft.spells;
-              if (ev.target.checked) arr.push(s.name);
-              else arr.splice(arr.indexOf(s.name), 1);
-              ctx.update();
-            },
-          });
-          grid.append(el('label', { class: 'small', title: s.text.slice(0, 400) },
-            cb, ` ${s.name} `, el('span', { class: 'muted' },
-              `${s.level === 0 ? 'cantrip' : `L1 ${s.school}`}${s._pack ? ` · ${s._pack}` : ''}`)));
-        }
-        wrap.append(grid, el('div', { class: 'small muted' },
-          `${draft.cantrips.length}/${counts.cantrips} cantrips · ${draft.spells.length}/${counts.prepared} spells`));
-        return wrap;
-      },
-      validate(draft) {
-        const counts = CASTER_L1[draft.klass.name] || { cantrips: 2, prepared: 2 };
-        if (draft.cantrips.length !== counts.cantrips) return `Pick exactly ${counts.cantrips} cantrips.`;
-        if (draft.spells.length !== counts.prepared) return `Pick exactly ${counts.prepared} level-1 spells.`;
-        return null;
-      },
-    },
-    {
-      key: 'review', title: 'Review',
-      render(draft, ctx) {
-        const abs = finalAbilities(draft);
-        const conMod = mod(abs.con);
-        draft.name ??= '';
-        draft.acFinal ??= 10 + mod(abs.dex);
-        const nameInput = el('input', { value: draft.name, placeholder: 'Character name', style: 'flex:1', oninput: (ev) => { draft.name = ev.target.value; } });
-        const nameRoll = el('button', {
-          class: 'ghost small', title: 'Suggest a person name', 'aria-label': 'Suggest a person name',
-          onclick: () => { draft.name = personName(); nameInput.value = draft.name; },
-        }, '🎲');
-        const acInput = el('input', { type: 'number', value: draft.acFinal, min: 5, max: 30, style: 'width:70px', oninput: (ev) => { draft.acFinal = Number(ev.target.value) || 10; } });
-        return el('div', {},
-          el('div', { class: 'row' }, el('label', {}, 'Name'), nameInput, nameRoll),
-          el('div', { class: 'card', style: 'margin-top:10px' },
-            el('div', {}, `${draft.species.name} ${draft.klass.name}${chosenSubclass(draft) ? ` (${chosenSubclass(draft)})` : ''} — ${draft.background.name}`),
-            el('div', { class: 'small muted' }, ABILITIES.map((a) => `${a.toUpperCase()} ${abs[a]}`).join('  ')),
-            el('div', { class: 'small muted' }, `HP ${draft.klass.hitDie + conMod} · Speed ${draft.species.speed} ft. · Origin feat: ${draft.background.feat}`),
-            el('div', { class: 'row small', style: 'margin-top:6px' }, el('span', {}, 'AC (adjust for your armor):'), acInput)));
-      },
-      validate: (draft) => draft.name?.trim() ? null : 'Give the character a name.',
-    },
-  ],
-  finish(draft) {
-    const abs = finalAbilities(draft);
-    const d = defaults();
-    d.species = { name: draft.species.name, size: draft.species.size, speed: draft.species.speed };
-    d.klass = { name: draft.klass.name, level: 1, hitDie: draft.klass.hitDie, subclass: chosenSubclass(draft) };
-    d.background = { name: draft.background.name, feat: draft.background.feat };
-    d.abilityMethod = draft.abilityMethod;
-    d.abilities = abs;
-    d.saves = draft.klass.saves;
-    // canonSkill: bundled srd52 data says "Sleight of hand" — the sheet matches
-    // skill keys exactly, so normalize casing here or the proficiency vanishes
-    d.skills = [...(draft.background.skills || []), ...(draft.skillPicks || [])].map((key) => ({ key: canonSkill(key), prof: 'prof' }));
-    d.ac = draft.acFinal ?? 10 + mod(abs.dex);
-    d.speed = draft.species.speed;
-    d.hp = { max: draft.klass.hitDie + mod(abs.con), current: draft.klass.hitDie + mod(abs.con), temp: 0 };
-    d.equipment = String(draft.equipmentText || '').split(/\n|;/).map((s) => s.replace(/^[-•\s]+/, '').trim()).filter(Boolean).map((name) => ({ name, qty: 1 }));
-    d.features = [
-      ...(draft.species.traits || []).map((t) => ({ name: t.name, source: draft.species.name, text: t.text })),
-      ...(draft.klass.features || []).filter((f) => f.level === 1).map((f) => ({ name: f.name, source: `${draft.klass.name} 1`, text: f.text })),
-    ];
-    if (draft.klass.spellcasting) {
-      const ability = draft.klass.spellcasting.ability;
-      const dc = 8 + 2 + mod(abs[ability]);
-      d.spellcasting = {
-        ability, dc, attackBonus: 2 + mod(abs[ability]),
-        slots: { 1: { max: L1_SLOTS[draft.klass.name] ?? 2, used: 0 } },
-        cantrips: draft.cantrips || [], prepared: draft.spells || [],
-      };
-    }
-    const featData = draft.background.feat;
-    if (featData) d.features.push({ name: featData, source: 'Origin feat', text: '' });
-    return {
-      name: draft.name.trim(),
-      fields: { Role: 'PC', Species: d.species.name, Status: 'Alive' },
-      data: d,
-      tags: [d.klass.name.toLowerCase(), 'pc'],
-    };
-  },
-};
-
-function finalAbilities(draft) {
-  const out = { ...draft.abilities };
-  if (draft.bgBonus && draft.background) {
-    if (draft.bgBonus.mode === '1+1+1') for (const a of draft.background.abilities) out[a] = (out[a] ?? 10) + 1;
-    else { out[draft.bgBonus.two] = (out[draft.bgBonus.two] ?? 10) + 2; out[draft.bgBonus.one] = (out[draft.bgBonus.one] ?? 10) + 1; }
-  }
-  return out;
-}
+export { wizard } from './dndcreator.js';

@@ -1,0 +1,70 @@
+{
+  "id": "lantern-key-card",
+  "name": "The lantern key",
+  "type": "handout",
+  "tags": [
+    "1.8 example"
+  ],
+  "gmOnly": false,
+  "fields": {},
+  "date": null,
+  "blocks": [
+    {
+      "id": "bzbk1e",
+      "kind": "heading",
+      "text": "The lantern key",
+      "secret": false
+    },
+    {
+      "id": "c1gvws",
+      "kind": "heading",
+      "text": "Brass · palm-sized",
+      "secret": false
+    },
+    {
+      "id": "uk4du4",
+      "kind": "text",
+      "text": "A weathered key with a lantern-shaped bow. Its teeth are warm, even in cold water.",
+      "secret": false
+    },
+    {
+      "id": "zugkod",
+      "kind": "text",
+      "text": "Discovered in the keeper’s journal.",
+      "secret": false
+    },
+    {
+      "id": "gm-annotation",
+      "kind": "text",
+      "text": "GM annotation: this clue points toward the old observatory. Change or remove this note for your campaign.",
+      "secret": true
+    }
+  ],
+  "relations": [
+    {
+      "to": "port-vellen",
+      "label": "found in",
+      "secret": false
+    }
+  ],
+  "map": null,
+  "created": "2026-09-10T00:00:00.000Z",
+  "updated": "2026-09-10T00:00:00.000Z",
+  "handout": {
+    "kind": "card",
+    "paper": "ivory",
+    "border": "double",
+    "size": "card",
+    "fontSize": 10,
+    "lineHeight": 1.35,
+    "margin": 7,
+    "cover": false,
+    "slots": {
+      "bzbk1e": "title",
+      "c1gvws": "heading",
+      "uk4du4": "body",
+      "zugkod": "footer"
+    }
+  },
+  "image": "handout-key.png"
+}

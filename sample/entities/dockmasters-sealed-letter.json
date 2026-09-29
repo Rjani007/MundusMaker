@@ -1,0 +1,87 @@
+{
+  "id": "dockmasters-sealed-letter",
+  "name": "A sealed letter from the dockmaster",
+  "type": "handout",
+  "tags": [
+    "1.8 example"
+  ],
+  "gmOnly": false,
+  "fields": {},
+  "date": null,
+  "blocks": [
+    {
+      "id": "8kwurx",
+      "kind": "heading",
+      "text": "A sealed letter from the dockmaster",
+      "secret": false
+    },
+    {
+      "id": "v8hsr6",
+      "kind": "text",
+      "text": "Harbor Office, Port Vellen",
+      "secret": false
+    },
+    {
+      "id": "s1jlb0",
+      "kind": "text",
+      "text": "3 Mistfall, 1026 AR",
+      "secret": false
+    },
+    {
+      "id": "5s96o6",
+      "kind": "text",
+      "text": "To the bearer of the blue lantern,",
+      "secret": false
+    },
+    {
+      "id": "ih2orz",
+      "kind": "text",
+      "text": "Your passage has been arranged. Meet my clerk beside the old weighing house when the last bell sounds. The tide will be low; take the eastern steps, and keep your lantern covered until you reach the boat.\n\nDo not leave the brass key with the ferryman. He has been paid to carry you, and nothing more.",
+      "secret": false
+    },
+    {
+      "id": "5a4m29",
+      "kind": "text",
+      "text": "May the harbor lights guide you home,",
+      "secret": false
+    },
+    {
+      "id": "864450",
+      "kind": "quote",
+      "text": "Hobb Merrin\nDockmaster of Port Vellen",
+      "secret": false
+    },
+    {
+      "id": "gm-annotation",
+      "kind": "text",
+      "text": "GM annotation: this clue points toward the old observatory. Change or remove this note for your campaign.",
+      "secret": true
+    }
+  ],
+  "relations": [
+    {
+      "to": "port-vellen",
+      "label": "found in",
+      "secret": false
+    }
+  ],
+  "map": null,
+  "created": "2026-09-10T00:00:00.000Z",
+  "updated": "2026-09-10T00:00:00.000Z",
+  "handout": {
+    "kind": "letter",
+    "paper": "ivory",
+    "border": "none",
+    "cover": false,
+    "slots": {
+      "864450": "signature",
+      "8kwurx": "title",
+      "v8hsr6": "sender",
+      "s1jlb0": "date",
+      "5s96o6": "recipient",
+      "ih2orz": "body",
+      "5a4m29": "closing"
+    }
+  },
+  "image": "handout-seal.png"
+}

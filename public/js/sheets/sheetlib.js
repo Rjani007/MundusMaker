@@ -47,6 +47,19 @@ export function sectionHtml(title, inner) {
   return `<div class="sheet-section"><div class="sheet-sec-title">${esc(title)}</div>${inner}</div>`;
 }
 
+/** Uniform random choice for wizard card grids, routed through their normal picker. */
+export function surprisePickButton(items, onPick) {
+  const choices = Array.isArray(items) ? items : [];
+  return el('button', {
+    type: 'button', class: 'ghost small', disabled: choices.length === 0,
+    title: 'Pick one of these options at random',
+    onclick: () => {
+      if (!choices.length) return;
+      onPick(choices[Math.floor(Math.random() * choices.length)]);
+    },
+  }, '🎲 Surprise me');
+}
+
 // ---------- rollers ----------
 
 const d10 = () => 1 + Math.floor(Math.random() * 10);

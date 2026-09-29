@@ -2,26 +2,31 @@
 // secrets and editable statblocks, timeline date, typed relations, backlinks,
 // and an attached map. QoL: [[link]] autocomplete, rename updates mentions.
 
-import { el, uid, esc, toast, debounce, helpTip } from '../util.js';
+import { el, uid, esc, toast, debounce, helpTip, slugify, readSetting, writeSetting } from '../util.js';
+
+const sheetLayout = () => { try { return readSetting('sheetLayout') || 'standard'; } catch { return 'standard'; } };
+import { buildCharacterPdf } from '../pdf.js';
 import {
   state, types, typeOf, getEntity, visibleEntities,
   saveEntity, scheduleSave, deleteEntity, duplicateEntity,
-  replaceEntity, flushSaves,
+  replaceEntity, requireSaved,
 } from '../state.js';
-import { mdToHtml, backlinksFor } from '../render.js';
+import { mdToHtml, backlinksFor, planWikiRenames, planLinkMentions } from '../render.js';
 import { slotsOf, formatDate, formatYear, isHistoric, isRecurring } from '../calendar.js';
-import { newMap, MAP_KINDS, renderThumbnail } from '../maps/mapcore.js';
+import { mapChoices, newMapFrom, renderThumbnail, hiddenOverlayLinkIds } from '../maps/mapcore.js';
+import { keyBlockIds } from '../maps/mapkeys.js';
 import { defaultStat, statblockHtml, ABILITIES } from '../statblock.js';
 import { defaultEncounter, computeEncounter, DIFFICULTY_COLORS } from '../encounter.js';
 import { monsterToStat, loadAllMonsters } from '../importers.js';
 import { SHEET_SYSTEMS, handleSheetClick } from '../sheets/sheetcore.js';
+import { familiarHtml, FAMILIAR_SYSTEMS } from '../sheets/familiar.js';
+import { withSkillBases } from '../sheets/cocskills.js';
 import { defaultRandomTable, randomTableHtml, rollRandomTable, tableRows } from '../randomtable.js';
 import { nameStyleForType, randomName } from '../names.js';
+import { syncLinkedSiteNames } from '../maps/crossscale.js';
 import { api } from '../api.js';
-
-function escapeRegExp(s) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
+import { sessionTracker } from '../sessiontracker.js';
+import { confirmReveal, revealLog } from '../reveal.js';
 
 // What each suggested field is for — a hover bubble plus an example
 // placeholder, so first-time GMs aren't staring at a bare "Kind" input.
@@ -104,26 +109,64 @@ export function render(container, id) {
 
   // ---------- rename propagation ----------
   let nameAtLoad = e.name;
-  async function propagateRename() {
-    const oldName = nameAtLoad, newName = e.name.trim();
-    if (!oldName || !newName || oldName === newName) return;
-    nameAtLoad = newName;
-    const testRx = new RegExp(`\\[\\[\\s*${escapeRegExp(oldName)}\\s*(\\||\\]\\])`, 'i');
-    const affected = [...state.entities.values()].filter((other) =>
-      (other.blocks || []).some((b) => testRx.test(b.text || '')));
-    if (!affected.length) return;
-    const total = affected.reduce((n, other) =>
-      n + (other.blocks || []).reduce((m, b) =>
-        m + ((b.text || '').match(new RegExp(`\\[\\[\\s*${escapeRegExp(oldName)}\\s*(?=\\||\\]\\])`, 'gi')) || []).length, 0), 0);
-    if (!confirm(`“${oldName}” was renamed to “${newName}”.\n\nAlso update ${total} [[link${total === 1 ? '' : 's'}]] in ${affected.length} other ${affected.length === 1 ? 'entry' : 'entries'}?`)) return;
-    const replaceRx = new RegExp(`\\[\\[\\s*${escapeRegExp(oldName)}\\s*(\\||\\]\\])`, 'gi');
-    for (const other of affected) {
-      for (const b of other.blocks || []) {
-        if (b.text) b.text = b.text.replace(replaceRx, `[[${newName}$1`);
-      }
-      await saveEntity(other);
+  // Cross-scale name sync (1.4): a world/region map that links a site to this
+  // entry shows the entry's name on its label. Renaming here is authoritative —
+  // the parent map's siteEdits follow without asking (the map-side rename box
+  // is the place that asks). Idempotent: writes only what actually differs.
+  async function syncMapLabels(oldName, newName) {
+    if (!newName || oldName === newName) return;
+    const entities = [...state.entities.values()].map((src) => src.id === e.id ? e : src);
+    const touched = syncLinkedSiteNames(entities, e.id, newName,
+      (id) => id === e.id ? e : getEntity(id), oldName);
+    // a drilled region map titles itself after this entry — follow along
+    // unless the user gave the map its own deliberate title
+    if (e.map?.kind === 'region' && (e.map.params?.title || '').trim() === oldName.trim()) {
+      e.map.params.title = newName;
+      if (!touched.includes(e)) touched.push(e);
     }
-    toast(`Updated ${total} link${total === 1 ? '' : 's'} in ${affected.length} ${affected.length === 1 ? 'entry' : 'entries'}.`);
+    // This view already has `e` in the debounced save queue. Saving it directly
+    // would replace the cached object while the older queued reference remains.
+    // Keep the active object on that queue; other map entities can save now.
+    for (const src of touched) {
+      if (src.id === e.id) save();
+      else await saveEntity(src);
+    }
+    if (touched.length) toast(`Updated the label on ${touched.length} linked map${touched.length === 1 ? '' : 's'}.`);
+  }
+  async function propagateRenameTo(requestedName) {
+    const oldName = nameAtLoad.trim(), newName = String(requestedName || '').trim();
+    if (!newName) return;
+    // Do not put an intermediate queued name back into the input if the user
+    // has already typed a newer one. The final queued commit canonicalizes it.
+    if (e.name.trim() === newName && e.name !== newName) {
+      e.name = newName;
+      title.value = newName;
+      save();
+    }
+    if (!oldName || oldName === newName) { nameAtLoad = newName; return; }
+    nameAtLoad = newName;
+    // Clear older debounced references before any whole-entity rename saves.
+    // The active object is substituted below if the flush refreshed the cache.
+    await requireSaved();
+    // Capture the current entity objects before any direct map save replaces a
+    // cached object. A pending debounced save then shares the objects the plan
+    // will edit instead of racing a stale reference against the rewrite.
+    const entities = [...state.entities.values()].map((src) => src.id === e.id ? e : src);
+    const plan = planWikiRenames(oldName, newName, entities);
+    await syncMapLabels(oldName, newName);
+    if (!plan) return;
+    if (!confirm(`“${oldName}” was renamed to “${newName}”.\n\nAlso update ${plan.total} [[link${plan.total === 1 ? '' : 's'}]] in ${plan.entries} other ${plan.entries === 1 ? 'entry' : 'entries'}?`)) return;
+    await plan.apply();
+    toast(`Updated ${plan.total} link${plan.total === 1 ? '' : 's'} in ${plan.entries} ${plan.entries === 1 ? 'entry' : 'entries'}.`);
+  }
+  let renameQueue = Promise.resolve();
+  function propagateRename(requestedName = e.name) {
+    const capturedName = String(requestedName || '');
+    renameQueue = renameQueue.then(() => propagateRenameTo(capturedName)).catch((err) => {
+      console.error('rename propagation failed', err);
+      toast('The name was saved, but some linked labels could not be updated.');
+    });
+    return renameQueue;
   }
 
   // ---------- header ----------
@@ -132,7 +175,8 @@ export function render(container, id) {
     : el('input', {
         class: 'ent-title', value: e.name,
         oninput: (ev) => { e.name = ev.target.value; save(); },
-        onchange: () => propagateRename(),
+        onchange: (ev) => propagateRename(ev.target.value),
+        onblur: (ev) => propagateRename(ev.target.value),
       });
   const titleRow = readOnly ? title : el('div', { class: 'row' }, title,
     el('button', {
@@ -141,7 +185,7 @@ export function render(container, id) {
         e.name = randomName(nameStyleForType(e.type));
         title.value = e.name;
         save();
-        await propagateRename();
+        await propagateRename(e.name);
       },
     }, '🎲'));
 
@@ -156,7 +200,11 @@ export function render(container, id) {
   const gmOnlyBtn = el('button', {
     class: e.gmOnly ? 'gm-only-badge' : 'ghost small',
     title: 'GM-only entries are invisible to players everywhere: lists, graph, timeline, and player exports',
-    onclick: () => { e.gmOnly = !e.gmOnly; save(); rerender(); },
+    onclick: async () => {
+      // revealing an entry asks which session to log it on (1.9); hiding doesn't
+      if (e.gmOnly) { if (await confirmReveal(e, { kind: 'entry' })) rerender(); return; }
+      e.gmOnly = true; save(); rerender();
+    },
   }, e.gmOnly ? '🔒 GM-only entry' : 'Make GM-only');
 
   const meta = el('div', { class: 'ent-meta' },
@@ -276,9 +324,11 @@ export function render(container, id) {
 
   // ---------- version history ----------
   async function showHistory() {
-    await flushSaves(); // pending edits must be on disk before we list/restore
     let items;
-    try { items = await api.entityHistory(e.id); } catch (err) { toast('Could not load history: ' + err.message); return; }
+    try {
+      await requireSaved(); // pending edits must be on disk before we list/restore
+      items = await api.entityHistory(e.id);
+    } catch (err) { toast('Could not load history: ' + err.message); return; }
     const overlay = el('div', { class: 'overlay', onclick: (ev) => { if (ev.target === overlay) overlay.remove(); } });
     const list = el('div', {});
     if (!items.length) {
@@ -297,7 +347,7 @@ export function render(container, id) {
           onclick: async () => {
             if (!confirm(`Restore the version from ${when}?\n\nThe current version is saved to history first, so nothing is lost.`)) return;
             try {
-              await flushSaves();
+              await requireSaved();
               const res = await api.restoreEntityVersion(e.id, it.stamp);
               replaceEntity(res.entity);
               overlay.remove();
@@ -584,6 +634,13 @@ export function render(container, id) {
     if (b.kind === 'encounter') return encounterHtml(b);
     if (b.kind === 'sheet') {
       const sys = SHEET_SYSTEMS[b.system];
+      if (sys && sheetLayout() === 'familiar' && FAMILIAR_SYSTEMS.includes(b.system)) {
+        // CoC lists every skill with its base; that needs the catalog, which
+        // loads once and then re-renders the blocks
+        const catalog = b.system === 'coc7' ? sys.loadedData?.() : null;
+        if (b.system === 'coc7' && !catalog) sys.loadData().then(() => refreshBlocks()).catch(() => {});
+        return familiarHtml(b.system, catalog ? withSkillBases(b.data || {}, catalog) : b.data, { name: e.name });
+      }
       return sys ? sys.html(b.data, { gm: state.gm })
         : `<div class="notice warn">Unknown sheet system “${esc(b.system || '?')}” — from a newer MundusMaker?</div>`;
     }
@@ -1032,6 +1089,7 @@ export function render(container, id) {
 
   function refreshBlocks() {
     blocksWrap.innerHTML = '';
+    const keyNoteIds = keyBlockIds(e.map);
     // players never see secrets; empty scaffold blocks — and headings whose
     // whole section is empty — are edit-mode only
     const hasContent = (b) => b.kind === 'statblock' || b.kind === 'encounter' || b.kind === 'sheet' || b.kind === 'table' || b.text?.trim();
@@ -1048,7 +1106,27 @@ export function render(container, id) {
     }
     for (const b of list) {
       const idx = e.blocks.indexOf(b);
-      const node = el('div', { class: `block${b.secret ? ' secret' : ''}${hasContent(b) ? '' : ' empty'}` });
+      const node = el('div', { class: `block${b.kind === 'sheet' ? ' sheet-block' : ''}${b.secret ? ' secret' : ''}${hasContent(b) ? '' : ' empty'}` });
+      if (!readOnly && keyNoteIds.has(b.id)) {
+        node.append(el('a', { class: 'mapkey-badge', href: `#/map/${encodeURIComponent(e.id)}`, title: 'This block is a note in the map’s key. Open the map to see where.' }, '🗝 Map key note'));
+      }
+      if (b.kind === 'sheet' && SHEET_SYSTEMS[b.system]) {
+        const format = el('select', { 'aria-label': 'Character PDF paper size' }, el('option', { value: 'a4' }, 'A4'), el('option', { value: 'letter' }, 'US Letter'));
+        // a per-browser view choice (1.9), never stored in the world
+        const layout = el('select', { 'aria-label': 'Character sheet layout', title: 'Familiar arranges the sheet like the game’s own character sheet, on screen and in the PDF.', onchange: () => { writeSetting('sheetLayout', layout.value); refreshBlocks(); } },
+          el('option', { value: 'standard', selected: sheetLayout() !== 'familiar' }, 'Standard layout'), el('option', { value: 'familiar', selected: sheetLayout() === 'familiar' }, 'Familiar layout'));
+        const print = async gm => {
+          try { (await buildCharacterPdf(e, { gm, blockId: b.id, format: format.value, layout: sheetLayout() })).save(`${slugify(e.name)}-${gm ? 'gm' : 'player'}-sheet.pdf`); }
+          catch (err) { toast(err.message); }
+        };
+        node.append(el('div', { class: 'sheet-actions row' },
+          el('span', { class: 'small muted' }, 'Character sheet'), el('span', { class: 'spacer' }), FAMILIAR_SYSTEMS.includes(b.system) ? layout : null, format,
+          !e.gmOnly && !b.secret ? el('button', { class: 'small', onclick: () => print(false) }, 'Player sheet PDF') : null,
+          state.gm ? el('button', { class: 'small', onclick: () => print(true) }, '🔒 GM sheet PDF') : null,
+          state.gm && b.system === 'dnd2024' ? el('button', { class: 'primary small', onclick: () => {
+            if (!state.gm) return; openEditor(b, node); const panel = node.querySelector('[data-advance]'); if (panel) { panel.open = true; panel.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
+          } }, 'Level up…') : null));
+      }
       if (!readOnly) {
         node.append(el('div', { class: 'bctrl' },
           ctrlBtn({
@@ -1069,7 +1147,14 @@ export function render(container, id) {
             title: b.secret
               ? 'Secret: visible only to you (GM). Click to reveal it to players.'
               : 'Lock this block: only you (GM) see it — players and player exports never do.',
-            onclick: () => { b.secret = !b.secret; save(); refreshBlocks(); },
+            onclick: async () => {
+              if (b.secret) {
+                b.id ??= uid(); // very old blocks have no id; a logged reveal needs one
+                if (await confirmReveal(e, { kind: 'block', ref: b.id })) refreshBlocks();
+                return;
+              }
+              b.secret = true; save(); refreshBlocks();
+            },
           }, b.secret ? '🔓 Reveal' : '🔒 Make secret'),
           ctrlBtn({ class: 'bc-icon', title: 'Move up', 'aria-label': 'Move block up', onclick: () => { moveBlock(idx, -1); } }, '↑'),
           ctrlBtn({ class: 'bc-icon', title: 'Move down', 'aria-label': 'Move block down', onclick: () => { moveBlock(idx, +1); } }, '↓'),
@@ -1223,7 +1308,11 @@ export function render(container, id) {
         el('label', { class: 'rel-secret', title: 'Secret relations are hidden from players and player exports' },
           el('input', {
             type: 'checkbox', checked: !!r.secret,
-            onchange: (ev) => { r.secret = ev.target.checked; save(); },
+            onchange: async (ev) => {
+              if (ev.target.checked || !r.secret || !r.to) { r.secret = ev.target.checked; save(); return; }
+              ev.target.checked = true; // stays secret unless the reveal goes ahead
+              if (await confirmReveal(e, { kind: 'relation', relation: r })) refreshRelations();
+            },
           }), '🔒 secret'),
         el('button', {
           class: 'ghost', title: 'Remove this relation (you can undo)',
@@ -1285,6 +1374,32 @@ export function render(container, id) {
     }
   }
   const refreshBacklinksSoon = debounce(refreshBacklinks, 900);
+
+  // ---------- unlinked mentions (1.9): GM view, never rewritten unasked ----------
+  const unlinkedWrap = el('div', {});
+  function refreshUnlinked() {
+    unlinkedWrap.replaceChildren();
+    const plan = readOnly ? null : planLinkMentions(e);
+    unlinkedWrap.hidden = !plan;
+    if (!plan) return;
+    const linkHits = async (hits) => {
+      const preview = hits.slice(0, 8).map((h) => `• ${h.entity.name}: “…${h.snippet}…”`).join('\n');
+      const n = hits.reduce((k, h) => k + h.count, 0);
+      const more = hits.length > 8 ? `\n…and ${hits.length - 8} more` : '';
+      if (!confirm(`Turn ${n} ${n === 1 ? 'mention' : 'mentions'} of “${e.name}” into links? The words stay the same.\n\n${preview}${more}`)) return;
+      try { await plan.apply(hits); toast(`Linked ${n} ${n === 1 ? 'mention' : 'mentions'}.`); }
+      catch (err) { toast(`Could not save every change: ${err.message}`, 5000); }
+      refreshUnlinked(); refreshBacklinks();
+    };
+    unlinkedWrap.append(
+      el('p', { class: 'muted small' }, `${plan.total} plain-text ${plan.total === 1 ? 'mention' : 'mentions'} of this entry’s name in ${plan.entries} other ${plan.entries === 1 ? 'entry' : 'entries'}.`),
+      ...plan.hits.map((h) => el('div', { class: 'unlinked-row' },
+        el('a', { href: `#/e/${encodeURIComponent(h.entity.id)}` }, h.entity.name),
+        el('span', { class: 'muted small' }, `…${h.snippet}…`),
+        el('button', { class: 'ghost small', onclick: () => linkHits([h]) }, 'Link'))),
+      plan.hits.length > 1 ? el('button', { class: 'small', style: 'margin-top:6px', onclick: () => linkHits(plan.hits) }, 'Link all…') : null);
+  }
+  refreshUnlinked();
   refreshBacklinks();
 
   // ---------- map ----------
@@ -1293,7 +1408,8 @@ export function render(container, id) {
     mapWrap.innerHTML = '';
     if (e.map) {
       const thumb = el('canvas', { style: 'width:100%;border-radius:6px;cursor:pointer', title: 'Open map editor' });
-      setTimeout(() => renderThumbnail(thumb, e.map, 760, { gm: state.gm }), 0);
+      const hiddenLinkIds = hiddenOverlayLinkIds(e.map, state.entities.values());
+      setTimeout(() => renderThumbnail(thumb, e.map, 760, { gm: state.gm, hiddenLinkIds }), 0);
       thumb.addEventListener('click', () => { location.hash = `#/map/${e.id}`; });
       mapWrap.append(thumb,
         el('div', { class: 'row', style: 'margin-top:8px' },
@@ -1308,98 +1424,22 @@ export function render(container, id) {
           }, 'Remove map')));
     } else if (!readOnly) {
       mapWrap.append(el('div', { class: 'row' },
-        Object.entries(MAP_KINDS).map(([kind, def]) =>
+        mapChoices().map((choice) =>
           el('button', {
             onclick: () => {
-              e.map = newMap(kind);
+              e.map = newMapFrom(choice.value);
               save();
               location.hash = `#/map/${e.id}`;
             },
-          }, `+ ${def.label}`))));
+          }, `+ ${choice.label}`))));
     }
   }
   refreshMap();
 
-  // ---------- session initiative / HP tracker ----------
-  // This is deliberately a local GM list, not a shared VTT surface. It is not
-  // rendered in player preview or exports, and lives on session entries where
-  // it can be resumed after a reload.
-  const trackerWrap = el('div', {});
-  function refreshTracker() {
-    trackerWrap.innerHTML = '';
-    const tracker = (e.sessionTracker ??= { round: 1, active: 0, rows: [] });
-    tracker.rows ??= [];
-    if (tracker.active >= tracker.rows.length) tracker.active = 0;
-
-    const controls = el('div', { class: 'row', style: 'margin-bottom:9px' },
-      el('label', { class: 'small row', style: 'gap:5px' }, 'Round', el('input', {
-        type: 'number', min: 1, step: 1, value: tracker.round || 1, style: 'width:70px',
-        oninput: (ev) => { tracker.round = Math.max(1, Math.trunc(Number(ev.target.value)) || 1); save(); },
-      })),
-      el('button', {
-        class: 'small', disabled: !tracker.rows.length,
-        onclick: () => {
-          tracker.active++;
-          if (tracker.active >= tracker.rows.length) { tracker.active = 0; tracker.round = Math.max(1, tracker.round || 1) + 1; }
-          save(); refreshTracker();
-        },
-      }, 'Next turn →'),
-      el('button', {
-        class: 'ghost small', disabled: tracker.rows.length < 2,
-        onclick: () => {
-          tracker.rows.sort((a, b) => (Number(b.initiative) || 0) - (Number(a.initiative) || 0));
-          tracker.active = 0; save(); refreshTracker();
-        },
-      }, 'Sort initiative'),
-      el('span', { class: 'spacer' }),
-      el('button', {
-        class: 'ghost small',
-        onclick: () => {
-          tracker.rows.push({ id: uid(), name: '', initiative: '', hp: '', maxHp: '', conditions: '' });
-          save(); refreshTracker();
-          const nameInputs = trackerWrap.querySelectorAll('.tracker-name');
-          nameInputs[nameInputs.length - 1]?.focus();
-        },
-      }, '+ Add combatant'));
-    trackerWrap.append(controls);
-
-    if (!tracker.rows.length) {
-      trackerWrap.append(el('div', { class: 'muted small' }, 'No combatants yet. Add them when initiative is rolled.'));
-      return;
-    }
-    tracker.rows.forEach((row, i) => {
-      const active = i === tracker.active;
-      const numberInput = (key, placeholder, width) => el('input', {
-        type: 'number', step: 1, value: row[key] ?? '', placeholder, style: `width:${width}px`,
-        oninput: (ev) => { row[key] = ev.target.value === '' ? '' : Number(ev.target.value); save(); },
-      });
-      trackerWrap.append(el('div', {
-        class: 'row',
-        style: `padding:7px 8px;margin:4px 0;border-radius:6px;border:1px solid ${active ? 'var(--accent)' : 'var(--line)'};background:${active ? 'rgba(219,169,90,.08)' : 'transparent'}`,
-      },
-        el('span', { style: 'width:18px;text-align:center', title: active ? 'Current turn' : '' }, active ? '▶' : ''),
-        numberInput('initiative', 'Init', 66),
-        el('input', {
-          class: 'tracker-name', value: row.name || '', placeholder: 'Combatant', style: 'flex:1;min-width:120px',
-          oninput: (ev) => { row.name = ev.target.value; save(); },
-        }),
-        el('span', { class: 'muted small' }, 'HP'),
-        el('button', { class: 'ghost small', title: 'Lose 1 HP', onclick: () => { row.hp = (Number(row.hp) || 0) - 1; save(); refreshTracker(); } }, '−'),
-        numberInput('hp', 'now', 70),
-        el('span', { class: 'muted' }, '/'),
-        numberInput('maxHp', 'max', 70),
-        el('button', { class: 'ghost small', title: 'Gain 1 HP', onclick: () => { row.hp = (Number(row.hp) || 0) + 1; save(); refreshTracker(); } }, '+'),
-        el('input', {
-          value: row.conditions || '', placeholder: 'conditions', style: 'width:150px',
-          oninput: (ev) => { row.conditions = ev.target.value; save(); },
-        }),
-        el('button', {
-          class: 'ghost danger small', title: 'Remove combatant',
-          onclick: () => { tracker.rows.splice(i, 1); if (tracker.active > i) tracker.active--; save(); refreshTracker(); },
-        }, '✕')));
-    });
-  }
-  if (!readOnly && e.type === 'session') refreshTracker();
+  // Both surfaces use the same GM-only tracker and session data.
+  const trackerWrap = !readOnly && e.type === 'session'
+    ? el('div', {}, el('p', { class: 'small' }, el('a', { href: `#/encounter/${encodeURIComponent(e.id)}` }, 'Open Encounter tab →')),
+      sessionTracker(e, { compact: true }).element) : null;
 
   // ---------- assemble ----------
   function card(titleText, node, extra) {
@@ -1413,14 +1453,23 @@ export function render(container, id) {
       el('div', { class: 'ent-head-main' }, titleRow, meta, dateWrap),
       (e.image || !readOnly) ? portrait : null),
     el('hr', { class: 'soft' }),
+    (e.handout || e.type === 'handout') ? el('div', { class: 'notice handout-entry-link' },
+      el('a', { href: `#/handouts/${encodeURIComponent(e.id)}` }, readOnly ? 'View printable handout →' : 'Design handout & export →'),
+      el('span', { class: 'muted small' }, ' Uses the text blocks below.')) : null,
     blocksWrap,
     (!readOnly && e.type === 'session') ? card('⚔ Initiative & HP', trackerWrap) : null,
+    (!readOnly && e.type === 'session' && e.handoutPacket?.length) ? card('📜 Handout packet', el('div', {},
+      el('ol', { class: 'small' }, e.handoutPacket.map((hid) => getEntity(hid)).filter(Boolean).map((h) => el('li', {}, el('a', { href: `#/handouts/${encodeURIComponent(h.id)}` }, h.name)))),
+      el('a', { href: '#/handouts', onclick: () => { try { writeSetting(`packet.${state.worldId}`, e.id); } catch { /* the page still opens */ } } }, 'Open the packet in Handouts →'))) : null,
+    (!readOnly && e.type === 'session') ? card('👁 Revealed to players', revealLog(e, { onChange: (changed) => { if (changed === e) rerender(); } }),
+      helpTip('Secrets you revealed and logged on this session. Undo hides one again, as long as nothing changed it since. Players never see this list.')) : null,
     el('hr', { class: 'soft' }),
     card('Details', fieldsWrap, readOnly ? null
       : helpTip('Quick facts, shown here and in exports. Blank fields stay hidden; ✕ hides a field you don’t need.')),
     card('Relations', relWrap),
     (e.map || !readOnly) ? card('Map', mapWrap) : null,
-    card('Backlinks', backWrap)));
+    card('Backlinks', backWrap),
+    readOnly ? null : el('div', { class: 'unlinked-card' }, card('Unlinked mentions', unlinkedWrap, helpTip('Places where this entry’s name appears as plain text. Link turns them into [[links]] after you confirm; the words stay the same.')))));
 
   function rerender() {
     container.innerHTML = '';

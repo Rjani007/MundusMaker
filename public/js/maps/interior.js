@@ -5,13 +5,14 @@
 // hand-edited plan still gets furnished sensibly.
 
 import { makeRng } from '../util.js';
+import { plannedInterior } from './floorplans.js';
 
 export const INTERIOR_CELL = 26;
 const CELL = INTERIOR_CELL;
 const SOLID = 0, FLOOR = 1, DOOR = 2, WINDOW = 3;
 const NESW = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 
-export const INTERIOR_BUILDINGS = ['tavern', 'inn', 'keep', 'temple', 'shop', 'house'];
+export const INTERIOR_BUILDINGS = ['tavern', 'inn', 'keep', 'temple', 'shop', 'house', 'manor', 'workshop'];
 
 export function defaultInteriorParams() {
   return { building: 'tavern', cols: 24, rows: 16, furnished: true };
@@ -65,6 +66,7 @@ export function generateInteriorGrid(map) {
 
 export function buildInteriorModel(map) {
   const p = paramsOf(map);
+  if (map.params?.generation==='1.8' && !map.grid) return plannedInterior(map,p);
   const grid = map.grid ? interiorGridFromString(map.grid, p.cols, p.rows) : generate(map);
   const furniture = p.furnished ? furnish(map, grid, p) : [];
   return { grid, cols: p.cols, rows: p.rows, furniture };
@@ -129,6 +131,7 @@ function roomsOf(grid, cols, rows) {
 
 function generate(map) {
   const p = paramsOf(map);
+  if (map.params?.generation==='1.8') return plannedInterior(map,p).grid;
   const { cols, rows } = p;
   const rng = makeRng(map.seed);
   const g = new Uint8Array(cols * rows);
@@ -693,7 +696,8 @@ export function renderInteriorBase(map, model, scale = 1) {
   ctx.fillStyle = 'rgba(60, 40, 20, 0.7)';
   roomsOf(grid, cols, rows).filter((r) => r.cells.length >= 4).forEach((room, i) => {
     const [ax, ay] = room.cells[0]; // topmost-leftmost floor cell
-    ctx.fillText(String(i + 1), ax * CELL + 4, ay * CELL + 3);
+    const roomLabel = m.rooms?.find(r=>ax>=r.x0&&ax<=r.x1&&ay>=r.y0&&ay<=r.y1);
+    ctx.fillText(roomLabel ? `${i+1}. ${roomLabel.role}` : String(i + 1), ax * CELL + 4, ay * CELL + 3);
   });
 
   return base;

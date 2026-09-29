@@ -1,0 +1,51 @@
+{
+  "id": "oath-beneath-the-tide",
+  "name": "The oath beneath the tide",
+  "type": "handout",
+  "tags": [
+    "1.8 example"
+  ],
+  "gmOnly": false,
+  "fields": {},
+  "date": null,
+  "blocks": [
+    {
+      "id": "8d5jkc",
+      "kind": "heading",
+      "text": "The oath beneath the tide",
+      "secret": false
+    },
+    {
+      "id": "1u0xns",
+      "kind": "text",
+      "text": "Let every keeper of the shore bear witness:\n\nWe shall hold the harbor light against the storm.\nWe shall offer shelter to those the sea returns.\nWe shall speak the names of those it keeps.\n\nAnd when the lantern beneath the tide is lit,\nwe shall remember what our ancestors promised.",
+      "secret": false
+    },
+    {
+      "id": "gm-annotation",
+      "kind": "text",
+      "text": "GM annotation: this clue points toward the old observatory. Change or remove this note for your campaign.",
+      "secret": true
+    }
+  ],
+  "relations": [
+    {
+      "to": "port-vellen",
+      "label": "found in",
+      "secret": false
+    }
+  ],
+  "map": null,
+  "created": "2026-09-10T00:00:00.000Z",
+  "updated": "2026-09-10T00:00:00.000Z",
+  "handout": {
+    "kind": "scroll",
+    "paper": "aged",
+    "border": "ornament",
+    "cover": false,
+    "slots": {
+      "8d5jkc": "title",
+      "1u0xns": "body"
+    }
+  }
+}

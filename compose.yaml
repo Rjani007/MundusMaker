@@ -1,0 +1,31 @@
+name: mundusmaker
+services:
+  mundusmaker:
+    build: .
+    image: mundusmaker:1.8.1
+    init: true
+    restart: unless-stopped
+    ports:
+      - "${MUNDUSMAKER_BIND:-127.0.0.1}:${MUNDUSMAKER_PORT:-4870}:4870"
+    environment:
+      MUNDUSMAKER_USER: "${MUNDUSMAKER_USER:-dm}"
+      MUNDUSMAKER_ORIGIN: "${MUNDUSMAKER_ORIGIN:-}"
+    volumes:
+      - mundusmaker-data:/data
+    secrets:
+      - mundusmaker_password
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777,noexec,nosuid
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 15s
+
+volumes:
+  mundusmaker-data:
+
+secrets:
+  mundusmaker_password:
+    file: "${MUNDUSMAKER_PASSWORD_PATH:-./secrets/mundusmaker-password.txt}"

@@ -16,13 +16,16 @@ export async function maybeShowOnboarding() {
 /** Always shows — the "replay the tour" path from Settings. */
 export async function showOnboarding() {
   let dataDir = 'the data folder next to the app';
-  try { dataDir = (await api.status()).dataDir; } catch { /* server info is a nicety, not a gate */ }
+  let hosted = false;
+  try { const status = await api.status(); dataDir = status.dataDir; hosted = status.deployment === 'container'; } catch { /* server info is a nicety, not a gate */ }
 
   const panes = [
     {
       title: '🌍 Welcome to MundusMaker',
       body: [
-        el('p', {}, 'A worldbuilding wiki for game masters that lives entirely on this computer. No account, no cloud, no AI, nobody reading over your shoulder.'),
+        el('p', {}, hosted
+          ? 'A worldbuilding wiki for game masters, hosted on your own server. Open this server address from your other devices to continue with the same worlds.'
+          : 'A worldbuilding wiki for game masters that lives entirely on this computer. No account, no cloud, no AI, nobody reading over your shoulder.'),
         el('p', { class: 'muted' }, 'Your worlds are plain files in ', el('code', {}, dataDir),
           '. Copy that folder and you have a complete backup of everything you ever wrote.'),
       ],
@@ -32,13 +35,16 @@ export async function showOnboarding() {
       body: [
         el('p', {}, 'The toggle in the top bar flips between your view and what your players would see. Check it before you share anything.'),
         el('p', { class: 'muted' }, 'Lock any paragraph, relationship or map pin with the 🔒. Whole entries can be GM-only. ',
-          'The player handbook strips every locked thing on export, and it counts them so you can be sure.'),
+          'The player handbook strips every locked thing on export, and it counts them so you can be sure.',
+          hosted ? ' Anyone with the server password has full DM access. Share exported handouts with players; player preview is not a restricted login.' : ''),
       ],
     },
     {
       title: '📌 Make yourself at home',
       body: [
         el('p', {}, 'Everything autosaves as you type. The ✓ in the top bar tells you it landed.'),
+        ...(hosted ? [] : [el('p', { class: 'muted' }, 'MundusMaker keeps running when you close this tab, so nothing is lost if you do. ',
+          'To stop it, use Quit in Settings, or the MundusMaker icon in the Windows tray or the Mac menu bar.')]),
         el('p', { class: 'muted' }, 'If you\'d rather have MundusMaker as its own window with a Start Menu entry, Edge and Chrome can install it: the little icon at the right end of the address bar. ',
           'And when you have five minutes to spare, the Help tab has the tour.'),
       ],

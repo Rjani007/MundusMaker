@@ -179,6 +179,8 @@ export function render(container) {
       desc,
       el('div', { class: 'row small', style: 'margin-top:8px' },
         el('span', { class: 'muted' }, 'Era suffix for timeline years:'), eraInput)),
+    el('div', { class: 'row', style: 'margin-top:18px' }, el('h3', {}, 'Categories'), el('span', { class: 'spacer' }),
+      el('a', { href: '#/categories' }, state.gm ? 'Browse / add categories →' : 'Browse categories →')),
     stats,
     el('div', { class: 'card' },
       el('h3', {}, 'Create'),

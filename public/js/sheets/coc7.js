@@ -7,13 +7,15 @@ import { nameFor } from '../names.js';
 import { linkDice } from '../render.js';
 import {
   rollBtn, kvHtml, sectionHtml,
-  frow, textInput, numInput, areaInput, listEdit,
+  frow, textInput, numInput, areaInput, listEdit, surprisePickButton,
 } from './sheetlib.js';
 
 export const label = 'Call of Cthulhu 7e';
 export const tagline = 'Percentile dice, a day job, and a sanity score to lose.';
 
 let cached = null;
+/** The catalog if it has loaded already (sync callers render without waiting). */
+export const loadedData = () => cached;
 export async function loadData() {
   if (!cached) {
     const res = await fetch('/systems/coc7.json');
@@ -349,12 +351,20 @@ export const wizard = {
         eraSel.addEventListener('change', () => { draft.era = eraSel.value; });
         const ageInput = el('input', { type: 'number', min: 15, max: 89, value: draft.age, style: 'width:70px' });
         ageInput.addEventListener('input', () => { draft.age = Number(ageInput.value) || 30; });
+        const pickOccupation = (o) => {
+          draft.occupation = o;
+          draft.occAlloc = null;
+          draft.occPicks = {};
+          ctx.update();
+        };
         return el('div', {},
           el('div', { class: 'row' }, el('label', {}, 'Era'), eraSel, el('label', {}, 'Age'), ageInput),
-          el('div', { class: 'edition-cards wiz-cards', style: 'margin-top:10px' },
+          el('div', { class: 'wiz-card-actions', style: 'margin-top:10px' },
+            surprisePickButton(ctx.data.occupations, pickOccupation)),
+          el('div', { class: 'edition-cards wiz-cards' },
             ctx.data.occupations.map((o) => el('div', {
               class: `edition-card${draft.occupation?.name === o.name ? ' sel' : ''}`,
-              onclick: () => { draft.occupation = o; draft.occAlloc = null; draft.occPicks = {}; ctx.update(); },
+              onclick: () => pickOccupation(o),
             },
               el('div', { style: 'font-weight:600' }, o.name),
               el('div', { class: 'muted small' }, `Points: ${formulaLabel(o)} · Credit ${o.creditRating[0]}–${o.creditRating[1]}`)))));
@@ -371,6 +381,18 @@ export const wizard = {
         const log = el('div', { class: 'small muted', style: 'margin-top:8px;white-space:pre-line' });
 
         const bracket = ctx.data.ageModifiers.find((m) => draft.age >= m.range[0] && draft.age <= m.range[1]);
+        // Typed characteristics need a separate Luck value. The Roll button
+        // fills it; Review and finish() must never invent one silently.
+        const luckInput = el('input', { type: 'number', min: 1, max: 99, value: draft.luck ?? '', placeholder: '—', style: 'width:70px' });
+        luckInput.addEventListener('input', () => { draft.luck = Number(luckInput.value) || 0; });
+        const luckRoll = el('button', {
+          class: 'ghost small', title: bracket?.luckBestOfTwo ? 'Roll 3d6 ×5 and use the better of two rolls at this age' : 'Roll 3d6 ×5',
+          onclick: () => {
+            const l1 = roll3d6x5(), l2 = roll3d6x5();
+            draft.luck = bracket?.luckBestOfTwo ? Math.max(l1, l2) : l1;
+            luckInput.value = draft.luck;
+          },
+        }, '🎲 3d6 ×5');
         const redraw = () => {
           grid.innerHTML = '';
           for (const k of CHARS) {
@@ -378,6 +400,7 @@ export const wizard = {
             inp.addEventListener('input', () => { (draft.characteristics ??= {})[k] = Number(inp.value) || 0; });
             grid.append(el('label', {}, k, inp));
           }
+          luckInput.value = draft.luck ?? '';
           log.textContent = draft.charLog.join('\n');
         };
         const rollAll = el('button', {
@@ -412,13 +435,16 @@ export const wizard = {
           },
         }, '🎲 Roll characteristics');
         wrap.append(el('div', { class: 'row' }, rollAll,
-          el('span', { class: 'muted small' }, `or type your own — the point-pool variant gives you ${ctx.data.pointPool} to divide across all eight`)),
-          grid, log);
+          el('span', { class: 'muted small' }, `or type your own. The point-pool variant gives you ${ctx.data.pointPool} to divide across all eight`)),
+          grid,
+          el('div', { class: 'row small', style: 'margin-top:6px' }, el('strong', {}, 'Luck'), luckInput, luckRoll),
+          log);
         redraw();
         return wrap;
       },
       validate(draft) {
         if (!draft.characteristics || CHARS.some((k) => !draft.characteristics[k])) return 'Roll or enter all eight characteristics.';
+        if (!draft.luck) return 'Roll or enter Luck (3d6 ×5).';
         return null;
       },
     },
@@ -473,7 +499,18 @@ export const wizard = {
             const key = `${s.choose ? 'c' : 'a'}${idx}-${i}`;
             const sel = el('select', {}, from.map((name) => el('option', {}, name)));
             sel.value = draft.occPicks[key];
-            sel.addEventListener('change', () => { draft.occPicks[key] = sel.value; ctx.update(); });
+            sel.addEventListener('change', () => {
+              const prev = draft.occPicks[key];
+              draft.occPicks[key] = sel.value;
+              // points on a skill no slot (or fixed entry) resolves any more
+              // would still count into the spent total, so drop them
+              if (prev && prev !== sel.value
+                  && !occ.skills.includes(prev)
+                  && !Object.values(draft.occPicks).includes(prev)) {
+                delete draft.occAlloc[prev];
+              }
+              ctx.update();
+            });
             wrap.append(el('div', { class: 'row small' }, el('span', { class: 'muted' }, s.label || 'any skill:'), sel));
           }
         });

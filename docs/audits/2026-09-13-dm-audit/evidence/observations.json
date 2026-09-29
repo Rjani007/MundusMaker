@@ -1,0 +1,167 @@
+[
+  {
+    "screen": "01-welcome",
+    "note": "Fresh profile opens a populated sample world and an introductory modal. Initial loading frame was rejected and replaced by this stable capture.",
+    "url": "http://localhost:4981/"
+  },
+  {
+    "screen": "02-empty-world",
+    "note": "Creating an empty world worked. The dashboard gives equal visual weight to eleven empty categories; first-entry and character-creator actions are below them. No campaign-prep checklist or system choice appears.",
+    "url": "http://localhost:4981/#/"
+  },
+  {
+    "screen": "03-custom-categories",
+    "note": "Gods and Quests were easy to create with suggested quick facts. New categories append at the bottom; only one-position Earlier/Later buttons are visible for reordering, so moving a category near the top would take repeated clicks.",
+    "url": "http://localhost:4981/#/categories"
+  },
+  {
+    "screen": "04-entry-editor",
+    "note": "The entry exposes prose, multiple block kinds, quick facts, relations and map creation in one long page. During this run the explicit Edit button was intercepted by the text paragraph; clicking the prose opened editing. Treat the button behavior as a follow-up verification item, not a confirmed general failure.",
+    "url": "http://localhost:4981/#/e/the-drowned-lantern"
+  },
+  {
+    "screen": "05-sidebar-quick-create",
+    "note": "The new-entry name field in the sidebar is only about 45px wide at 1365px viewport; a normal NPC name is clipped to a few letters while the type and dice controls occupy most of the row. Quick-fact inputs have a shared dash accessible name rather than their visible field labels.",
+    "url": "http://localhost:4981/#/e/the-drowned-lantern"
+  },
+  {
+    "screen": "06-quest-and-relations",
+    "note": "Writing wiki links connected existing entries and left recognizable create-on-click links for missing ones. Custom Quest Status inherits the generic helper Alive, dead, missing? and placeholder alive, missing, imprisoned, which is inappropriate for quest status. Relations require a separate label plus an alphabetical native target dropdown.",
+    "url": "http://localhost:4981/#/e/the-bell-beneath-the-bay"
+  },
+  {
+    "screen": "07-world-map",
+    "note": "The new world was generated with default 1.8 settings. Controls, region links and settlements occupy a long side panel. I need a coastal capital called Blackwater, and must relate names in this panel to small labels on the map.",
+    "url": "http://localhost:4981/#/map/the-lantern-sea"
+  },
+  {
+    "screen": "08-inherited-region",
+    "note": "Creating a region asks a clear confirmation, then opens a region map with inherited settlement names. The entry name is The Bell Coast. The map editor has only a back link to the current entry, rather than a visible world→region breadcrumb.",
+    "url": "http://localhost:4981/#/map/the-bell-coast"
+  },
+  {
+    "screen": "09-blackwater-town",
+    "note": "The region-to-town drill inherited Blackwater’s name and coastal layout. The generated plan has meaningful wards, gardens, quays and a market, but the map starts without the campaign’s existing NPCs or clue locations attached. Its initial controls show Metropolis and Desert. A capital can reasonably be large; the difficulty is the absence of a drill-time review of size and terrain, especially beside the green parent region.",
+    "url": "http://localhost:4981/#/map/blackwater"
+  },
+  {
+    "screen": "10-marker-tools",
+    "note": "Clicking the generated Lantern Inn label did not open an entry or selection. To attach campaign characters I have to place a separate marker. The panel’s six color swatches have no accessible names, and its controls extend beyond the right viewport edge at this laptop width.",
+    "url": "http://localhost:4981/#/map/blackwater"
+  },
+  {
+    "screen": "11-crypt-preview",
+    "note": "The crypt style offers a side-by-side confirmation before applying. This makes regeneration understandable and reversible, but the preview labels do not explain which generated rooms, doors or stairs change.",
+    "url": "http://localhost:4981/#/map/the-sunken-chapel"
+  },
+  {
+    "screen": "12-two-floor-crypt",
+    "note": "The second floor was added successfully and a level switcher appears. Changing the floor count uses the same preview as other parameters, which previews only the currently displayed floor; it does not show the newly requested floor before applying. Room numbers exist on the image, but there is no visible room-key list for DM notes.",
+    "url": "http://localhost:4981/#/map/the-sunken-chapel"
+  },
+  {
+    "screen": "13-lower-crypt",
+    "note": "The L2 switch opens the lower crypt with a visible stair landing. The editor remains a geometry canvas: there is no visible room-key or encounter-notes surface tied to the generated room numbers.",
+    "url": "http://localhost:4981/#/map/the-sunken-chapel"
+  },
+  {
+    "screen": "14-player-dungeon-export",
+    "note": "The actual player-safe PNG still contains the generated GOAL and IN labels and room numbers. GOAL exposes suggested adventure structure even though it is not a user-marked secret; a DM annotation toggle or cleaner player map is needed.",
+    "url": "http://localhost:4981/#/map/the-sunken-chapel"
+  },
+  {
+    "screen": "15-character-class",
+    "note": "The class browser provides clear source filtering and a persistent character summary. The step navigation already shows Review & finish with a checkmark although no species, background or scores have been chosen, which makes completion status harder to trust.",
+    "url": "http://localhost:4981/#/create/dnd2024"
+  },
+  {
+    "screen": "16-weapon-mastery-notes",
+    "note": "Fighting Style is a structured choice, but mandatory Weapon Mastery selections are a free-text notes box inside a collapsed feature. A DM has to supply the three weapon names and understand their mastery effects without guided selection or validation here. Evidence limit: this viewport shows the opened feature area; the notes field itself was verified through the DOM and by entering the three weapon names, but is below this screenshot’s fold.",
+    "url": "http://localhost:4981/#/create/dnd2024"
+  },
+  {
+    "screen": "17-created-sheet",
+    "note": "The creator produced one playable sheet with AC 17, HP 13, correct chosen skill bonuses, inventory and recorded mastery notes. Tool proficiency still says Gaming set of your choice after I specified Dragonchess Set in equipment and notes. Character backstory mentions remain inside the sheet, while the separate entry Background and Goals & bonds sections are empty.",
+    "url": "http://localhost:4981/#/e/tessa-brine"
+  },
+  {
+    "screen": "18-level-up-review",
+    "note": "The level-up review correctly shows HP 13 → 22 (+9), including the dwarf’s extra HP, and adds Action Surge and Tactical Mind. It clearly requires review before Apply, but opens within the full manual sheet editor, whose many editable fields make this more crowded than the creator.",
+    "url": "http://localhost:4981/#/e/tessa-brine"
+  },
+  {
+    "screen": "19-calendar-setup",
+    "note": "Calendar opens as a configuration form with no named months, rather than a view of upcoming campaign events. Scheduling the Lantern Festival requires defining months here, then leaving for an Event entry and its date controls. The form explains that split, but it adds setup and navigation work.",
+    "url": "http://localhost:4981/#/calendar"
+  },
+  {
+    "screen": "20-session-encounter",
+    "note": "A prepared session and its Encounter workspace share the tracker. Adding Tessa copied her level-2 HP (22); applying 5 damage showed 17 and Undo restored 22. Linked entry access is clear. Each combatant is a tall card, and conditions are free text with no rule shortcut, so larger combats will require more scrolling and lookup.",
+    "url": "http://localhost:4981/#/encounter/session-1-the-missing-seven-days"
+  },
+  {
+    "screen": "21-reference-systems",
+    "note": "The ready-written library includes D&D, Vampire V5 and Call of Cthulhu filters. I pinned Frightened and Blinded for this campaign, and inspected the other systems without adding unrelated rules. Search, topic filters and a preview are useful; rules create ordinary editable GM-only notes.",
+    "url": "http://localhost:4981/#/dm-screen"
+  },
+  {
+    "screen": "22-pinned-dm-screen",
+    "note": "Rules and campaign entries pin correctly and retain links to their source entries. Long rules attribution and full entry text compete for space. With five pins the board needs substantial scrolling, and there are no visible per-session boards, compact modes, or free placement controls.",
+    "url": "http://localhost:4981/#/dm-screen"
+  },
+  {
+    "screen": "23-session-pins",
+    "note": "The pinned session retains its linked people, places and clues. Reaching these notes takes scrolling below the rule cards and their attribution. A compact session-first arrangement would reduce lookup time during play.",
+    "url": "http://localhost:4981/#/dm-screen"
+  },
+  {
+    "screen": "24-letter-preview",
+    "note": "Authored a one-page Letter with sender, campaign date, body and signature, parchment and a fine border. Added a secret GM annotation; player preview displays the public letter without it. Separate preview and export edition controls need attention when switching.",
+    "url": "http://localhost:4981/#/handouts/mara-s-sealed-letter"
+  },
+  {
+    "screen": "25-linked-item-card",
+    "note": "Saved Item card links to the existing Saltglass Key entry and includes its selected public description. Choosing a source leaves sample brass-key/observatory text in place until manually cleared. The source entry title repeats under the custom footer; the source content comes after the footer.",
+    "url": "http://localhost:4981/#/handouts/saltglass-key-player-card"
+  },
+  {
+    "screen": "26-handout-packet",
+    "note": "Selected a letter and linked item card for a player PDF and image packet. Leaving the Handouts list to inspect a card and returning clears packet selection/order; it is not a saved session packet.",
+    "url": "http://localhost:4981/#/handouts"
+  },
+  {
+    "screen": "27-player-world",
+    "note": "Player preview hides the four GM-only entries, including the Choir Below, Session 1 and both rule notes. Public sidebar and dashboard remain readable, and the campaign clock shows the festival in two days. The world-picker summary still shows an older entry count until reload.",
+    "url": "http://localhost:4981/#/"
+  },
+  {
+    "screen": "28-player-crypt",
+    "note": "Player preview correctly omits the secret Reliquary marker, but generated IN, GOAL and room numbers remain on the lower-floor map. The read-only map view still devotes a large side panel to disabled generator controls and shows a literal null beside the banner.",
+    "url": "http://localhost:4981/#/map/the-sunken-chapel"
+  },
+  {
+    "screen": "29-player-export-review",
+    "note": "The export page clearly counts four hidden entries, thirteen secret blocks and two secret map items before generating the player edition. Standard character sheets, maps, timeline and relationships can be included. Direct player routes to the Choir Below and DM Screen showed only access notices.",
+    "url": "http://localhost:4981/#/export"
+  },
+  {
+    "screen": "30-campaign-clock",
+    "note": "Advancing the campaign clock from 12 to 13 Lanternfall correctly moves the Lantern Festival from in two days to tomorrow. The clock is useful after calendar setup; scheduling still spans the Calendar configuration, an Event entry and Timeline.",
+    "url": "http://localhost:4981/#/"
+  },
+  {
+    "screen": "31-backup",
+    "note": "Settings offers a current-world JSON backup and a separate Include images checkbox. The data folder points only to the isolated audit directory; map-link integrity reports no broken targets. Backups are separate from the Export tab used for player PDFs.",
+    "url": "http://localhost:4981/#/settings"
+  },
+  {
+    "screen": "32-reopened-character",
+    "note": "After reloading the app, the chosen world is retained and Tessa remains a level-2 Dwarf Fighter with AC 17 and 22/22 HP. The campaign clock remains 13 Lanternfall. The world summary refreshes to the correct 19 entries.",
+    "url": "http://localhost:4981/#/e/tessa-brine"
+  },
+  {
+    "screen": "33-reopened-encounter",
+    "note": "After reloading, Session 1 retains initiative order, the active Choir lookout turn, Tessa’s encounter HP of 17/22 and the lookout’s Frightened reminder. Tessa’s source character sheet remains 22/22; encounter damage does not modify the character.",
+    "url": "http://localhost:4981/#/encounter"
+  }
+]

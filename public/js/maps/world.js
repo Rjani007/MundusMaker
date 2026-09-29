@@ -9,6 +9,10 @@
 
 import { makeFbm, makeRng, clamp } from '../util.js';
 import { nameFor } from '../names.js';
+import { siteKey, customKey } from './crossscale.js';
+import { buildGeography, drainage, naturalTerritories } from './geography.js';
+import { drawMapLabels } from './cartography.js';
+import { renderGeographicMap } from './atlasart.js';
 
 export const WORLD_W = 960;
 export const WORLD_H = 600;
@@ -95,8 +99,10 @@ function biome(h, m, wl) {
   return C.dry;
 }
 
-/** Trace rivers: descend from random highlands to the sea. Deterministic from seed. */
-function traceRivers(model, seed, count) {
+/** Trace rivers: descend from random highlands to the sea. Deterministic from
+ *  seed — exported so town drills can read river adjacency on classic worlds
+ *  (the render calls the same function; nothing is stored on the model). */
+export function traceClassicRivers(model, seed, count) {
   const { height, water, gw, gh } = model;
   const rng = makeRng(seed + ':rivers');
   const rivers = [];
@@ -173,7 +179,7 @@ export function renderWorldBase(map, model, scale = 1) {
   const sx = WORLD_W / gw, sy = WORLD_H / gh;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  for (const path of traceRivers(model, map.seed, p.rivers)) {
+  for (const path of traceClassicRivers(model, map.seed, p.rivers)) {
     for (let seg = 1; seg < path.length; seg++) {
       ctx.strokeStyle = 'rgba(56, 108, 150, 0.9)';
       ctx.lineWidth = 1 + (seg / path.length) * 2.6;
@@ -190,6 +196,7 @@ export function renderWorldBase(map, model, scale = 1) {
   grad.addColorStop(1, 'rgba(20,16,10,0.35)');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, WORLD_W, WORLD_H);
+  drawClassicSites(ctx, map);
   return base;
 }
 
@@ -202,6 +209,7 @@ export function renderWorldBase(map, model, scale = 1) {
 const AGW = 480, AGH = 300; // atlas sim grid (same density; rendered crisp, not blurred)
 
 function buildAtlasModel(map) {
+  if (map.params?.generation === '1.8') return buildGeographicAtlas(map);
   const p = { ...defaultWorldParams(), ...(map.params || {}) };
   const hf = makeFbm(map.seed, 5);
   const wf = makeFbm(map.seed + ':warp', 3);
@@ -247,7 +255,101 @@ function buildAtlasModel(map) {
   model.rivers = traceAtlasRivers(model, map.seed, p.rivers ?? 6);
   if ((p.nations ?? 0) > 0) buildNations(model, map.seed, p.nations);
   if (p.settlements ?? true) placeSettlements(model, map.seed);
+  // user edits are applied strictly AFTER every stream above has been consumed,
+  // so an edited map still generates the same base world as its seed always did
+  attachAtlasKeys(model);
+  applyAtlasEdits(model, map);
   return model;
+}
+
+function buildGeographicAtlas(map) {
+  const p = { ...defaultWorldParams(), ...(map.params || {}) };
+  const model = { ...buildGeography(map.seed, p), atlas:true, params:p };
+  for (const s of map.strokes || []) applyStrokeDims(model.height, s, model.gw, model.gh);
+  Object.assign(model, drainage(model, (p.rivers ?? 6) * 2));
+  const seed = map.seed + ':v18';
+  if ((p.nations ?? 0) > 0) buildNations(model, seed, p.nations);
+  if (p.settlements ?? true) placeSettlements(model, seed);
+  for (const town of model.towns || []) if (town.nationIndex != null) model.nations[town.nationIndex].capital = [town.x,town.y];
+  if (model.nations?.length) growNationTerritories(model);
+  // Existing names, site keys, link provenance and edit behavior stay shared.
+  attachAtlasKeys(model); applyAtlasEdits(model, map);
+  return model;
+}
+
+/** Stable identity for links/edits: keys embed the GENERATED name, so they
+ *  survive renames and never depend on what the user later calls a site. */
+function attachAtlasKeys(model) {
+  (model.towns || []).forEach((t, i) => { t.key = siteKey('world', i, t.name); });
+  (model.nations || []).forEach((nat, i) => { nat.key = siteKey('nation', i, nat.name); });
+}
+
+/** Replay map.siteEdits and map.sites onto the finished model. Moving or
+ *  hiding a capital (or adding a region) regrows territories from the same
+ *  preserved jitter, so frontiers keep their wander without new stream use. */
+function applyAtlasEdits(model, map) {
+  const edits = map.siteEdits || {};
+  const custom = map.sites || [];
+  if (!Object.keys(edits).length && !custom.length) return;
+  const { gw, gh } = model;
+  let regrow = false;
+
+  const nations = model.nations || (model.nations = []);
+  for (const s of custom) {
+    if (s.kind !== 'region') continue;
+    nations.push({
+      capital: [s.x * gw, s.y * gh],
+      cx: s.x * gw, cy: s.y * gh, cells: 0,
+      name: String(s.name || 'New region'),
+      custom: true, key: customKey(s),
+    });
+    regrow = true;
+  }
+  for (const nat of nations) {
+    const e = edits[nat.key];
+    if (!e) continue;
+    if (e.name) nat.name = String(e.name);
+    if (e.hidden) { nat.hidden = true; regrow = true; }
+  }
+
+  const towns = model.towns || (model.towns = []);
+  for (const s of custom) {
+    if (s.kind === 'region') continue;
+    towns.push({
+      x: s.x * gw, y: s.y * gh,
+      size: Math.max(1, Math.min(3, Number(s.size) || 1)),
+      townSize: Number(s.townSize) || null,
+      name: String(s.name || 'New town'),
+      custom: true, key: customKey(s),
+    });
+  }
+  for (const t of towns) {
+    const e = edits[t.key];
+    if (!e) continue;
+    if (e.name) t.name = String(e.name);
+    if (e.x != null && e.y != null) {
+      t.x = e.x * gw;
+      t.y = e.y * gh;
+      if (t.nationIndex != null && nations[t.nationIndex]) {
+        // the capital city is its nation's drag handle — the seat follows it
+        nations[t.nationIndex].capital = [t.x, t.y];
+        regrow = true;
+      }
+    }
+  }
+  model.towns = towns.filter((t) => !edits[t.key]?.hidden);
+
+  if (regrow) {
+    if (!model.natJitter) {
+      // regions added to a map generated with nations off: frontier jitter
+      // comes from its own stream, consumed only when such edits exist
+      const rng = makeRng(map.seed + ':natedit');
+      const j = new Float32Array(gw * gh);
+      for (let i = 0; i < j.length; i++) j[i] = rng.range(0, 1.4);
+      model.natJitter = j;
+    }
+    growNationTerritories(model);
+  }
 }
 
 /** Rivers that pool into lakes instead of vanishing at a local minimum. */
@@ -304,7 +406,7 @@ function buildNations(model, seed, n) {
   const { height, water, gw, gh } = model;
   const rng = makeRng(seed + ':nations');
   const land = [];
-  for (let i = 0; i < height.length; i++) if (height[i] >= water) land.push(i);
+  for (let i = 0; i < height.length; i++) if (height[i] >= water && !model.lakeMask?.[i]) land.push(i);
   if (land.length < n * 50) return;
   const capitals = [];
   let guard = 0;
@@ -314,13 +416,32 @@ function buildNations(model, seed, n) {
     if (capitals.some(([x, y]) => Math.hypot(x - cx, y - cy) < gw / (n + 1.5))) continue;
     capitals.push([cx, cy]);
   }
-  const owner = new Int8Array(gw * gh).fill(-1);
-  // multi-source BFS with per-cell cost jitter so borders wander naturally
-  const queue = [];
-  capitals.forEach(([x, y], ci) => { owner[y * gw + x] = ci; queue.push([x, y, ci, 0]); });
+  // Jitter draws stay exactly where they were in the stream; the array remains
+  // on the model so seat edits can regrow the SAME frontiers later
   const jitter = new Float32Array(gw * gh);
   for (let i = 0; i < jitter.length; i++) jitter[i] = rng.range(0, 1.4);
-  queue.sort(() => 0); // stable
+  model.natJitter = jitter;
+  const nameRng = makeRng(seed + ':names');
+  model.nations = capitals.map(([x, y]) => ({ capital: [x, y], name: nameFor(nameRng, 'nation') }));
+  growNationTerritories(model);
+}
+
+/** Multi-source BFS from each visible nation's capital over the preserved
+ *  jitter — pure computation, no RNG. Recomputes owner, centroids and cells;
+ *  called once during generation and again after seat edits. */
+function growNationTerritories(model) {
+  if (model.generation === '1.8') return naturalTerritories(model);
+  const { height, water, gw, gh } = model;
+  const owner = new Int8Array(gw * gh).fill(-1);
+  const jitter = model.natJitter;
+  const queue = [];
+  model.nations.forEach((nat, ci) => {
+    if (nat.hidden) return;
+    const x = clamp(Math.round(nat.capital[0]), 0, gw - 1);
+    const y = clamp(Math.round(nat.capital[1]), 0, gh - 1);
+    owner[y * gw + x] = ci;
+    queue.push([x, y, ci]);
+  });
   let head = 0;
   while (head < queue.length) {
     const [x, y, ci] = queue[head++];
@@ -328,29 +449,25 @@ function buildNations(model, seed, n) {
       const nx = x + dx, ny = y + dy;
       if (nx < 0 || ny < 0 || nx >= gw || ny >= gh) continue;
       const ni = ny * gw + nx;
-      if (owner[ni] >= 0 || height[ni] < water) continue;
+      if (owner[ni] >= 0 || height[ni] < water || model.lakeMask?.[ni]) continue;
       // mountains slow a nation's spread — ranges become natural borders
       if (height[ni] > water + 0.34 && jitter[ni] > 0.5) continue;
       owner[ni] = ci;
       queue.push([nx, ny, ci]);
     }
   }
-  const nameRng = makeRng(seed + ':names');
-  model.nations = capitals.map(([x, y], ci) => {
+  model.owner = owner;
+  model.nations.forEach((nat, ci) => {
     // centroid of the owned cells, for the big faint name
     let sx = 0, sy = 0, count = 0;
     for (let i = 0; i < owner.length; i++) {
       if (owner[i] !== ci) continue;
       sx += i % gw; sy += (i / gw) | 0; count++;
     }
-    return {
-      capital: [x, y],
-      cx: count ? sx / count : x, cy: count ? sy / count : y,
-      name: nameFor(nameRng, 'nation'),
-      cells: count,
-    };
+    nat.cx = count ? sx / count : nat.capital[0];
+    nat.cy = count ? sy / count : nat.capital[1];
+    nat.cells = count;
   });
-  model.owner = owner;
 }
 
 /** Score-and-place towns: coasts and rivers attract, spacing keeps them apart. */
@@ -377,7 +494,7 @@ function placeSettlements(model, seed) {
   for (let t = 0; t < 900; t++) {
     const x = rng.int(8, gw - 9), y = rng.int(8, gh - 9);
     const h = height[y * gw + x];
-    if (h < water || h > water + 0.3) continue;
+    if (h < water || h > water + 0.3 || model.lakeMask?.[y * gw + x]) continue;
     let score = rng.range(0, 0.4);
     if (nearSea(x, y)) score += 1.1;
     if (nearRiver(x, y)) score += 0.8;
@@ -391,17 +508,17 @@ function placeSettlements(model, seed) {
     if (towns.some((t) => Math.hypot(t.x - c.x, t.y - c.y) < 52)) continue;
     towns.push({ x: c.x, y: c.y, size: towns.length < 3 ? 2 : 1, name: nameFor(nameRng, 'settlement') });
   }
-  // nation capitals become cities (the glyph and label upgrade)
-  for (const nat of model.nations || []) {
+  // nation capitals become cities (the glyph and label upgrade); nationIndex
+  // marks the capital as its nation's drag handle for the site-edit layer
+  (model.nations || []).forEach((nat, ni) => {
     const [x, y] = nat.capital;
     const existing = towns.find((t) => Math.hypot(t.x - x, t.y - y) < 30);
-    if (existing) { existing.size = 3; existing.capital = true; nat.capitalName = existing.name; }
+    if (existing) { existing.size = 3; existing.capital = true; existing.nationIndex = ni; }
     else {
-      const t = { x, y, size: 3, capital: true, name: nameFor(nameRng, 'settlement') };
-      nat.capitalName = t.name;
+      const t = { x, y, size: 3, capital: true, nationIndex: ni, name: nameFor(nameRng, 'settlement') };
       towns.push(t);
     }
-  }
+  });
   model.towns = towns;
 }
 
@@ -436,8 +553,90 @@ function atlasBiome(h, m, temp, wl) {
 
 const NATION_TINTS = [[224, 114, 74], [74, 134, 224], [155, 89, 208], [212, 167, 44], [90, 158, 111], [201, 93, 143], [94, 178, 178]];
 
+// glyph + label for one settlement, shared by the atlas draw loop and the
+// classic style's custom-site pass — the exact op sequence the atlas loop
+// always used, so extraction changes no pixels
+function drawTownGlyph(ctx, t, px, py) {
+  ctx.fillStyle = '#2e2318';
+  ctx.strokeStyle = '#f0e8d0';
+  ctx.lineWidth = 1.2;
+  if (t.size >= 3) {
+    ctx.fillRect(px - 5, py - 5, 10, 10);
+    ctx.strokeRect(px - 5, py - 5, 10, 10);
+    ctx.beginPath(); // capital star
+    ctx.arc(px, py, 2, 0, Math.PI * 2);
+    ctx.fillStyle = '#f0e8d0';
+    ctx.fill();
+  } else if (t.size === 2) {
+    ctx.fillRect(px - 3.5, py - 3.5, 7, 7);
+    ctx.strokeRect(px - 3.5, py - 3.5, 7, 7);
+  } else {
+    ctx.beginPath();
+    ctx.arc(px, py, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+}
+
+function drawTownLabel(ctx, t, px, py) {
+  ctx.font = `${t.size >= 3 ? 'bold 13px' : t.size === 2 ? 'bold 11px' : '10px'} Georgia, serif`;
+  ctx.strokeStyle = 'rgba(240, 232, 208, 0.85)';
+  ctx.lineWidth = 3;
+  ctx.strokeText(t.name, px, py - 8);
+  ctx.fillStyle = '#241a10';
+  ctx.fillText(t.name, px, py - 8);
+}
+
+/** A block flying a pennant — the seat of a user-planted region. */
+function drawRegionSeat(ctx, x, y) {
+  ctx.fillStyle = '#2e2318';
+  ctx.strokeStyle = '#f0e8d0';
+  ctx.lineWidth = 1.2;
+  ctx.fillRect(x - 4, y - 4, 8, 8);
+  ctx.strokeRect(x - 4, y - 4, 8, 8);
+  ctx.beginPath();
+  ctx.moveTo(x, y - 4);
+  ctx.lineTo(x, y - 16);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x, y - 16);
+  ctx.lineTo(x + 9, y - 12.5);
+  ctx.lineTo(x, y - 9);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+}
+
+/** Classic worlds generate no sites of their own; anything the user planted
+ *  still draws (and drills down) — gated on data presence so the frozen
+ *  classic path stays byte-identical for every map without sites. */
+function drawClassicSites(ctx, map) {
+  const sites = map.sites || [];
+  if (!sites.length) return;
+  ctx.save();
+  ctx.textAlign = 'center';
+  for (const s of sites) {
+    const px = s.x * WORLD_W, py = s.y * WORLD_H;
+    if (s.kind === 'region') {
+      drawRegionSeat(ctx, px, py);
+      ctx.font = 'bold 15px Georgia, serif';
+      ctx.strokeStyle = 'rgba(240, 232, 208, 0.85)';
+      ctx.lineWidth = 3;
+      ctx.strokeText(String(s.name || 'Region'), px, py - 20);
+      ctx.fillStyle = '#241a10';
+      ctx.fillText(String(s.name || 'Region'), px, py - 20);
+    } else {
+      const t = { size: Math.max(1, Math.min(3, Number(s.size) || 1)), name: String(s.name || 'Settlement') };
+      drawTownGlyph(ctx, t, px, py);
+      drawTownLabel(ctx, t, px, py);
+    }
+  }
+  ctx.restore();
+}
+
 function renderAtlasBase(map, model, scale = 1) {
   const m = model && model.atlas ? model : buildAtlasModel(map);
+  if (m.generation === '1.8') return renderGeographicMap(map, m, scale);
   const { height, moisture, water: wl, gw, gh } = m;
   const p = m.params;
 
@@ -584,45 +783,33 @@ function renderAtlasBase(map, model, scale = 1) {
   if (m.towns && (p.labels ?? true)) ctx.textAlign = 'center';
   for (const t of m.towns || []) {
     const px = t.x * sx, py = t.y * sy;
-    ctx.fillStyle = '#2e2318';
-    ctx.strokeStyle = '#f0e8d0';
-    ctx.lineWidth = 1.2;
-    if (t.size >= 3) {
-      ctx.fillRect(px - 5, py - 5, 10, 10);
-      ctx.strokeRect(px - 5, py - 5, 10, 10);
-      ctx.beginPath(); // capital star
-      ctx.arc(px, py, 2, 0, Math.PI * 2);
-      ctx.fillStyle = '#f0e8d0';
-      ctx.fill();
-    } else if (t.size === 2) {
-      ctx.fillRect(px - 3.5, py - 3.5, 7, 7);
-      ctx.strokeRect(px - 3.5, py - 3.5, 7, 7);
-    } else {
-      ctx.beginPath();
-      ctx.arc(px, py, 3, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-    }
-    if (p.labels ?? true) {
-      ctx.font = `${t.size >= 3 ? 'bold 13px' : t.size === 2 ? 'bold 11px' : '10px'} Georgia, serif`;
-      ctx.strokeStyle = 'rgba(240, 232, 208, 0.85)';
-      ctx.lineWidth = 3;
-      ctx.strokeText(t.name, px, py - 8);
-      ctx.fillStyle = '#241a10';
-      ctx.fillText(t.name, px, py - 8);
-    }
+    drawTownGlyph(ctx, t, px, py);
+    if ((p.labels ?? true) && m.generation!=='1.8') drawTownLabel(ctx, t, px, py);
   }
 
-  // nation names, big and faint across their heartlands
-  if (p.labels ?? true) {
+  // user-planted region seats fly a banner so there is something to grab
+  for (const nat of m.nations || []) {
+    if (!nat.custom || nat.hidden) continue;
+    drawRegionSeat(ctx, nat.capital[0] * sx, nat.capital[1] * sy);
+  }
+
+  // nation names, big and faint across their heartlands (user-added ones
+  // always print — the owner planted them on purpose, however small)
+  if ((p.labels ?? true) && m.generation!=='1.8') {
     for (const nat of m.nations || []) {
-      if (nat.cells < 600) continue;
+      if (nat.hidden) continue;
+      if (nat.cells < 600 && !nat.custom) continue;
       ctx.font = 'bold 26px Georgia, serif';
       ctx.textAlign = 'center';
       ctx.fillStyle = 'rgba(46, 30, 20, 0.32)';
       ctx.fillText(nat.name.toUpperCase(), nat.cx * sx, nat.cy * sy);
     }
   }
+
+  if ((p.labels??true) && m.generation==='1.8') drawMapLabels(ctx,[
+    ...(m.towns||[]).map(t=>({text:t.name,x:t.x*sx,y:t.y*sy,size:t.capital?15:12,bold:true,priority:t.capital?10:8})),
+    ...(m.nations||[]).filter(n=>!n.hidden&&(n.cells>600||n.custom)).map(n=>({text:n.name.toUpperCase(),x:n.cx*sx,y:n.cy*sy,size:24,bold:true,center:true,priority:3})),
+  ],WORLD_W,WORLD_H);
 
   // vignette, same charted-map feel as classic
   const grad2 = ctx.createRadialGradient(WORLD_W / 2, WORLD_H / 2, WORLD_H * 0.55, WORLD_W / 2, WORLD_H / 2, WORLD_W * 0.72);

@@ -1,0 +1,19 @@
+[
+  {"name":"classic-world","map":{"kind":"world","seed":"sundered-reach","params":{"water":0.5,"scale":3,"island":true,"rivers":6}}},
+  {"name":"atlas-world","map":{"kind":"world","seed":"silver-coast","params":{"style":"atlas","water":0.46,"scale":3,"island":false,"rivers":9,"nations":4,"settlements":true,"labels":true}}},
+  {"name":"edited-atlas","map":{"kind":"world","seed":"silver-coast","params":{"style":"atlas","water":0.46,"scale":3,"island":false,"rivers":9,"nations":4,"settlements":true,"labels":true},"strokes":[{"x":0.45,"y":0.45,"r":0.1,"d":0.2}],"sites":[{"id":"port","kind":"settlement","name":"Old Harbor","x":0.5,"y":0.5}],"siteEdits":{"custom:port":{"name":"Safe Harbor"}}}},
+  {"name":"region","map":{"kind":"region","seed":"provincial","params":{"terrain":"green","water":0.4,"relief":0.65,"settlements":5,"landmarks":4,"roads":true,"hexes":true}}},
+  {"name":"carved-region","carved":true},
+  {"name":"coastal-town","map":{"kind":"town","seed":"coastal-canary","params":{"layout":"coastal","size":3,"walls":true,"wards":true,"terrain":"green","paving":"dirt"}}},
+  {"name":"riverside-town","map":{"kind":"town","seed":"bridgewater","params":{"layout":"riverside","size":3,"walls":true,"wards":true}}},
+  {"name":"organic-town","map":{"kind":"town","seed":"old-orchard","params":{"layout":"organic","size":2,"walls":false}}},
+  {"name":"grid-town","map":{"kind":"town","seed":"old-orchard","params":{"layout":"grid","size":4,"walls":true}}},
+  {"name":"crossroads-town","map":{"kind":"town","seed":"old-orchard","params":{"layout":"crossroads","size":3,"walls":true}}},
+  {"name":"interior-tavern","map":{"kind":"interior","seed":"sleeping-dragon","params":{"building":"tavern","cols":24,"rows":16,"furnished":true}}},
+  {"name":"interior-temple","map":{"kind":"interior","seed":"silver-moon","params":{"building":"temple","cols":24,"rows":20,"furnished":true}}},
+  {"name":"dungeon-rooms","map":{"kind":"dungeon","seed":"vaults","params":{"style":"rooms","cols":42,"rows":27,"rooms":9,"loops":0.25,"levels":3}}},
+  {"name":"dungeon-caves","map":{"kind":"dungeon","seed":"vaults","params":{"style":"caves","cols":42,"rows":27,"levels":2}}},
+  {"name":"dungeon-crypt","map":{"kind":"dungeon","seed":"vaults","params":{"style":"crypt","cols":42,"rows":27,"levels":2}}},
+  {"name":"dungeon-mine","map":{"kind":"dungeon","seed":"vaults","params":{"style":"mine","cols":42,"rows":27,"levels":2}}},
+  {"name":"dungeon-sewer","map":{"kind":"dungeon","seed":"vaults","params":{"style":"sewer","cols":42,"rows":27,"levels":2}}}
+]

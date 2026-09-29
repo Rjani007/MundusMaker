@@ -1,0 +1,56 @@
+{
+  "world": "The Bell Beneath Blackwater — DM Audit",
+  "entry_count": 19,
+  "types": {
+    "location": 4,
+    "npc": 3,
+    "note": 2,
+    "event": 1,
+    "handout": 2,
+    "item": 1,
+    "session": 1,
+    "character": 1,
+    "quests": 1,
+    "faction": 2,
+    "gods": 1
+  },
+  "gm_only_entries": 4,
+  "maps": [
+    {
+      "entry": "Blackwater",
+      "kind": "town",
+      "seed": "k2nw34j3:town:world:1:hiemport"
+    },
+    {
+      "entry": "The Bell Coast",
+      "kind": "region",
+      "seed": "k2nw34j3:region:nation:2:gaenyl%20concord"
+    },
+    {
+      "entry": "The Lantern Sea",
+      "kind": "world",
+      "seed": "k2nw34j3"
+    },
+    {
+      "entry": "The Sunken Chapel",
+      "kind": "dungeon",
+      "seed": "cp9mt43d"
+    }
+  ],
+  "clock": {
+    "year": 112,
+    "month": 9,
+    "day": 13
+  },
+  "dm_screen_pins": [
+    "d-d-frightened",
+    "d-d-blinded",
+    "mara-vell",
+    "session-1-the-missing-seven-days",
+    "the-sunken-chapel"
+  ],
+  "embedded_assets": 0,
+  "accepted_screenshots": 33,
+  "findings": 12,
+  "product_changes_for_audit": false
+}

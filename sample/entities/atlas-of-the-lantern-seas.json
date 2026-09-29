@@ -1,0 +1,50 @@
+{
+  "id": "atlas-of-the-lantern-seas",
+  "name": "Atlas of the Lantern Seas",
+  "type": "location",
+  "tags": [
+    "1.8 example"
+  ],
+  "gmOnly": false,
+  "fields": {},
+  "date": null,
+  "blocks": [
+    {
+      "id": "intro",
+      "kind": "text",
+      "text": "An example of the new 1.8 geography. Open the map and follow the linked province and its capital. The original Sundered Reach map remains in its classic style for comparison.",
+      "secret": false
+    }
+  ],
+  "relations": [],
+  "map": {
+    "kind": "world",
+    "seed": "silver-coast",
+    "params": {
+      "water": 0.5,
+      "scale": 3,
+      "island": true,
+      "rivers": 10,
+      "style": "atlas",
+      "nations": 4,
+      "settlements": true,
+      "labels": true,
+      "generation": "1.8",
+      "landform": "archipelago",
+      "title": "The Lantern Seas"
+    },
+    "compass": true,
+    "strokes": [],
+    "grid": null,
+    "markers": [],
+    "labels": [],
+    "stamps": [],
+    "paths": [],
+    "scaleLinks": {
+      "nation:0:fraerdolinium": "lantern-seas-province",
+      "world:8:hornstead": "lantern-seas-capital"
+    }
+  },
+  "created": "2026-09-10T00:00:00.000Z",
+  "updated": "2026-09-10T00:00:00.000Z"
+}

@@ -1,18 +1,22 @@
 // App shell: router, sidebar, world switcher, GM/player toggle.
 
-import { el, toast, rollDice, readSetting, writeSetting } from './util.js';
+import { el, toast, rollDice, readSetting, writeSetting, downloadBlob } from './util.js';
 import {
   init, on, state, setGm, types, typeOf, visibleEntities, createEntity,
-  selectWorld, refreshWorlds, saveState, flushSaves,
+  selectWorld, refreshWorlds, saveState, flushSaves, saveFailure, unsavedDraft, requireSaved,
 } from './state.js';
 import { api } from './api.js';
+import { compareSyncCopy } from './views/synccompare.js';
 import * as dashboard from './views/dashboard.js';
 import * as entity from './views/entity.js';
 import * as typeView from './views/type.js';
+import * as categoriesView from './views/categories.js';
+import { categoryGroups, relatedEntries } from './categorycore.js';
 import * as graph from './views/graph.js';
 import * as timeline from './views/timeline.js';
 import * as calendarView from './views/calendar.js';
 import * as mapsView from './views/maps.js';
+import * as handoutsView from './views/handouts.js';
 import * as mapeditor from './views/mapeditor.js';
 import * as exportView from './views/export.js';
 import * as importView from './views/import.js';
@@ -20,10 +24,13 @@ import * as helpView from './views/help.js';
 import * as settingsView from './views/settings.js';
 import * as createView from './views/create.js';
 import * as libraryView from './views/library.js';
+import * as dmScreenView from './views/dmscreen.js';
+import * as encounterView from './views/encounter.js';
 import { SHEET_SYSTEMS } from './sheets/sheetcore.js';
 import { randomTableSearchText } from './randomtable.js';
 import { nameStyleForType, randomName } from './names.js';
 import { maybeShowOnboarding } from './views/onboarding.js';
+import { maybeShowUpgrade } from './views/upgrade.js';
 import { wireLinkPreviews } from './preview.js';
 
 const viewEl = document.getElementById('view');
@@ -46,14 +53,18 @@ function route() {
   let nav = 'dashboard', ret = null;
   try {
     if (!parts.length) ret = dashboard.render(viewEl);
+    else if (parts[0] === 'dm-screen') { nav = 'dm-screen'; ret = dmScreenView.render(viewEl); }
+    else if (parts[0] === 'encounter') { nav = 'encounter'; ret = encounterView.render(viewEl, safeDecode(parts[1])); }
     else if (parts[0] === 'e') { nav = ''; ret = entity.render(viewEl, parts[1]); }
     // #/t/<typeKey> — the per-type landing page; an unknown key renders a notice
     else if (parts[0] === 't') { ret = typeView.render(viewEl, safeDecode(parts[1])); }
+    else if (parts[0] === 'categories') { ret = categoriesView.render(viewEl); }
     else if (parts[0] === 'new') { nav = ''; renderCreate(viewEl, decodeURIComponent(parts[1] || '')); }
     else if (parts[0] === 'graph') { nav = 'graph'; ret = graph.render(viewEl); }
     else if (parts[0] === 'timeline') { nav = 'timeline'; ret = timeline.render(viewEl); }
     else if (parts[0] === 'calendar') { nav = 'calendar'; ret = calendarView.render(viewEl); }
     else if (parts[0] === 'maps') { nav = 'maps'; ret = mapsView.render(viewEl); }
+    else if (parts[0] === 'handouts') { nav = 'handouts'; ret = handoutsView.render(viewEl, safeDecode(parts[1])); }
     else if (parts[0] === 'map') { nav = 'maps'; ret = mapeditor.render(viewEl, parts[1]); }
     else if (parts[0] === 'export') { nav = 'export'; ret = exportView.render(viewEl); }
     else if (parts[0] === 'import') { nav = ''; ret = importView.render(viewEl); }
@@ -70,6 +81,7 @@ function route() {
   cleanup = typeof ret === 'function' ? ret : null;
 
   document.querySelectorAll('#mainnav a').forEach((a) => a.classList.toggle('active', a.dataset.nav === nav));
+  document.getElementById('layout').classList.toggle('session-tools', nav === 'dm-screen' || nav === 'encounter');
   renderSidebarList();
 }
 
@@ -110,6 +122,11 @@ function buildSidebar() {
     title: 'Searches names, tags, quick facts and text. Start with # to search tags only.',
     oninput: (ev) => { search = ev.target.value.trim().toLowerCase(); renderSidebarList(); },
   });
+  searchInput.value = search;
+  const jump = el('select', { 'aria-label': 'Jump to category', onchange: () => {
+    if (jump.value) location.hash = `#/t/${encodeURIComponent(jump.value)}`;
+  } }, el('option', { value: '' }, 'Jump to category…'),
+  categoryGroups(types(), visibleEntities()).map(([key, t]) => el('option', { value: key }, t.plural || t.label)));
 
   const newName = el('input', { placeholder: 'New entry…' });
   const newType = el('select', {},
@@ -123,7 +140,8 @@ function buildSidebar() {
   newName.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') create(); });
 
   listEl = el('div', {});
-  sidebarEl.append(searchInput, el('div', { class: 'side-new' }, newName, newType,
+  sidebarEl.append(el('div', { class: 'side-categories' }, jump, el('a', { href: '#/categories', title: 'Browse and manage categories' }, 'Categories')),
+    searchInput, el('div', { class: 'side-new' }, newName, newType,
     el('button', {
       title: 'Suggest a fitting name',
       onclick: () => { newName.value = randomName(nameStyleForType(newType.value)); newName.focus(); },
@@ -176,6 +194,13 @@ function renderSidebarList() {
   };
 
   const ents = visibleEntities().filter(match);
+  if (currentId && !search) {
+    const related = relatedEntries(visibleEntities(), currentId, state.gm);
+    if (related.length) listEl.append(el('div', { class: 'side-related' },
+      el('div', { class: 'small muted' }, 'Connected to this entry'),
+      related.slice(0, 12).map(({ entry, label }) => el('a', { class: 'side-item', href: `#/e/${entry.id}`, title: label }, entry.name)),
+      related.length > 12 ? el('a', { href: '#/graph', class: 'small' }, `All ${related.length} connections →`) : null));
+  }
   for (const [key, t] of sidebarGroups(ents)) {
     const group = ents.filter((e) => (e.type || '') === key).sort((a, b) => a.name.localeCompare(b.name));
     if (!group.length) continue;
@@ -203,9 +228,9 @@ function renderSidebarList() {
           el('span', { class: 'dot', style: `background:${typeOf(e).color}` }),
           e.name,
           e.map ? el('span', { title: 'has a map', style: 'font-size:11px;opacity:.7' }, '🗺') : null,
-          (e.blocks || []).some((b) => b.kind === 'statblock') ? el('span', { title: 'has a statblock', style: 'font-size:11px;opacity:.7' }, '⚔') : null,
-          (e.blocks || []).some((b) => b.kind === 'sheet') ? el('span', { title: 'has a character sheet', style: 'font-size:11px;opacity:.7' }, '🎭') : null,
-          (e.blocks || []).some((b) => b.kind === 'table') ? el('span', { title: 'has a rollable table', style: 'font-size:11px;opacity:.7' }, '🎲') : null,
+          (e.blocks || []).some((b) => b.kind === 'statblock' && (state.gm || !b.secret)) ? el('span', { title: 'has a statblock', style: 'font-size:11px;opacity:.7' }, '⚔') : null,
+          (e.blocks || []).some((b) => b.kind === 'sheet' && (state.gm || !b.secret)) ? el('span', { title: 'has a character sheet', style: 'font-size:11px;opacity:.7' }, '🎭') : null,
+          (e.blocks || []).some((b) => b.kind === 'table' && (state.gm || !b.secret)) ? el('span', { title: 'has a rollable table', style: 'font-size:11px;opacity:.7' }, '🎲') : null,
           e.gmOnly ? el('span', { class: 'gm-mark', title: 'GM-only — invisible to players' }, '🔒') : null));
       }
     }
@@ -244,6 +269,7 @@ async function onWorldSelect(ev) {
     if (val === NEW_WORLD) {
       const name = prompt('Name of the new world:');
       if (!name?.trim()) { renderWorldSelect(); return; }
+      await requireSaved();
       const { id } = await api.createWorld(name.trim());
       await refreshWorlds();
       await switchTo(id);
@@ -259,7 +285,6 @@ async function onWorldSelect(ev) {
 }
 
 export async function switchTo(worldId) {
-  await flushSaves(); // pending edits must land in the OLD world before we switch
   await selectWorld(worldId);
   await refreshWorlds().catch(() => { /* list stays stale, not fatal */ });
   renderWorldSelect();
@@ -273,17 +298,52 @@ export async function switchTo(worldId) {
 
 function wireSaveButton() {
   const btn = document.getElementById('saveBtn');
+  const warning = el('div', { class: 'notice warn', role: 'status', style: 'margin:0;max-height:28vh;overflow:auto;flex:none' });
+  document.getElementById('layout').before(warning);
+  const showWarning = () => {
+    warning.replaceChildren();
+    warning.hidden = !state.gm || (!saveFailure() && !state.loadIssues.length);
+    if (warning.hidden) return;
+    if (saveFailure()) {
+      warning.append(el('strong', {}, 'Your changes have not all been saved. '),
+        el('span', {}, saveFailure().message),
+        el('button', { class: 'small', style: 'margin-left:10px', onclick: () => {
+          if (!state.gm) return;
+          downloadBlob(new Blob([JSON.stringify(unsavedDraft(), null, 2)], { type: 'application/json' }), 'MundusMaker-unsaved-GM-draft.json');
+        } }, 'Download unsaved edits (GM only)'),
+        el('div', { class: 'small' }, 'The download includes secrets and pending text/data only, not images. Keep this page open to retry saving. For a conflict, keep the draft, reload, and compare it with the current entry before copying your changes back.'));
+    }
+    const copies = state.loadIssues.filter((issue) => issue.kind === 'sync-copy');
+    const broken = state.loadIssues.filter((issue) => issue.kind !== 'sync-copy');
+    if (copies.length) {
+      warning.append(el('details', {},
+        el('summary', {}, `${copies.length} sync conflict ${copies.length === 1 ? 'copy' : 'copies'} found`),
+        el('p', {}, 'Your sync tool keeps both versions when an entry is changed on two devices at the same time. MundusMaker keeps using the main file and leaves every copy untouched. To keep edits from a copy, open it in a text editor, copy what you need into the entry here, then move the copy out of the entities folder.'),
+        el('ul', {}, copies.map((issue) => el('li', {}, issue.file, ': ', issue.message, ' ',
+          el('button', { class: 'small', onclick: () => compareSyncCopy(issue) }, 'Compare'))))));
+    }
+    if (broken.length) {
+      warning.append(el('details', {},
+        el('summary', {}, `${broken.length} entry file(s) could not be loaded`),
+        el('p', {}, 'The original files are unchanged. Copy your data folder before repairing them, or use Settings → Recovery to restore a separate copy.'),
+        el('ul', {}, broken.map((issue) => el('li', {}, issue.file, ': ', issue.message)))));
+    }
+  };
   const LABELS = { saved: '✓ Saved', dirty: '● Save', saving: '⋯ Saving', error: '⚠ Retry save' };
   const sync = () => {
     const s = saveState();
     btn.className = `save-btn ${s}`;
     btn.textContent = LABELS[s];
+    showWarning();
   };
   btn.addEventListener('click', async () => {
     await flushSaves();
     if (saveState() === 'saved') toast('All changes saved');
   });
   on('savestate', sync);
+  on('change', showWarning);
+  on('gm', showWarning);
+  on('loading', () => { document.getElementById('app').inert = state.loading; });
   sync();
 
   window.addEventListener('beforeunload', (ev) => {
@@ -302,6 +362,7 @@ function wireGmToggle() {
   const sync = () => {
     input.checked = state.gm;
     label.classList.toggle('gm-on', state.gm);
+    document.querySelectorAll('[data-gm-nav]').forEach((link) => { link.hidden = !state.gm; });
   };
   input.addEventListener('change', () => setGm(input.checked));
   on('gm', () => { sync(); route(); });
@@ -340,6 +401,7 @@ async function boot() {
     document.title = `${state.world.name || 'MundusMaker'} · MundusMaker`;
   });
   on('worlds', renderWorldSelect);
+  on('categories', buildSidebar);
   wireLinkPreviews();
   // clickable dice anywhere: text blocks, statblocks, encounter notes
   document.addEventListener('click', (ev) => {
@@ -357,7 +419,9 @@ async function boot() {
   }, true);
 
   window.addEventListener('hashchange', route);
-  maybeShowOnboarding(); // fire-and-forget; never blocks boot
+  // an upgrade notice or question first, then the welcome tour; fire-and-forget,
+  // neither ever blocks boot
+  maybeShowUpgrade().catch(() => {}).finally(() => maybeShowOnboarding());
   window.addEventListener('keydown', (ev) => {
     if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'k') {
       ev.preventDefault();

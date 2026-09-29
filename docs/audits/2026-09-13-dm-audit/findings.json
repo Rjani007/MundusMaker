@@ -1,0 +1,304 @@
+{
+  "date": "2026-09-13",
+  "verdict": "MundusMaker can support a complete small-campaign prep session. Its strongest parts are local persistence, linked lore, readable character sheets and secret filtering. The main remaining difficulty is moving from created content to a compact, reliable workspace at the table. Prioritize the player-map GOAL label, clipped map controls and unfinished character choices before expanding the feature set.",
+  "steps": [
+    [
+      1,
+      "Start a new world",
+      "Works with setup friction",
+      "The sample and new-world flow worked. Eleven empty category cards precede the first useful prep actions.",
+      [
+        1,
+        2
+      ]
+    ],
+    [
+      2,
+      "Create categories and linked lore",
+      "Works with friction",
+      "Created Gods and Quests, people, factions, a clue and a quest. Links help; category ordering, cramped quick-create and generic field hints slow authoring.",
+      [
+        3,
+        4,
+        5,
+        6
+      ]
+    ],
+    [
+      3,
+      "Build world → region → town",
+      "Needs work",
+      "The coast and settlement names carry through this seed. The editor clips controls, ancestor navigation is weak, and generated town places need separate wiki markers.",
+      [
+        7,
+        8,
+        9,
+        10
+      ]
+    ],
+    [
+      4,
+      "Prepare a two-floor dungeon",
+      "Needs work",
+      "Crypt generation and floor switching work. Numbered rooms lack a matching notes key, and player PNGs retain GOAL labels.",
+      [
+        11,
+        12,
+        13,
+        14
+      ]
+    ],
+    [
+      5,
+      "Create and level up a D&D character",
+      "Works with gaps",
+      "Tessa’s AC, HP, skills and level-up worked. Some choices still require free text or remain unresolved. The standard sheet is readable.",
+      [
+        15,
+        16,
+        17,
+        18
+      ]
+    ],
+    [
+      6,
+      "Schedule the festival",
+      "Works after setup",
+      "Defined twelve months and a recurring festival. The clock advances correctly, but scheduling crosses Calendar, an Event entry and Timeline.",
+      [
+        19,
+        30
+      ]
+    ],
+    [
+      7,
+      "Prepare the encounter and DM Screen",
+      "Works with friction",
+      "Damage, undo, turn order, persistent session state and rule pins work. Long cards make it harder to scan the board during play.",
+      [
+        20,
+        21,
+        22,
+        23,
+        33
+      ]
+    ],
+    [
+      8,
+      "Make handouts and a player packet",
+      "Works with gaps",
+      "The letter and card export to PDF and images. Linked card text has awkward order; leaving the list clears packet selections.",
+      [
+        24,
+        25,
+        26
+      ]
+    ],
+    [
+      9,
+      "Review player visibility and exports",
+      "Needs attention",
+      "Test secrets were excluded from UI and PDF. Generated GOAL labels remain in the player map, so the player-safe promise is too broad.",
+      [
+        27,
+        28,
+        29
+      ]
+    ],
+    [
+      10,
+      "Save, reopen and back up",
+      "Works in this test",
+      "Reload retained the world, level, clock, encounter and five pins. The downloaded backup contains all 19 entries and four maps.",
+      [
+        30,
+        31,
+        32,
+        33
+      ]
+    ]
+  ],
+  "findings": [
+    {
+      "id": "F01",
+      "priority": "High",
+      "title": "Player-safe dungeon maps still reveal the goal",
+      "steps": "4, 9",
+      "screens": [
+        14,
+        28,
+        29
+      ],
+      "observed": "I selected L2 in The Sunken Chapel and exported PNG · player-safe. The image retains GOAL, IN and room numbers. GOAL is also visible in player preview and in the campaign PDF’s embedded map. The secret Reliquary marker is correctly absent.",
+      "impact": "A DM can unintentionally point the party at the destination while using an export explicitly labeled safe for players. This is generated guidance leaking adventure structure; it is not a failure of the user-marked secret flags in this test.",
+      "direction": "Exclude generator guidance such as GOAL from player output. Give the GM a clear choice about room numbering and other map annotations before sharing."
+    },
+    {
+      "id": "F02",
+      "priority": "High",
+      "title": "The map editor does not fit the tested laptop viewport",
+      "steps": "3, 4, 9",
+      "screens": [
+        7,
+        10,
+        28
+      ],
+      "observed": "At 1365 × 900, the persistent world sidebar, canvas and settings panel exceed the usable width. Controls at the right edge are clipped. The player view retains a large column of disabled generation controls.",
+      "impact": "Map work requires scrolling and careful targeting instead of keeping the map and relevant controls together. Small generated labels compete with the surrounding UI.",
+      "direction": "Let the map occupy more of the workspace, make its panels fit or collapse, and give player preview a presentation layout. Verify this at common laptop widths and browser zoom levels."
+    },
+    {
+      "id": "F03",
+      "priority": "High",
+      "title": "D&D creation still leaves important choices to the DM",
+      "steps": "5",
+      "screens": [
+        15,
+        16,
+        17,
+        18,
+        32
+      ],
+      "observed": "Fighting Style is a structured choice, while Weapon Mastery uses a free-text notes field inside a feature. I entered Greatsword, flail and spear myself. Training still prints Gaming set of your choice after I specified Dragonchess Set in inventory and notes. Review & finish showed a checkmark before earlier choices were complete.",
+      "impact": "The creator can produce a playable sheet, but a DM must understand which selections are unfinished and manually reconcile them. The completion signals do not fully establish that the character is ready.",
+      "direction": "Use structured choices with relevant rules and a final unresolved-choice checklist. Carry selected equipment and tool proficiency consistently into the sheet. Keep the successful level-up review and HP calculation."
+    },
+    {
+      "id": "F04",
+      "priority": "Medium",
+      "title": "The map chain is stronger than the map-to-lore workflow",
+      "steps": "2, 3",
+      "screens": [
+        6,
+        8,
+        9,
+        10
+      ],
+      "observed": "The Bell Coast inherited the recognizable coast and Blackwater’s name. The editor offers a back link to the current entry, but no visible world → region → town breadcrumb. Clicking the generated Lantern Inn label did not open a linked location. I placed a separate Harbor office marker for Mara, whose label overlaps Customs House in the town export.",
+      "impact": "The map looks inhabited before its places are useful campaign entries. The DM must add and maintain a second set of markers and remember where a drilled map belongs.",
+      "direction": "Make generated places easier to turn into linked locations, surface their associated people and clues, and provide ancestor navigation. Preview inherited terrain and settlement size at drill time; Blackwater started as a desert metropolis without such a review."
+    },
+    {
+      "id": "F05",
+      "priority": "Medium",
+      "title": "Dungeon geometry needs a room-preparation companion",
+      "steps": "4",
+      "screens": [
+        11,
+        12,
+        13
+      ],
+      "observed": "The tested crypt has a dominant straight corridor and repeated chambers on both floors. Room numbers are visible, but I found no corresponding room-key list for descriptions, clues or encounters. Increasing the level count previews the current floor rather than the newly requested one.",
+      "impact": "Generation saves drawing time, but leaves much of the work of making this particular dungeon ready to run. The second floor cannot be judged until after applying the change.",
+      "direction": "Pair generated rooms with editable prep notes and preview each requested floor. Explore stronger visual and structural differences within a dungeon. This finding covers the tested crypt seed, not every dungeon style."
+    },
+    {
+      "id": "F06",
+      "priority": "Medium",
+      "title": "Session references are too tall for quick scanning",
+      "steps": "7",
+      "screens": [
+        20,
+        21,
+        22,
+        23,
+        33
+      ],
+      "observed": "I pinned Frightened, Blinded, Mara, the session and the chapel. Full entry text and long attribution passages push the session notes below the initial screen. The board is per world, with no visible session-specific layout. Encounter conditions are a free-text reminder.",
+      "impact": "I had to scroll to move between rules and the notes needed for the opening scene. The tested two-combatant encounter worked; larger encounter performance and density were not tested.",
+      "direction": "Offer compact reference cards, collapsible source details that preserve attribution, session-focused pin collections and condition-to-rule shortcuts. Preserve the working damage undo and separation from source character HP."
+    },
+    {
+      "id": "F07",
+      "priority": "Medium",
+      "title": "Linking a handout source produces awkward print order",
+      "steps": "8",
+      "screens": [
+        24,
+        25
+      ],
+      "observed": "Selecting Saltglass Key as the item card’s source retained the template’s unrelated brass-key and observatory text until I cleared it. The saved card repeats Saltglass Key as a heading, and the linked description appears after the custom footer. The separate letter layout is clear and exports cleanly.",
+      "impact": "The DM must clean up sample prose and work around the appended source section to get a natural-looking card. Unrelated sample text could be printed accidentally.",
+      "direction": "Let source properties populate or be placed within the template, with an explicit choice about replacing sample content. Keep a real footer after the body, and avoid an unnecessary repeated title."
+    },
+    {
+      "id": "F08",
+      "priority": "Medium",
+      "title": "Handout packets are temporary selections",
+      "steps": "8",
+      "screens": [
+        26
+      ],
+      "observed": "I selected both handouts, opened the item card to check it, and returned. Both Include in packet checkboxes were cleared. Selection order also has to be rebuilt. Preview edition and export edition are separate controls on the editor.",
+      "impact": "Checking or revising a handout interrupts assembling the packet. A DM preparing next week’s materials cannot rely on that selection remaining ready.",
+      "direction": "Save named packets or a packet attached to a session, retain selections during editing, and show the actual export edition prominently at the final action."
+    },
+    {
+      "id": "F09",
+      "priority": "Medium",
+      "title": "Campaign organization takes too much small-scale editing",
+      "steps": "1, 2",
+      "screens": [
+        2,
+        3,
+        5,
+        6
+      ],
+      "observed": "The new world starts with eleven equally prominent empty categories. Gods and Quests append at the bottom and move one position per click. The sidebar name field is about 45 px wide. Quest Status inherits the character-oriented Alive, dead, missing? hint. Relations use a label and an alphabetical native dropdown.",
+      "impact": "Basic prep is possible, but the interface requires many small adjustments before the world reflects this campaign. Long names are difficult to enter in the sidebar, and custom categories do not feel fully customized.",
+      "direction": "Bring initial prep actions forward, offer easier category ordering and a usable name field, and let custom field hints follow the category. Make related people and places easier to browse together. This audit used 19 entries, so claims about hundreds of entries remain untested."
+    },
+    {
+      "id": "F10",
+      "priority": "Medium",
+      "title": "Scheduling begins with configuration rather than the campaign’s events",
+      "steps": "6",
+      "screens": [
+        19,
+        30
+      ],
+      "observed": "Calendar opens on month and age setup. I defined twelve months, opened a separate Event entry to date the festival, and used the dashboard clock for upcoming timing. Advancing 12 → 13 Lanternfall correctly changed the festival from in two days to in one day.",
+      "impact": "The clock is useful once configured, but a DM has to cross several surfaces to schedule and review an event.",
+      "direction": "Provide a usable starting calendar and a clear event view with creation from a date. Keep the tested recurring-event and clock arithmetic behavior."
+    },
+    {
+      "id": "F11",
+      "priority": "Medium",
+      "title": "Campaign PDFs need stronger pagination and map presentation",
+      "steps": "5, 9",
+      "screens": [
+        29
+      ],
+      "observed": "The 13-page player campaign PDF leaves the Locations heading at the bottom of physical page 2, separates The Bell Coast’s heading from its map, and splits the deity’s quick facts across physical pages 7 and 8. The world and region maps share one portrait page. Tessa’s separate four-page character sheet is readable, with a clear statistics page.",
+      "impact": "The booklet is usable, but headings and content can become disconnected. Small map labels are harder to read at normal print size.",
+      "direction": "Keep headings with their first content, avoid splitting short fact groups, and offer dedicated map pages. An optional shorter character appendix could help DMs who already know the feature rules."
+    },
+    {
+      "id": "F12",
+      "priority": "Medium",
+      "title": "Several controls need accessibility and consistency work",
+      "steps": "2, 3, 9, 10",
+      "screens": [
+        5,
+        10,
+        27,
+        28,
+        30
+      ],
+      "observed": "DOM inspection found the GM/player checkbox has display:none and no text or aria-label; the visible label comes from CSS, so it is absent from the checkbox accessibility tree and normal keyboard focus. Six marker color swatches lacked accessible names, and quick-fact inputs shared a dash name. Player map preview also prints a literal null, while the world summary stayed at 12 entries until reload updated it to 19.",
+      "impact": "Some controls are difficult to identify or operate without a pointer, and stale or stray text reduces confidence in saved state.",
+      "direction": "Use a focusable, named GM/player control and meaningful names for swatches and fields; check focus behavior and zoom. Remove stray text and update counts after creation. This is a targeted accessibility observation, not a full compliance assessment."
+    }
+  ],
+  "limits": [
+    "One synthetic campaign, one D&D Dwarf Fighter advanced from level 1 to 2, four maps and a 1365 × 900 desktop viewport. This is an experienced-DM walkthrough, not a study with a representative group of DMs.",
+    "World, region, coastal town and two-floor crypt paths were exercised. Other terrain seeds, town archetypes, cave/mine/sewer styles, interiors, and large edited maps were not comprehensively tested.",
+    "The creator used bundled options. Imported 5etools packs, higher levels, spellcasting, subclasses, multiclassing and VTM/CoC character advancement were not covered here. VTM/CoC reference filters were inspected, not played through.",
+    "Letter and item card templates were exercised. Old-book, scroll, poster, custom illustration, seal and non-Latin-font workflows were not covered.",
+    "The player campaign PDF was text-checked for the canaries and rendered for visual review. Text extraction alone cannot inspect raster maps; those were checked visually, including the remaining GOAL label.",
+    "The downloaded backup contains 19 entries, all four map definitions, the calendar and five pins. Include images was selected, but this campaign has no uploaded assets, so an image backup/restore round trip was not tested. The backup itself is a GM backup containing secrets, not a player handout.",
+    "Reload and persistence were tested. A restore into another world, another device, concurrent editors, NAS deployment and long-term recovery were outside this walkthrough.",
+    "Accessibility observations combine screenshots and targeted DOM inspection. There was no full keyboard-only journey, screen-reader test, contrast audit, mobile test, browser-zoom matrix or WCAG conformance assessment.",
+    "An initial Edit-button interception was observed, with clicking prose as a workaround. It was not generalized into a confirmed product defect. The mastery-field screenshot has the field below the fold; its behavior is supported by the DOM and the completed sheet."
+  ]
+}

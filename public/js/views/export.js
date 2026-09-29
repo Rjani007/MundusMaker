@@ -1,8 +1,19 @@
-// Export view: one-click player-safe (or GM) PDF of the whole world.
+// Export view: one-click player-safe (or GM) PDF of the whole world, and the
+// offline player wiki (player edition only).
 
 import { el, toast, slugify, downloadBlob, helpTip } from '../util.js';
 import { state } from '../state.js';
 import { buildPdf, typeGroups } from '../pdf.js';
+import { buildPlayerWiki } from '../wiki/export.js';
+import { safetyCheck } from '../safety.js';
+
+const KIND_LABELS = { text: 'Text', label: 'Map label', image: 'Image', handout: 'Handout' };
+
+function findingsList(findings, onNavigate = () => {}) {
+  return el('ul', { class: 'safety-list' }, findings.map((f) => el('li', {},
+    el('span', { class: 'safety-kind' }, KIND_LABELS[f.kind] || f.kind),
+    el('a', { href: f.href, onclick: onNavigate }, f.message))));
+}
 import { api } from '../api.js';
 
 export function render(container) {
@@ -25,6 +36,8 @@ export function render(container) {
     mapScale: 2, // print-quality by default; 1 keeps the file small
     includeTimeline: true,
     includeRelations: true,
+    sheetLayout: 'standard',
+    roomNumbers: false, // player dungeon maps; GM maps always show them
     typeKeys: new Set(groups.map(([key]) => key)),
   };
 
@@ -72,7 +85,35 @@ export function render(container) {
   const genBtn = el('button', { class: 'primary', style: 'font-size:16px;padding:10px 26px' }, '📄 Generate PDF');
   const status = el('span', { class: 'muted small' });
 
+  // The safety check lists hidden names, so it is GM view only. It runs before
+  // every player export and never blocks one.
+  const runCheck = () => safetyCheck({ worldId: state.worldId, entities: state.entities.values(), typeKeys: opts.typeKeys });
+  const reviewFirst = () => new Promise((resolve) => {
+    if (!state.gm) { resolve(true); return; }
+    const findings = runCheck();
+    if (!findings.length) { resolve(true); return; }
+    const close = (value) => { overlay.remove(); resolve(value); };
+    const exportBtn = el('button', { class: 'primary', onclick: () => close(true) }, 'Export anyway');
+    const overlay = el('div', { class: 'overlay' }, el('div', { class: 'dialog safety-dialog', role: 'dialog', 'aria-modal': 'true' },
+      el('h3', {}, '🛡 Before you share this'),
+      el('p', {}, `The safety check found ${findings.length} ${findings.length === 1 ? 'place' : 'places'} where something hidden may still reach players. Each link opens the place to fix it.`),
+      findingsList(findings, () => close(false)),
+      el('div', { class: 'row', style: 'justify-content:flex-end;margin-top:14px' },
+        el('button', { class: 'ghost', onclick: () => close(false) }, 'Cancel'), exportBtn)));
+    document.body.append(overlay);
+    exportBtn.focus();
+  });
+
+  const safetyOut = el('div', { 'aria-live': 'polite' });
+  const safetyBtn = el('button', { onclick: () => {
+    const findings = runCheck();
+    safetyOut.replaceChildren(findings.length
+      ? el('div', {}, el('p', { class: 'small' }, `${findings.length} possible ${findings.length === 1 ? 'leak' : 'leaks'}. Fix what you need, then run the check again.`), findingsList(findings))
+      : el('p', { class: 'muted small' }, 'Nothing found: no public text, map label, image or handout points at hidden content.'));
+  } }, '🛡 Run safety check');
+
   genBtn.addEventListener('click', async () => {
+    if (!opts.gm && !(await reviewFirst())) return;
     genBtn.disabled = true;
     status.textContent = 'Rendering maps and laying out pages…';
     try {
@@ -99,6 +140,40 @@ export function render(container) {
     }
   });
 
+  const wikiBtn = el('button', { class: 'primary' }, '🌐 Export player wiki');
+  const wikiStatus = el('span', { class: 'muted small' });
+  wikiBtn.addEventListener('click', async () => {
+    if (!(await reviewFirst())) return;
+    wikiBtn.disabled = true;
+    wikiStatus.textContent = 'Preparing pages…';
+    try {
+      await new Promise((r) => setTimeout(r, 30));
+      const result = await buildPlayerWiki({
+        typeKeys: opts.typeKeys,
+        include: { maps: opts.includeMaps, timeline: opts.includeTimeline, relations: opts.includeRelations },
+        roomNumbers: opts.roomNumbers,
+        onProgress: (p) => { wikiStatus.textContent = `Rendering maps and images… ${Math.round(p * 100)}%`; },
+      });
+      downloadBlob(result.blob, result.name);
+      wikiStatus.textContent = '';
+      const summary = `${result.stats.entries} ${result.stats.entries === 1 ? 'entry' : 'entries'}, ${result.stats.images} ${result.stats.images === 1 ? 'image' : 'images'}`;
+      try {
+        // the server's upload limit is 100 MB of base64; a bigger wiki is still downloaded
+        if (result.blob.size > 70 * 1024 * 1024) throw new Error('too large to copy');
+        const res = await api.exportFile(result.name, arrayBufferToBase64(await result.blob.arrayBuffer()));
+        toast(`Player wiki (${summary}) saved to ${res.path}`, 6000);
+      } catch {
+        toast(`Player wiki downloaded (${summary})`, 5000);
+      }
+    } catch (err) {
+      console.error(err);
+      wikiStatus.textContent = '';
+      toast('Wiki export failed: ' + err.message, 5000);
+    } finally {
+      wikiBtn.disabled = false;
+    }
+  });
+
   container.append(el('div', { class: 'page' },
     el('h1', {}, 'Export'),
     el('div', { class: 'card' },
@@ -120,8 +195,12 @@ export function render(container) {
         }),
         el('div', {}, el('div', {}, 'Print-quality maps'),
           el('div', { class: 'desc' }, 'Render maps at double resolution — crisper on paper, larger file.'))),
+      check('Room numbers for players', 'Show room numbers on dungeon maps in the player edition. The GM edition always shows them, and players never see the generator’s IN and GOAL marks.', 'roomNumbers'),
       check('Timeline', 'A chronological section of every dated entry.', 'includeTimeline'),
       check('Relations', 'List each entry’s typed relationships.', 'includeRelations'),
+      el('label', { class: 'opt' }, el('select', { 'aria-label': 'Character sheet layout', onchange: ev => { opts.sheetLayout = ev.target.value; } },
+        el('option', { value: 'standard' }, 'Standard system sheets'), el('option', { value: 'familiar' }, 'Familiar layouts (arranged like each game’s own sheet)'), el('option', { value: 'compact' }, 'Compact text summaries')),
+        el('div', {}, 'Character sheets', el('div', { class: 'desc' }, 'Dedicated D&D, Vampire and Call of Cthulhu pages, with full feature and spell descriptions on continuation pages.'))),
       el('h3', { style: 'margin-top:14px' }, 'Entry types'),
       typeChecks),
     el('div', { class: 'row', style: 'margin-top:20px' },
@@ -129,7 +208,16 @@ export function render(container) {
       el('span', { class: 'spacer' }),
       el('span', { class: 'muted small' }, 'File: ', nameEl)),
     el('p', { class: 'muted small', style: 'margin-top:16px' },
-      'The PDF downloads in your browser and a copy is written to the exports folder inside your data directory.')));
+      'The PDF downloads in your browser and a copy is written to the exports folder inside your data directory.'),
+    state.gm ? el('div', { class: 'card', style: 'margin-top:22px' },
+      el('h3', {}, 'Safety check'),
+      el('p', {}, 'Looks for hidden content that could still reach players: public text that names a GM-only entry, map labels that do, images of hidden entries reused in visible ones, and handouts whose source is hidden. It runs by itself before every player export, and only reports: it never changes anything or stops an export.'),
+      el('div', { class: 'row' }, safetyBtn), safetyOut) : null,
+    el('div', { class: 'card', style: 'margin-top:22px' },
+      el('h3', {}, 'Player wiki'),
+      el('p', {}, 'A small offline website of everything the player-safe edition shows: entries, relations, the timeline, player maps with their keys, handouts and search. It downloads as a ZIP. Unzip it anywhere, even on a USB stick, and open index.html. It needs no internet connection and no MundusMaker.'),
+      el('p', { class: 'muted small' }, 'It always uses the player-safe edition and the contents chosen above. There is no GM version: you already have the app for that.'),
+      el('div', { class: 'row', style: 'margin-top:10px' }, wikiBtn, wikiStatus))));
 }
 
 function arrayBufferToBase64(ab) {

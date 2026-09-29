@@ -23,7 +23,9 @@
           { "to": null, "name": "Drowned thralls", "cr": "1/8", "count": 4 }
         ]
       }
-    }
+    },
+    { "id": "key-pit", "kind": "text", "text": "The floor tiles by the east door hide a pit. Anyone who searches the room finds the seam; a fall is 2d6 damage and drops into the flooded ossuary below.", "secret": true },
+    { "id": "key-store", "kind": "text", "text": "[[Kestrel Vane]]’s smugglers keep their stock here: three crates of lamp oil and a locked strongbox. The key hangs in the Harbor Office.", "secret": true }
   ],
   "relations": [
     { "to": "port-vellen", "label": "lies beneath", "secret": false },
@@ -40,7 +42,8 @@
       { "id": "mk2", "x": 0.4, "y": 0.35, "shape": "cross", "color": "#e0524a", "label": "Pit trap", "secret": true },
       { "id": "mk3", "x": 0.78, "y": 0.62, "shape": "star", "color": "#e0a72c", "label": "The Hollow Crown", "secret": true }
     ],
-    "labels": []
+    "labels": [],
+    "keys": { "room:0:16,9": { "block": "key-pit" }, "room:0:35,12": { "block": "key-store" } }
   },
   "created": "2026-06-21T10:00:00.000Z",
   "updated": "2026-06-27T10:00:00.000Z"

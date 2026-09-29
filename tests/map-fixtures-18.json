@@ -1,0 +1,499 @@
+[
+  {
+    "name": "world18-continents",
+    "newMap": "world",
+    "seed": "silver-coast",
+    "params": {
+      "landform": "continents"
+    }
+  },
+  {
+    "name": "world18-archipelago",
+    "newMap": "world",
+    "seed": "lantern-seas",
+    "params": {
+      "landform": "archipelago"
+    }
+  },
+  {
+    "name": "world18-inlandsea",
+    "newMap": "world",
+    "seed": "amber-basin",
+    "params": {
+      "landform": "inlandsea"
+    }
+  },
+  {
+    "name": "world18-highlands",
+    "newMap": "world",
+    "seed": "grey-peaks",
+    "params": {
+      "landform": "highlands",
+      "ruggedness": 1,
+      "wind": "east"
+    }
+  },
+  {
+    "name": "world18-edited",
+    "newMap": "world",
+    "seed": "silver-coast",
+    "params": {
+      "landform": "continents"
+    },
+    "extra": {
+      "strokes": [
+        {
+          "x": 0.45,
+          "y": 0.45,
+          "r": 0.1,
+          "d": 0.2
+        }
+      ],
+      "sites": [
+        {
+          "id": "port",
+          "kind": "settlement",
+          "name": "Old Harbor",
+          "x": 0.5,
+          "y": 0.5
+        }
+      ],
+      "siteEdits": {
+        "custom:port": {
+          "name": "Safe Harbor"
+        }
+      }
+    }
+  },
+  {
+    "name": "region18",
+    "newMap": "region",
+    "seed": "bell-coast",
+    "params": {
+      "hexes": true
+    }
+  },
+  {
+    "name": "region18-drilled",
+    "drill": {
+      "newMap": "world",
+      "seed": "silver-coast",
+      "params": {
+        "landform": "continents"
+      },
+      "site": 0
+    }
+  },
+  {
+    "name": "town18-coastal",
+    "newMap": "town",
+    "seed": "coastal-canary",
+    "params": {
+      "layout": "coastal"
+    }
+  },
+  {
+    "name": "town18-coastal-east",
+    "newMap": "town",
+    "seed": "coastal-canary",
+    "params": {
+      "layout": "coastal",
+      "seaSide": "east",
+      "harborDepth": 1,
+      "docks": 9
+    }
+  },
+  {
+    "name": "town18-riverside",
+    "newMap": "town",
+    "seed": "silver-port",
+    "params": {
+      "layout": "riverside"
+    }
+  },
+  {
+    "name": "town18-organic",
+    "newMap": "town",
+    "seed": "old-orchard",
+    "params": {
+      "layout": "organic",
+      "size": 2
+    }
+  },
+  {
+    "name": "town18-grid",
+    "newMap": "town",
+    "seed": "old-orchard",
+    "params": {
+      "layout": "grid",
+      "size": 4
+    }
+  },
+  {
+    "name": "town18-crossroads",
+    "newMap": "town",
+    "seed": "waymeet",
+    "params": {
+      "layout": "crossroads"
+    }
+  },
+  {
+    "name": "town18-hill",
+    "newMap": "town",
+    "seed": "high-cairn",
+    "params": {
+      "layout": "organic",
+      "character": "hill"
+    }
+  },
+  {
+    "name": "town18-fortified",
+    "newMap": "town",
+    "seed": "stonewatch",
+    "params": {
+      "layout": "crossroads",
+      "character": "fortified",
+      "walls": true
+    }
+  },
+  {
+    "name": "town18-print",
+    "newMap": "town",
+    "seed": "coastal-canary",
+    "params": {
+      "layout": "coastal",
+      "cartography": "parchment",
+      "legend": true,
+      "distance": 2,
+      "units": "km"
+    }
+  },
+  {
+    "name": "interior18-tavern",
+    "newMap": "interior",
+    "seed": "sleeping-dragon",
+    "params": {
+      "building": "tavern"
+    }
+  },
+  {
+    "name": "interior18-inn",
+    "newMap": "interior",
+    "seed": "sleeping-dragon",
+    "params": {
+      "building": "inn"
+    }
+  },
+  {
+    "name": "interior18-temple",
+    "newMap": "interior",
+    "seed": "bell-chapel",
+    "params": {
+      "building": "temple",
+      "rows": 20
+    }
+  },
+  {
+    "name": "interior18-manor",
+    "newMap": "interior",
+    "seed": "vale-house",
+    "params": {
+      "building": "manor",
+      "cols": 30,
+      "rows": 22
+    }
+  },
+  {
+    "name": "interior18-workshop",
+    "newMap": "interior",
+    "seed": "copper-works",
+    "params": {
+      "building": "workshop"
+    }
+  },
+  {
+    "name": "interior18-keep",
+    "newMap": "interior",
+    "seed": "stonewatch",
+    "params": {
+      "building": "keep",
+      "cols": 30,
+      "rows": 22
+    }
+  },
+  {
+    "name": "interior18-shop",
+    "newMap": "interior",
+    "seed": "salt-market",
+    "params": {
+      "building": "shop"
+    }
+  },
+  {
+    "name": "interior18-house",
+    "newMap": "interior",
+    "seed": "lantern-lane",
+    "params": {
+      "building": "house"
+    }
+  },
+  {
+    "name": "dungeon18-rooms",
+    "newMap": "dungeon",
+    "seed": "vaults",
+    "params": {
+      "style": "rooms",
+      "levels": 3
+    }
+  },
+  {
+    "name": "dungeon18-caves",
+    "newMap": "dungeon",
+    "seed": "vaults",
+    "params": {
+      "style": "caves",
+      "levels": 2
+    }
+  },
+  {
+    "name": "dungeon18-crypt",
+    "newMap": "dungeon",
+    "seed": "vaults",
+    "params": {
+      "style": "crypt",
+      "levels": 2
+    }
+  },
+  {
+    "name": "dungeon18-crypt-L2",
+    "newMap": "dungeon",
+    "seed": "vaults",
+    "params": {
+      "style": "crypt",
+      "levels": 2
+    },
+    "opts": {
+      "gm": true,
+      "level": 1
+    }
+  },
+  {
+    "name": "dungeon18-mine",
+    "newMap": "dungeon",
+    "seed": "vaults",
+    "params": {
+      "style": "mine",
+      "levels": 2
+    }
+  },
+  {
+    "name": "dungeon18-sewer",
+    "newMap": "dungeon",
+    "seed": "vaults",
+    "params": {
+      "style": "sewer",
+      "levels": 2
+    }
+  },
+  {
+    "name": "dungeon18-crypt-player",
+    "newMap": "dungeon",
+    "seed": "vaults",
+    "params": {
+      "style": "crypt",
+      "levels": 2
+    },
+    "opts": {
+      "gm": false
+    }
+  },
+  {
+    "name": "dungeon18-crypt-L2-player",
+    "newMap": "dungeon",
+    "seed": "vaults",
+    "params": {
+      "style": "crypt",
+      "levels": 2
+    },
+    "opts": {
+      "gm": false,
+      "level": 1
+    }
+  },
+  {
+    "name": "dungeon18-crypt-player-numbered",
+    "newMap": "dungeon",
+    "seed": "vaults",
+    "params": {
+      "style": "crypt",
+      "levels": 2
+    },
+    "opts": {
+      "gm": false,
+      "roomNumbers": true
+    }
+  },
+  {
+    "name": "legacy-crypt-player",
+    "map": {
+      "kind": "dungeon",
+      "seed": "vaults",
+      "params": {
+        "style": "crypt",
+        "cols": 42,
+        "rows": 27,
+        "levels": 2
+      }
+    },
+    "opts": {
+      "gm": false
+    }
+  },
+  {
+    "name": "dungeon18-crypt-keyed",
+    "newMap": "dungeon",
+    "seed": "vaults",
+    "params": {
+      "style": "crypt",
+      "levels": 2
+    },
+    "extra": {
+      "keys": {
+        "room:0:23,8": {
+          "block": "note-a"
+        },
+        "room:0:29,17": {
+          "block": "note-b"
+        },
+        "room:1:17,8": {
+          "block": "note-c"
+        },
+        "room:0:99,99": {
+          "block": "unplaced"
+        }
+      }
+    }
+  },
+  {
+    "name": "dungeon18-crypt-keyed-L2",
+    "newMap": "dungeon",
+    "seed": "vaults",
+    "params": {
+      "style": "crypt",
+      "levels": 2
+    },
+    "extra": {
+      "keys": {
+        "room:0:23,8": {
+          "block": "note-a"
+        },
+        "room:0:29,17": {
+          "block": "note-b"
+        },
+        "room:1:17,8": {
+          "block": "note-c"
+        },
+        "room:0:99,99": {
+          "block": "unplaced"
+        }
+      }
+    },
+    "opts": {
+      "gm": true,
+      "level": 1
+    }
+  },
+  {
+    "name": "dungeon18-crypt-keyed-player",
+    "newMap": "dungeon",
+    "seed": "vaults",
+    "params": {
+      "style": "crypt",
+      "levels": 2
+    },
+    "extra": {
+      "keys": {
+        "room:0:23,8": {
+          "block": "note-a"
+        },
+        "room:0:29,17": {
+          "block": "note-b"
+        },
+        "room:1:17,8": {
+          "block": "note-c"
+        },
+        "room:0:99,99": {
+          "block": "unplaced"
+        }
+      }
+    },
+    "opts": {
+      "gm": false
+    }
+  },
+  {
+    "name": "modern-grid",
+    "newMap": "town",
+    "seed": "harlan",
+    "params": {
+      "era": "modern",
+      "modernLayout": "grid",
+      "size": 3
+    }
+  },
+  {
+    "name": "modern-sprawl",
+    "newMap": "town",
+    "seed": "harlan",
+    "params": {
+      "era": "modern",
+      "modernLayout": "sprawl",
+      "size": 2
+    }
+  },
+  {
+    "name": "modern-waterfront",
+    "newMap": "town",
+    "seed": "harlan",
+    "params": {
+      "era": "modern",
+      "modernLayout": "waterfront",
+      "size": 4
+    }
+  },
+  {
+    "name": "modern-river-night",
+    "newMap": "town",
+    "seed": "harlan",
+    "params": {
+      "era": "modern",
+      "modernLayout": "river",
+      "size": 3,
+      "modernTheme": "night"
+    }
+  },
+  {
+    "name": "modern-waterfront-north",
+    "newMap": "town",
+    "seed": "harlan",
+    "params": {
+      "era": "modern",
+      "modernLayout": "waterfront",
+      "size": 2,
+      "seaSide": "north"
+    }
+  },
+  {
+    "name": "modern-metropolis-player",
+    "newMap": "town",
+    "seed": "harlan",
+    "params": {
+      "era": "modern",
+      "modernLayout": "grid",
+      "size": 5
+    },
+    "opts": {
+      "gm": false
+    }
+  }
+]

@@ -1,171 +1,178 @@
-// Builds one-click distributables: the app + a bundled Node runtime, so GMs
-// don't have to install anything. Zero dependencies; uses the system `tar`
-// (present on Windows 10+, macOS and Linux) for extracting and archiving.
-//
-//   node scripts/package.js                  → windows-x64 zip
-//   node scripts/package.js macos-arm64      → tar.gz (build on macOS/Linux to keep the exec bit)
-//   node scripts/package.js all              → every target
-//
-// Output lands in dist/.
+// Zero-dependency releases: system tar extracts Node; ZIP metadata preserves
+// executable permissions even when the release is assembled on Windows.
 'use strict';
-
-const fs = require('fs');
-const path = require('path');
-const https = require('https');
+const fs = require('fs'), path = require('path'), https = require('https');
+const { createHash } = require('crypto');
 const { execFileSync } = require('child_process');
-
-const ROOT = path.join(__dirname, '..');
-const DIST = path.join(ROOT, 'dist');
-const CACHE = path.join(DIST, 'cache');
-const APP_VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
-
-// On Windows, always use the system bsdtar — a Git-for-Windows tar earlier in
-// PATH cannot handle drive-letter paths like D:\ ("Cannot connect to D").
+const { writeZip } = require('./zip');
+const ROOT = path.resolve(__dirname, '..');
+const DIST = path.join(ROOT, 'dist'), CACHE = path.join(DIST, 'cache'), WORK = path.join(DIST, 'work');
+const APP_VERSION = require('../package.json').version;
+// Git-for-Windows tar cannot handle drive-letter paths.
 const TAR = process.platform === 'win32' ? 'C:\\Windows\\System32\\tar.exe' : 'tar';
-
 const TARGETS = {
-  // the runtime ships AS MundusMaker.exe so Task Manager shows the app, not "node"
-  'windows-x64': { nodeSuffix: 'win-x64.zip', nodeBin: 'node.exe', runtimePath: ['runtime', 'MundusMaker.exe'], archive: 'zip' },
-  'macos-arm64': { nodeSuffix: 'darwin-arm64.tar.gz', nodeBin: 'bin/node', runtimePath: ['runtime', 'bin', 'node'], archive: 'tar.gz' },
-  'macos-x64': { nodeSuffix: 'darwin-x64.tar.gz', nodeBin: 'bin/node', runtimePath: ['runtime', 'bin', 'node'], archive: 'tar.gz' },
-  'linux-x64': { nodeSuffix: 'linux-x64.tar.gz', nodeBin: 'bin/node', runtimePath: ['runtime', 'bin', 'node'], archive: 'tar.gz' },
+  'windows-x64': { suffix: 'win-x64.zip', bin: 'node.exe', runtime: 'runtime/MundusMaker.exe' },
+  'macos-arm64': { suffix: 'darwin-arm64.tar.gz', bin: 'bin/node', runtime: 'runtime/bin/node', mac: true },
+  'macos-x64': { suffix: 'darwin-x64.tar.gz', bin: 'bin/node', runtime: 'runtime/bin/node', mac: true },
+  'linux-x64': { suffix: 'linux-x64.tar.gz', bin: 'bin/node', runtime: 'runtime/bin/node' },
+  'linux-arm64': { suffix: 'linux-arm64.tar.gz', bin: 'bin/node', runtime: 'runtime/bin/node' },
 };
-
-// files shipped to end users (data/, dist/, node_modules/ etc. stay behind)
-const APP_FILES = [
-  'server.js', 'package.json', 'LICENSE', 'README.md',
-  'Start-MundusMaker.bat', 'Start-MundusMaker.command', 'start-mundusmaker.sh',
-  'Install-MundusMaker.ps1', 'Install-MundusMaker.bat', 'MundusMaker-Tray.ps1',
-  'public', 'sample', 'scripts/fetch-5etools.js',
-];
-
+const APP_FILES = ['server.js', 'package.json', 'LICENSE', 'README.md', 'public', 'sample',
+  'scripts/fetch-5etools.js', 'scripts/storage.js', 'scripts/restore.js', 'scripts/upgrade.js', 'scripts/folderbackup.js', 'scripts/unix-runtime.sh',
+  'scripts/container.js', 'Dockerfile', 'compose.yaml', '.dockerignore',
+  'docs/data-safety.md', 'docs/docker.md', 'docs/1.7.0-release.md', 'docs/1.8.0-plan.md', 'docs/1.8.0-release.md', 'docs/1.8.1-release.md', 'docs/1.9.0-plan.md', 'docs/1.9.0-release.md'];
+const WINDOWS_FILES = ['Start-MundusMaker.bat', 'MundusMaker-Console.bat', 'Install-MundusMaker.ps1', 'Install-MundusMaker.bat', 'MundusMaker-Tray.ps1'];
+function includeInPackage(file) {
+  return file.split(/[\\/]/).every(part => (!part.startsWith('.') || part === '.dockerignore')
+    && !/^(agents|claude|gemini|skill)(?:[.-]|$)/i.test(part)
+    && !/^(?:node_modules|data|secrets|tests?|tmp|dist|coverage|__pycache__)$/i.test(part)
+    && !/^(?:mundusmaker|tomeweaver|loreweave)\.config\.json$/i.test(part)
+    && !/^(?:session_handoff|copilot-instructions)\./i.test(part));
+}
+const sha256 = data => createHash('sha256').update(data).digest('hex');
+function assertOwnedWork(dir) {
+  const absolute = path.resolve(dir);
+  if (path.dirname(absolute) !== WORK || ![...Object.keys(TARGETS), 'universal'].some(t => path.basename(absolute) === t || path.basename(absolute) === `stage-${t}`)) throw new Error('Refusing work cleanup outside a packaging target');
+  for (const candidate of [DIST, WORK, absolute]) if (fs.existsSync(candidate) && fs.lstatSync(candidate).isSymbolicLink()) throw new Error('Packaging path is a symlink: ' + candidate);
+  return absolute;
+}
+function cleanWork(dir) { fs.rmSync(assertOwnedWork(dir), { recursive: true, force: true }); }
 function fetchBuffer(url, redirects = 0) {
   return new Promise((resolve, reject) => {
-    if (redirects > 5) return reject(new Error('too many redirects'));
-    https.get(url, (res) => {
-      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        res.resume();
-        return resolve(fetchBuffer(new URL(res.headers.location, url).href, redirects + 1));
-      }
-      if (res.statusCode !== 200) return reject(new Error(`${res.statusCode} for ${url}`));
-      const chunks = [];
-      res.on('data', (c) => chunks.push(c));
-      res.on('end', () => resolve(Buffer.concat(chunks)));
-      res.on('error', reject);
-    }).on('error', reject);
+    if (redirects > 5 || new URL(url).protocol !== 'https:') return reject(new Error('Invalid download redirect'));
+    const req = https.get(url, res => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) { res.resume(); return resolve(fetchBuffer(new URL(res.headers.location, url).href, redirects + 1)); }
+      if (res.statusCode !== 200) { res.resume(); return reject(new Error(`${res.statusCode} for ${url}`)); }
+      let size = 0; const chunks = [];
+      res.on('data', c => { size += c.length; if (size > 200 * 1024 * 1024) req.destroy(new Error('Download too large')); else chunks.push(c); });
+      res.on('end', () => resolve(Buffer.concat(chunks))); res.on('error', reject);
+    });
+    req.setTimeout(30000, () => req.destroy(new Error('Download timed out'))); req.on('error', reject);
   });
 }
-
-async function latestLtsVersion() {
-  const index = JSON.parse((await fetchBuffer('https://nodejs.org/dist/index.json')).toString('utf8'));
-  const lts = index.find((v) => v.lts); // list is newest-first
-  if (!lts) throw new Error('could not find an LTS release in the Node index');
-  return lts.version; // e.g. "v22.14.0"
+async function checksums(version) {
+  const file = path.join(CACHE, `SHASUMS256-${version}.txt`);
+  fs.mkdirSync(CACHE, { recursive: true });
+  if (!fs.existsSync(file)) fs.writeFileSync(file, await fetchBuffer(`https://nodejs.org/dist/${version}/SHASUMS256.txt`));
+  return new Map(fs.readFileSync(file, 'utf8').trim().split(/\r?\n/).map(line => { const [hash, name] = line.trim().split(/\s+/); return [name, hash]; }));
 }
-
-function copyDirSync(src, dest) {
-  fs.mkdirSync(dest, { recursive: true });
-  for (const item of fs.readdirSync(src, { withFileTypes: true })) {
-    const s = path.join(src, item.name);
-    const d = path.join(dest, item.name);
-    if (item.isDirectory()) copyDirSync(s, d);
-    else fs.copyFileSync(s, d);
+function copy(src, dest) {
+  if (!includeInPackage(path.basename(src))) return;
+  const info = fs.lstatSync(src);
+  if (info.isSymbolicLink()) throw new Error('Refusing to package symlink: ' + src);
+  if (info.isDirectory()) {
+    fs.mkdirSync(dest, { recursive: true });
+    for (const name of fs.readdirSync(src).sort()) copy(path.join(src, name), path.join(dest, name));
+  } else {
+    fs.mkdirSync(path.dirname(dest), { recursive: true }); fs.copyFileSync(src, dest);
+    if (/\.(?:sh|command)$/.test(src)) fs.writeFileSync(dest, fs.readFileSync(dest, 'utf8').replace(/\r\n/g, '\n'));
   }
 }
-
-async function build(target, nodeVersion) {
-  const spec = TARGETS[target];
-  console.log(`\n=== ${target} (app v${APP_VERSION}, node ${nodeVersion}) ===`);
-
-  // 1. download the official Node build (cached)
-  const nodeName = `node-${nodeVersion}-${spec.nodeSuffix}`;
-  const cached = path.join(CACHE, nodeName);
+function macBundle(outDir) {
+  const contents = path.join(outDir, 'MundusMaker.app', 'Contents'), resources = path.join(contents, 'Resources');
+  fs.mkdirSync(path.join(contents, 'MacOS'), { recursive: true }); fs.mkdirSync(resources, { recursive: true });
+  fs.writeFileSync(path.join(contents, 'MacOS', 'MundusMaker'), fs.readFileSync(path.join(ROOT, 'scripts/macos/MundusMaker'), 'utf8').replace(/\r\n/g, '\n'));
+  copy(path.join(ROOT, 'scripts/macos/launcher.js'), path.join(resources, 'launcher.js'));
+  fs.writeFileSync(path.join(contents, 'PkgInfo'), 'APPL????');
+  const fields = { CFBundleName: 'MundusMaker', CFBundleDisplayName: 'MundusMaker', CFBundleIdentifier: 'org.mundusmaker.desktop', CFBundlePackageType: 'APPL', CFBundleExecutable: 'MundusMaker', CFBundleIconFile: 'MundusMaker.icns', CFBundleShortVersionString: APP_VERSION, CFBundleVersion: APP_VERSION, LSMinimumSystemVersion: '13.5' };
+  fs.writeFileSync(path.join(contents, 'Info.plist'), '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict>\n' + Object.entries(fields).map(([k, v]) => `<key>${k}</key><string>${v}</string>`).join('\n') + '\n<key>LSUIElement</key><true/>\n<key>NSHighResolutionCapable</key><true/>\n</dict></plist>\n');
+  const chunks = [['ic08', 'icon-256.png'], ['ic09', 'icon-512.png']].map(([type, name]) => {
+    const png = fs.readFileSync(path.join(ROOT, 'public/icons', name)), header = Buffer.alloc(8);
+    header.write(type); header.writeUInt32BE(png.length + 8, 4); return Buffer.concat([header, png]);
+  });
+  const header = Buffer.alloc(8); header.write('icns'); header.writeUInt32BE(8 + chunks.reduce((n, b) => n + b.length, 0), 4);
+  fs.writeFileSync(path.join(resources, 'MundusMaker.icns'), Buffer.concat([header, ...chunks]));
+  return path.join(resources, 'app');
+}
+function archiveEntries(dir, prefix = path.basename(dir)) {
+  const result = [{ name: prefix + '/', mode: 0o755 }];
+  for (const name of fs.readdirSync(dir).sort()) {
+    if (!includeInPackage(name)) throw new Error('Contributor/private file reached stage: ' + name);
+    const file = path.join(dir, name), relative = prefix + '/' + name, stat = fs.lstatSync(file);
+    if (stat.isSymbolicLink()) throw new Error('Symlink reached archive stage');
+    if (stat.isDirectory()) result.push(...archiveEntries(file, relative));
+    else result.push({ name: relative, file, mode: /(?:\/runtime\/(?:[a-z]+-(?:x64|arm64)\/)?bin\/node|\/Contents\/MacOS\/MundusMaker|\.sh|\.command)$/.test(relative) ? 0o755 : 0o644 });
+  }
+  return result;
+}
+async function stageRuntime(target, nodeVersion, hashes, appDir, runtime) {
+  const spec = TARGETS[target], work = assertOwnedWork(path.join(WORK, target));
+  const nodeName = `node-${nodeVersion}-${spec.suffix}`, cached = path.join(CACHE, nodeName), expected = hashes.get(nodeName);
+  if (!/^[a-f0-9]{64}$/.test(expected || '')) throw new Error('Official checksum missing: ' + nodeName);
+  console.log(`${target}: verifying Node ${nodeVersion}`);
   if (!fs.existsSync(cached)) {
-    console.log(`downloading ${nodeName}…`);
-    fs.mkdirSync(CACHE, { recursive: true });
-    fs.writeFileSync(cached, await fetchBuffer(`https://nodejs.org/dist/${nodeVersion}/${nodeName}`));
-  } else {
-    console.log(`using cached ${nodeName}`);
+    const download = await fetchBuffer(`https://nodejs.org/dist/${nodeVersion}/${nodeName}`);
+    if (sha256(download) !== expected) throw new Error('Runtime download checksum mismatch');
+    fs.writeFileSync(cached, download);
   }
-
-  // 2. extract just the node binary
-  const work = path.join(DIST, 'work', target);
-  fs.rmSync(work, { recursive: true, force: true });
-  fs.mkdirSync(work, { recursive: true });
-  execFileSync(TAR, ['-xf', cached, '-C', work]);
-  const extractedRoot = path.join(work, fs.readdirSync(work)[0]);
-  const nodeBinary = path.join(extractedRoot, ...spec.nodeBin.split('/'));
-  if (!fs.existsSync(nodeBinary)) throw new Error(`node binary not found at ${nodeBinary}`);
-
-  // 3. assemble the app folder — staged under work/ so it never collides with
-  //    an extracted copy someone is browsing or running out of dist/
-  const outName = `MundusMaker-${APP_VERSION}-${target}`;
-  const stageRoot = path.join(DIST, 'work', `stage-${target}`);
-  const outDir = path.join(stageRoot, outName);
-  fs.rmSync(stageRoot, { recursive: true, force: true });
-  fs.mkdirSync(outDir, { recursive: true });
-  for (const f of APP_FILES) {
-    const src = path.join(ROOT, f);
-    if (fs.statSync(src).isDirectory()) copyDirSync(src, path.join(outDir, f));
-    else {
-      const dest = path.join(outDir, f);
-      fs.mkdirSync(path.dirname(dest), { recursive: true });
-      fs.copyFileSync(src, dest);
-    }
-  }
-  const runtimeDest = path.join(outDir, ...spec.runtimePath);
-  fs.mkdirSync(path.dirname(runtimeDest), { recursive: true });
-  fs.copyFileSync(nodeBinary, runtimeDest);
-  if (process.platform !== 'win32') fs.chmodSync(runtimeDest, 0o755);
-
-  // 4. archive
-  let archive;
-  if (spec.archive === 'zip') {
-    archive = path.join(DIST, `${outName}.zip`);
-    fs.rmSync(archive, { force: true });
-    execFileSync(TAR, ['-a', '-cf', archive, '-C', stageRoot, outName]);
-  } else {
-    archive = path.join(DIST, `${outName}.tar.gz`);
-    fs.rmSync(archive, { force: true });
-    execFileSync(TAR, ['-czf', archive, '-C', stageRoot, outName]);
-    if (process.platform === 'win32') {
-      console.log('note: building a unix target on Windows cannot preserve the exec bit;');
-      console.log('      users may need to run  chmod +x runtime/bin/node  once.');
-    }
-  }
-  fs.rmSync(work, { recursive: true, force: true });
-  fs.rmSync(stageRoot, { recursive: true, force: true });
-  const mb = (fs.statSync(archive).size / 1024 / 1024).toFixed(1);
-  console.log(`✓ ${archive} (${mb} MB)`);
-  return archive;
+  if (sha256(fs.readFileSync(cached)) !== expected) throw new Error('Cached runtime checksum mismatch: ' + cached);
+  cleanWork(work); fs.mkdirSync(work, { recursive: true });
+  const extractedName = nodeName.replace(/\.(?:zip|tar\.gz)$/, '');
+  try {
+    execFileSync(TAR, ['-xf', cached, '-C', work, `${extractedName}/${spec.bin}`, `${extractedName}/LICENSE`]);
+    copy(path.join(work, extractedName, spec.bin), path.join(appDir, runtime));
+    const runtimeDir = path.posix.dirname(runtime.replace(/\/bin\/node$/, '/node'));
+    copy(path.join(work, extractedName, 'LICENSE'), path.join(appDir, runtimeDir, 'LICENSE.txt'));
+    const metadata = { appVersion: APP_VERSION, nodeVersion, target, source: `https://nodejs.org/dist/${nodeVersion}/${nodeName}`, sha256: expected };
+    fs.writeFileSync(path.join(appDir, runtimeDir, 'version.json'), JSON.stringify(metadata, null, 2) + '\n');
+    return metadata;
+  } finally { cleanWork(work); }
 }
-
-(async () => {
-  // args: [target|all]…  [--node vX.Y.Z]   (pin the runtime for reproducible releases)
-  const args = process.argv.slice(2);
-  let pinned = null;
-  const names = [];
+function finishArchive(outDir) {
+  const outName = path.basename(outDir);
+  const archive = path.join(DIST, `${outName}.zip`), partial = archive + '.partial', entries = archiveEntries(outDir);
+  writeZip(partial, entries);
+  const listing = execFileSync(TAR, ['-tf', partial], { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 }).trim().split(/\r?\n/);
+  if (listing.length !== entries.length || listing.some(name => !includeInPackage(name.replace(/\/$/, '')))) throw new Error('Archive content validation failed');
+  fs.renameSync(partial, archive);
+  const hashLine = `${sha256(fs.readFileSync(archive))}  ${path.basename(archive)}\n`;
+  fs.writeFileSync(archive + '.sha256', hashLine);
+  console.log(`${path.basename(archive)}: ${(fs.statSync(archive).size / 1048576).toFixed(1)} MB, ${entries.length} checked entries`);
+  return hashLine;
+}
+async function build(target, nodeVersion, hashes) {
+  const universal = target === 'universal', spec = TARGETS[target];
+  const stage = assertOwnedWork(path.join(WORK, `stage-${target}`));
+  cleanWork(stage);
+  const outName = `MundusMaker-${APP_VERSION}${universal ? '' : '-' + target}`, outDir = path.join(stage, outName);
+  fs.mkdirSync(outDir, { recursive: true });
+  try {
+    const macDir = universal || spec.mac ? macBundle(outDir) : null;
+    const appDir = !universal && spec.mac ? macDir : outDir;
+    for (const dest of new Set([appDir, macDir].filter(Boolean))) for (const file of APP_FILES) copy(path.join(ROOT, file), path.join(dest, file));
+    const launchers = universal ? [...WINDOWS_FILES, 'start-mundusmaker.sh', 'Start-MundusMaker.command'] : target.startsWith('windows') ? WINDOWS_FILES : spec.mac ? [] : ['start-mundusmaker.sh'];
+    for (const file of launchers) copy(path.join(ROOT, file), path.join(outDir, file));
+    copy(path.join(ROOT, 'docs/distribution.html'), path.join(outDir, 'README-FIRST.html'));
+    const runtimes = [];
+    for (const name of universal ? Object.keys(TARGETS) : [target]) {
+      const entry = TARGETS[name], dest = entry.mac ? macDir : appDir;
+      const runtime = universal && !name.startsWith('windows') ? `runtime/${name}/bin/node` : entry.runtime;
+      runtimes.push(await stageRuntime(name, nodeVersion, hashes, dest, runtime));
+    }
+    if (universal) fs.writeFileSync(path.join(outDir, 'runtime/manifest.json'), JSON.stringify({ appVersion: APP_VERSION, nodeVersion, target, runtimes }, null, 2) + '\n');
+    return finishArchive(outDir);
+  } finally { cleanWork(stage); }
+}
+async function main(args = process.argv.slice(2)) {
+  let version; const names = [];
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--node') pinned = args[++i];
+    if (args[i] === '--node') { version = args[++i]; if (!/^v\d+\.\d+\.\d+$/.test(version || '')) throw new Error('--node requires vX.Y.Z'); }
     else names.push(args[i]);
   }
-  if (pinned && !/^v\d+\.\d+\.\d+$/.test(pinned)) {
-    console.error(`--node expects a version like v22.14.0, got "${pinned}"`);
-    process.exit(1);
+  const targets = names.includes('all') ? Object.keys(TARGETS) : names.length ? [...new Set(names)] : ['universal'];
+  for (const name of targets) if (name !== 'universal' && !TARGETS[name]) throw new Error('Unknown target: ' + name);
+  assertOwnedWork(path.join(WORK, targets[0]));
+  if (fs.existsSync(CACHE) && fs.lstatSync(CACHE).isSymbolicLink()) throw new Error('Cache must not be a symlink');
+  if (!version) {
+    const index = JSON.parse((await fetchBuffer('https://nodejs.org/dist/index.json')).toString('utf8'));
+    version = index.find(v => v.lts)?.version;
+    if (!/^v\d+\.\d+\.\d+$/.test(version || '')) throw new Error('No LTS version found');
   }
-  const arg = names[0] || 'windows-x64';
-  const targets = arg === 'all' ? Object.keys(TARGETS) : (names.length ? names : [arg]);
-  for (const t of targets) {
-    if (!TARGETS[t]) {
-      console.error(`unknown target "${t}" — use one of: ${Object.keys(TARGETS).join(', ')}, all`);
-      process.exit(1);
-    }
-  }
-  const nodeVersion = pinned || await latestLtsVersion();
-  console.log(`runtime: Node ${nodeVersion}${pinned ? ' (pinned)' : ' (latest LTS)'}`);
-  for (const t of targets) await build(t, nodeVersion);
-  console.log('\nDone. Share the archive — unzip, double-click the Start-MundusMaker launcher, play.');
-})().catch((err) => {
-  console.error('packaging failed:', err.message);
-  process.exit(1);
-});
+  console.log(`MundusMaker ${APP_VERSION}, runtime ${version}`);
+  const hashes = await checksums(version), sums = [];
+  for (const target of targets) sums.push(await build(target, version, hashes));
+  fs.writeFileSync(path.join(DIST, `MundusMaker-${APP_VERSION}-SHA256SUMS.txt`), sums.join(''));
+  console.log('Done. The release includes bundled runtimes and a README-FIRST.html startup guide.');
+}
+if (require.main === module) main().catch(err => { console.error('Packaging failed:', err.message || err.code || String(err)); process.exitCode = 1; });
+module.exports = { TARGETS, includeInPackage, assertOwnedWork, archiveEntries, macBundle, main };

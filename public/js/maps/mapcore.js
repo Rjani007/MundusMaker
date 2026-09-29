@@ -2,13 +2,19 @@
 // filtering), full renders for the editor, thumbnails, PNG and PDF export.
 
 import { uid, el } from '../util.js';
-import { WORLD_W, WORLD_H, WORLD_STYLES, defaultWorldParams, buildWorldModel, renderWorldBase, applyWorldStroke } from './world.js';
-import { TOWN_W, TOWN_H, defaultTownParams, buildTownModel, renderTownBase, computeWards, TOWN_LAYOUTS, TOWN_TERRAINS, TOWN_PAVINGS } from './town.js';
+import { hiddenOverlayLinkIds, overlayVisible, mapKey } from '../projection.js';
+import { LANDFORMS } from './geography.js';
+import { finishCartography, drawMapLegend } from './cartography.js';
+import { WORLD_W, WORLD_H, WORLD_STYLES, defaultWorldParams, buildWorldModel, renderWorldBase, applyWorldStroke, traceClassicRivers } from './world.js';
+import { TOWN_W, TOWN_H, defaultTownParams, buildTownModel, renderTownBase, computeWards, TOWN_LAYOUTS, TOWN_TERRAINS, TOWN_PAVINGS, TOWN_SEA_SIDES } from './town.js';
 import {
   CELL, FLOOR, SOLID, DOOR, STAIR_DOWN, STAIR_UP, DUNGEON_STYLES,
   defaultDungeonParams, dungeonSize, dungeonGrid, dungeonLevels, gridToString, renderDungeonBase,
 } from './dungeon.js';
-import { REGION_W, REGION_H, defaultRegionParams, buildRegionModel, renderRegionBase } from './region.js';
+import { REGION_W, REGION_H, defaultRegionParams, buildRegionModel, renderRegionBase, traceRivers, resolveRegionTerrainKey } from './region.js';
+import { refreshCarve } from './crossscale.js';
+import { worldKeys, regionKeys, townKeys, dungeonKeys, hasKeys, resolveKeys, drawKeyBadges } from './mapkeys.js';
+import { MODERN_LAYOUTS, MODERN_THEMES } from './moderntown.js';
 import {
   INTERIOR_CELL, INTERIOR_BUILDINGS, defaultInteriorParams, interiorSize,
   buildInteriorModel, interiorGridToString, renderInteriorBase,
@@ -17,6 +23,42 @@ import {
 // battle-scale stamp kinds — building maps list these first, other kinds hide them
 export const FURNITURE_STAMPS = ['table', 'chair', 'bed', 'hearth', 'altar', 'counter', 'barrel', 'chest'];
 
+const MODERN_PLACE_KINDS = { cityhall: 'City hall', police: 'Police', library: 'Library', hospital: 'Hospital', school: 'School', church: 'Church', diner: 'Diner', gas: 'Gas station', motel: 'Motel', station: 'Station', marina: 'Marina', warehouse: 'Warehouse' };
+
+// Modern towns (1.9): GM-editable place and street names, like ward names.
+// Overrides live in map.placeNames / map.streetNames, keyed by the generated
+// order; blank keeps the generated name, and map keys keep their anchors.
+function modernNamesPanel({ map, model, save, refreshBase, title }) {
+  const row = (label, placeholder, value, store) => el('div', { class: 'param-row' }, el('label', {}, label), el('input', {
+    type: 'text', value, placeholder, title: 'Leave it blank to use the generated name.',
+    oninput: (ev) => { const v = ev.target.value.trim(); map[store] ??= {}; if (v) map[store][ev.target.dataset.i] = v; else delete map[store][ev.target.dataset.i]; save(); refreshBase(); },
+  }));
+  const places = (model?.buildings || []).filter((b) => b.landmark);
+  const wrap = el('div', {}, title);
+  if (places.length) {
+    wrap.append(el('h3', {}, 'Places'));
+    places.forEach((b, i) => { const r = row(MODERN_PLACE_KINDS[b.landmarkKind] || 'Place', b.landmark, map.placeNames?.[i] || '', 'placeNames'); r.querySelector('input').dataset.i = i; wrap.append(r); });
+  }
+  const streets = model?.streets || [];
+  if (streets.length) {
+    const list = el('details', {}, el('summary', {}, `Street names (${streets.length})`));
+    streets.forEach((name, i) => { const r = row(name.replace(/ (Street|Avenue|Boulevard|Road|Drive|Lane|Court|Way|Place|Circle|Terrace)$/, ''), name, map.streetNames?.[i] || '', 'streetNames'); r.querySelector('input').dataset.i = i; list.append(r); });
+    wrap.append(list);
+  }
+  wrap.append(el('div', { class: 'muted small', style: 'margin-top:4px' }, 'Names print on the map and in the PDF. Blank keeps the generated one.'));
+  return wrap;
+}
+
+function mapTitlePanel({ map, readOnly, save, refreshBase }) {
+  if (readOnly || map.params?.generation !== '1.8') return null;
+  return el('div', {}, el('h3', {}, 'Map title'), el('div', { class: 'param-row' },
+    el('label', {}, 'Title'), el('input', {
+      type: 'text', value: map.params?.title || '', placeholder: 'Generated title', 'aria-label': 'Map title',
+      title: 'Printed on the map. Leave blank to use the generated title.',
+      oninput: ev => { (map.params ??= {}).title = ev.target.value; save(); refreshBase(); },
+    })));
+}
+
 /*
  * Each kind describes its own editor declaratively (0.13):
  *   params: [{ key, label, type: 'slider'|'select'|'checkbox'|'number',
@@ -24,8 +66,13 @@ export const FURNITURE_STAMPS = ['table', 'chair', 'bed', 'hearth', 'altar', 'co
  *              Number), absent (the value DISPLAYED/read when the key is
  *              missing on an old map — distinct from defaults(), which only
  *              seeds newMap), confirmGrid (route through the discard-edits
- *              confirm), show(p) (row visibility), title }]
+ *              confirm), regeneratesSites (site-key prefixes that may be
+ *              replaced, used by the link/edit warning), show(p) (row
+ *              visibility), noRebuild (a setting that draws nothing: save
+ *              it without rebuilding the map, and choosing `absent` removes
+ *              the key), title }]
  *   tools:  [{ name, label, title }] — kind-specific paint tools
+ *   siteKinds: generated or addable site panels shown by the editor
  *   paint:  'brush' (map.strokes + applyStroke) | 'grid' (map.grid +
  *           paintCell/cellSize) | undefined
  *   clearEdits: { has(map), label, confirm, run(map) } — the reset button
@@ -34,23 +81,35 @@ export const FURNITURE_STAMPS = ['table', 'chair', 'bed', 'hearth', 'altar', 'co
  */
 export const MAP_KINDS = {
   world: {
+    worker: true,
     label: 'World map',
     size: () => [WORLD_W, WORLD_H],
     defaults: defaultWorldParams,
     buildModel: buildWorldModel,
+    keys: worldKeys, // map keys (1.9): notes on settlements
     renderBase: renderWorldBase,
     labelStyle: 'light',
+    extraPanel: mapTitlePanel,
+    siteKinds: ['region', 'settlement'],
     params: [
       // absent = 'classic': every world map made before 0.13 keeps its exact look
       { key: 'style', label: 'Style', type: 'select', options: WORLD_STYLES, absent: 'classic',
+        regeneratesSites: ['nation:', 'world:'],
         title: 'Classic is the original painted relief; Atlas adds climate, coast ink, lakes, nations and named settlements' },
-      { key: 'water', label: 'Sea level', type: 'slider', min: 0.36, max: 0.64, step: 0.01, absent: 0.5 },
-      { key: 'scale', label: 'Zoom out', type: 'slider', min: 1.5, max: 6, step: 0.25, absent: 3 },
-      { key: 'rivers', label: 'Rivers', type: 'slider', min: 0, max: 14, step: 1, absent: 6 },
-      { key: 'island', label: 'Island', type: 'checkbox', absent: false },
+      { key: 'water', label: 'Sea level', type: 'slider', min: 0.36, max: 0.64, step: 0.01, absent: 0.5,
+        regeneratesSites: ['nation:', 'world:'] },
+      { key: 'scale', label: 'Zoom out', type: 'slider', min: 1.5, max: 6, step: 0.25, absent: 3,
+        regeneratesSites: ['nation:', 'world:'] },
+      { key: 'rivers', label: 'Rivers', type: 'slider', min: 0, max: 14, step: 1, absent: 6,
+        regeneratesSites: ['world:'] },
+      { key: 'island', label: 'Island', type: 'checkbox', absent: false,
+        show: (p) => p.generation !== '1.8' || p.style !== 'atlas',
+        regeneratesSites: ['nation:', 'world:'] },
       { key: 'nations', label: 'Nations', type: 'slider', min: 0, max: 7, step: 1, absent: 3,
+        regeneratesSites: ['nation:', 'world:'],
         show: (p) => (p.style || 'classic') === 'atlas' },
       { key: 'settlements', label: 'Settlements', type: 'checkbox', absent: true,
+        regeneratesSites: ['world:'],
         show: (p) => (p.style || 'classic') === 'atlas' },
       { key: 'labels', label: 'Auto labels', type: 'checkbox', absent: true,
         show: (p) => (p.style || 'classic') === 'atlas' },
@@ -67,22 +126,40 @@ export const MAP_KINDS = {
       confirm: 'Undo all terrain brush edits?',
       run: (map) => { map.strokes = []; },
     },
+    // parent-geography facts for townParamsForSettlement — the editor calls
+    // this instead of branching on map.kind. Classic worlds trace their
+    // rivers on demand (pure, same ':rivers' stream the render uses).
+    drillContext: (map, model) => ({
+      rivers: model?.rivers
+        || (model ? traceClassicRivers(model, map.seed, map.params?.rivers ?? 6) : []),
+      lakes: model?.lakes || [],
+    }),
   },
   region: {
+    worker: true,
     label: 'Region map',
     size: () => [REGION_W, REGION_H],
     defaults: defaultRegionParams,
     buildModel: buildRegionModel,
+    keys: regionKeys, // notes on settlements, landmarks and hexes
+    journeys: true, // the journey planner routes over roads and ferries (journey.js)
     renderBase: renderRegionBase,
     labelStyle: 'dark',
+    siteKinds: ['settlement', 'landmark'],
     params: [
       { key: 'terrain', label: 'Terrain', type: 'select', absent: 'auto',
         options: { auto: 'Surprise me', green: 'Green lowlands', harsh: 'Harsh moors', cold: 'Cold north', arid: 'Arid badlands' },
-        title: 'The palette of the province — “Surprise me” picks from the seed' },
-      { key: 'relief', label: 'Relief', type: 'slider', min: 0.2, max: 0.9, step: 0.05, absent: 0.5 },
-      { key: 'water', label: 'Water', type: 'slider', min: 0.2, max: 0.55, step: 0.01, absent: 0.35 },
-      { key: 'settlements', label: 'Settlements', type: 'slider', min: 1, max: 9, step: 1, absent: 4 },
-      { key: 'landmarks', label: 'Landmarks', type: 'slider', min: 0, max: 6, step: 1, absent: 3 },
+        title: 'The province palette. “Surprise me” chooses one from the seed.' },
+      { key: 'relief', label: 'Relief', type: 'slider', min: 0.2, max: 0.9, step: 0.05, absent: 0.5,
+        regeneratesSites: ['region:', 'landmark:'] },
+      // max matches the world sea-level slider so a carved high-sea region
+      // can hold the water level its parent actually has
+      { key: 'water', label: 'Water', type: 'slider', min: 0.2, max: 0.64, step: 0.01, absent: 0.35,
+        regeneratesSites: ['region:', 'landmark:'] },
+      { key: 'settlements', label: 'Settlements', type: 'slider', min: 1, max: 9, step: 1, absent: 4,
+        regeneratesSites: ['region:', 'landmark:'] },
+      { key: 'landmarks', label: 'Landmarks', type: 'slider', min: 0, max: 6, step: 1, absent: 3,
+        regeneratesSites: ['landmark:'] },
       { key: 'roads', label: 'Roads', type: 'checkbox', absent: true },
       { key: 'hexes', label: 'Hex grid', type: 'checkbox', absent: false,
         title: 'A travel-scale hex overlay for counting distance' },
@@ -100,28 +177,84 @@ export const MAP_KINDS = {
       confirm: 'Undo all terrain brush edits?',
       run: (map) => { map.strokes = []; },
     },
+    drillContext: (map, model) => ({
+      rivers: model ? traceRivers(model, map.seed) : [],
+      regionTerrain: resolveRegionTerrainKey(map),
+    }),
+    // Explicit only: region maps remain frozen until the GM asks to refresh
+    // the saved crop from its parent. The stored window stays fixed.
+    refreshFromParent({ map, parentModel, drillContext }) {
+      const carve = refreshCarve(parentModel, map.carve, drillContext);
+      if (!carve) return false;
+      map.carve = carve;
+      (map.params ??= {}).water = Math.max(0.2, Math.min(0.64, carve.water));
+      return true;
+    },
+    // the big faint title is a render-level override (params.title) — the
+    // generated name still costs its draw, so renaming reshuffles nothing
+    extraPanel({ map, model, readOnly, save, refreshBase, refreshFromParent }) {
+      if (readOnly) return null;
+      const wrap = el('div', {},
+        el('h3', {}, 'Region name'),
+        el('div', { class: 'param-row' },
+          el('label', {}, 'Title'),
+          el('input', {
+            type: 'text', value: map.params?.title || '', placeholder: model?.title || 'Generated name',
+            title: 'Rename the region. This title appears on the map and in the PDF. Leave it blank to use the generated name.',
+            oninput: (ev) => {
+              (map.params ??= {}).title = ev.target.value;
+              save();
+              refreshBase();
+            },
+          })));
+      if (map.parentId && map.carve?.wx0 != null && refreshFromParent) {
+        wrap.append(
+          el('h3', {}, 'Terrain source'),
+          el('div', { class: 'muted small', style: 'margin-bottom:6px' },
+            'This region uses a saved crop of its parent world. Refresh it when the world terrain or sea level changes.'),
+          el('button', {
+            class: 'ghost',
+            title: 'Read the same area from the parent world again',
+            onclick: async (ev) => {
+              const button = ev.currentTarget;
+              button.disabled = true;
+              try { await refreshFromParent(); } finally { button.disabled = false; }
+            },
+          }, 'Refresh terrain from world'));
+      }
+      return wrap;
+    },
   },
   town: {
     label: 'Town map',
     size: () => [TOWN_W, TOWN_H],
     defaults: defaultTownParams,
     buildModel: buildTownModel,
+    keys: townKeys, // notes on landmark buildings
+    populate: true, // people and places per district (1.8 and modern towns; populate.js)
+    // new-map choices beyond the plain kind (1.9): a modern town is a town map
+    // whose params carry era: 'modern'
+    variants: [{ key: 'modern', label: 'Modern town map', params: { era: 'modern' } }],
+    legendFor: (map) => (map.params?.era === 'modern' ? ['Gold roads · Arterials', 'Dashed gray line · Railway', 'Orange buildings · Landmarks'] : null),
     renderBase: renderTownBase,
     labelStyle: 'dark',
     params: [
       { key: 'layout', label: 'Layout', type: 'select', options: TOWN_LAYOUTS, absent: 'auto',
         title: 'The overall shape of the settlement. “Surprise me” picks one from the seed.' },
+      { key: 'seaSide', label: 'Sea side', type: 'select', options: TOWN_SEA_SIDES, absent: 'south',
+        show: (p) => (p.layout || 'auto') === 'coastal',
+        title: 'Which edge of the map faces the sea. Existing coastal maps default to south.' },
       { key: 'size', label: 'Size', type: 'select', numeric: true, absent: 2,
         options: { 1: 'Hamlet', 2: 'Village', 3: 'Town', 4: 'City', 5: 'Metropolis' } },
       { key: 'density', label: 'Density', type: 'slider', min: 0.4, max: 1.6, step: 0.1, absent: 1 },
       // maps from before themes existed default to their original look
       { key: 'terrain', label: 'Terrain', type: 'select', options: TOWN_TERRAINS, absent: 'parchment',
-        title: 'The land the town sits in — colors only, the town itself doesn’t change. “Surprise me” picks from the seed.' },
+        title: 'The surrounding terrain changes the colors only. “Surprise me” chooses from the seed.' },
       { key: 'paving', label: 'Streets', type: 'select', options: TOWN_PAVINGS, absent: 'dirt',
         title: 'Dirt lanes, cobblestones, or grand flagstone avenues. “Auto” paves by settlement size.' },
       { key: 'walls', label: 'Walls', type: 'checkbox', absent: false },
       { key: 'wards', label: 'Wards', type: 'checkbox', absent: false,
-        title: 'Tint and name the town’s quarters — derived from the buildings, nothing moves' },
+        title: 'Tint and name the town’s quarters without moving any buildings.' },
       // river is implied by riverside and replaced by the sea for coastal
       { key: 'river', label: 'River', type: 'checkbox', absent: false,
         show: (p) => !['coastal', 'riverside'].includes(p.layout || 'auto') },
@@ -130,16 +263,18 @@ export const MAP_KINDS = {
     // thumbnails, PNG exports and the PDF all pick them up), keyed by the
     // ward's index in computeWards' deterministic order. Blank = generated name.
     extraPanel({ map, model, readOnly, save, refreshBase }) {
-      if (!map.params?.wards || readOnly) return null;
+      const title = mapTitlePanel({ map, readOnly, save, refreshBase });
+      if (map.params?.era === 'modern') return readOnly ? title : modernNamesPanel({ map, model, save, refreshBase, title });
+      if (!map.params?.wards || readOnly) return title;
       const wards = computeWards(model, map.seed);
-      if (!wards.length) return null;
-      const wrap = el('div', {}, el('h3', {}, 'Wards'));
+      if (!wards.length) return title;
+      const wrap = el('div', {}, title, el('h3', {}, 'Wards'));
       wards.forEach((w, i) => {
         wrap.append(el('div', { class: 'param-row' },
           el('label', {}, `Ward ${i + 1}`),
           el('input', {
             type: 'text', value: map.wardNames?.[i] || '', placeholder: w.name,
-            title: 'Rename this ward — leave blank to keep the generated name',
+            title: 'Rename this ward. Leave it blank to use the generated name.',
             oninput: (ev) => {
               const v = ev.target.value.trim();
               map.wardNames ??= {};
@@ -203,6 +338,8 @@ export const MAP_KINDS = {
     defaults: defaultDungeonParams,
     buildModel: (map, level = 0) => ({ ...dungeonGrid(map, level), level }),
     renderBase: renderDungeonBase,
+    keys: dungeonKeys, // notes on rooms
+    numberedRooms: true, // exports offer room numbers on player images (baseAnnotations)
     labelStyle: 'light',
     params: [
       { key: 'style', label: 'Style', type: 'select', options: DUNGEON_STYLES, absent: 'rooms', confirmGrid: true,
@@ -249,19 +386,75 @@ export const MAP_KINDS = {
   },
 };
 
+for (const [key,def] of Object.entries(MAP_KINDS)) {
+  def.params.unshift({key:'generation',label:'Generation',type:'select',absent:'legacy',options:{legacy:'Original generation','1.8':'1.8 · improved generation'},confirmGrid:true,regeneratesSites:['world:','nation:','region:','landmark:']});
+  def.params.push(
+    {key:'cartography',label:'Print style',type:'select',absent:'original',options:{original:'Original colors',parchment:'Parchment',atlas:'Clean atlas',ink:'Ink saving'}},
+    {key:'legend',label:'Map legend',type:'checkbox',absent:false},
+    {key:'distance',label:'Map width',type:'number',absent:0,min:0,max:100000,title:'Set the distance across the full map width. Zero hides the scale bar.'},
+    {key:'units',label:'Distance unit',type:'select',absent:'km',options:{km:'Kilometers',mi:'Miles',m:'Meters',ft:'Feet'},show:p=>Number(p.distance)>0});
+  def.legend = key==='world'?['Settlement symbols · Towns & capitals','Dashed boundary · Nation','Blue line · River']:key==='region'?['Settlement & landmark symbols','Dashed road   Dotted ferry','Paired bars · River crossing']:key==='town'?['Colored roofs · District uses','Heavy roads · Main streets','Brown jetties · Docks']:['D · Door','Number · Room','Stair arrows · Floor connection'];
+}
+MAP_KINDS.world.params.splice(2,0,
+  {key:'landform',label:'Landform',type:'select',options:LANDFORMS,absent:'continents',show:p=>p.generation==='1.8'&&p.style==='atlas',regeneratesSites:['world:','nation:']},
+  {key:'ruggedness',label:'Mountain chains',type:'slider',min:.1,max:1,step:.1,absent:.7,show:p=>p.generation==='1.8',regeneratesSites:['world:','nation:']},
+  {key:'wind',label:'Moisture from',type:'select',absent:'west',options:{west:'West',east:'East'},show:p=>p.generation==='1.8'});
+MAP_KINDS.town.params.splice(1,0,{key:'character',label:'Town character',type:'select',absent:'market',options:{market:'Market town',hill:'Hill town',fortified:'Fortified settlement'},show:p=>p.generation==='1.8',confirmGrid:false});
+MAP_KINDS.town.params.splice(2,0,
+  {key:'harborDepth',label:'Harbor inlet',type:'slider',min:0,max:1,step:.1,absent:.6,show:p=>p.generation==='1.8'&&p.layout==='coastal',preview:true},
+  {key:'docks',label:'Working docks',type:'slider',min:1,max:9,step:1,absent:5,show:p=>p.generation==='1.8'&&p.layout==='coastal',preview:true});
+// modern towns (1.9): an era param read straight from map.params by town.js,
+// its own layout and palette, and the historical controls hidden
+for (const spec of MAP_KINDS.town.params) {
+  const shown = spec.show;
+  if (!['size', 'density', 'cartography', 'legend', 'distance', 'units'].includes(spec.key)) spec.show = (p) => p.era !== 'modern' && (!shown || shown(p));
+}
+MAP_KINDS.town.params.unshift(
+  { key: 'era', label: 'Era', type: 'select', absent: 'historical', options: { historical: 'Historical', modern: 'Modern' }, confirmGrid: true, regeneratesSites: ['landmark:'],
+    title: 'Modern towns have avenues and suburbs, a railway and modern landmarks. Changing the era redraws the whole town.' },
+  { key: 'modernLayout', label: 'Layout', type: 'select', options: MODERN_LAYOUTS, absent: 'auto', show: (p) => p.era === 'modern', regeneratesSites: ['landmark:'] },
+  { key: 'modernTheme', label: 'Palette', type: 'select', options: MODERN_THEMES, absent: 'day', show: (p) => p.era === 'modern',
+    title: 'Night recolors the map only; nothing moves.' });
+// towns opened from a world or region map (1.9): this map's choice, else the
+// world default; nothing on this map is drawn differently
+for (const kind of ['world', 'region']) MAP_KINDS[kind].params.push({ key: 'townEra', label: 'Towns opened here', type: 'select', absent: '', noRebuild: true,
+  options: { '': 'World default', historical: 'Historical', modern: 'Modern' },
+  title: 'The era of town maps you open from this map. World default follows the setting on the Maps page.' });
+const buildingParam=MAP_KINDS.interior.params.find(p=>p.key==='building');
+Object.assign(buildingParam.options,{manor:'Manor',workshop:'Workshop'});
+for(const def of Object.values(MAP_KINDS))for(const spec of def.params) {
+  if(spec.regeneratesSites||spec.confirmGrid||['size','density','walls','river','layout','character','levels','roads','wind'].includes(spec.key))spec.preview=true;
+}
+
+/** Every map a GM can create: each kind, plus its variants (1.9). */
+export function mapChoices() {
+  return Object.entries(MAP_KINDS).flatMap(([kind, def]) => [
+    { value: kind, kind, label: def.label, params: {} },
+    ...(def.variants || []).map((v) => ({ value: `${kind}:${v.key}`, kind, label: v.label, params: v.params })),
+  ]);
+}
+
+/** newMap() for a mapChoices() value. */
+export function newMapFrom(value) {
+  const choice = mapChoices().find((c) => c.value === value) || mapChoices()[0];
+  const map = newMap(choice.kind);
+  Object.assign(map.params, choice.params);
+  return map;
+}
+
 export function newMap(kind) {
   const def = MAP_KINDS[kind];
   return {
     kind,
     seed: Math.random().toString(36).slice(2, 10),
-    params: def.defaults(),
+    params: { ...def.defaults(), generation:'1.8' },
+    compass: kind === 'world' || kind === 'region',
     strokes: [],
     grid: null,
     markers: [],
     labels: [],
     stamps: [],
     paths: [],
-    compass: false,
   };
 }
 
@@ -273,13 +466,9 @@ export function newMarker(x, y, opts = {}) {
   return { id: uid(), x, y, shape: opts.shape || 'dot', color: opts.color || '#e0524a', label: opts.label || '', secret: !!opts.secret, to: opts.to || null };
 }
 
-/**
- * Visible markers + stamps in map-key order (markers first) — matches the
- * numbers drawn by opts.numbered, so the printed key and the badges agree.
- */
-export function mapKey(map, opts = {}) {
-  return [...(map.markers || []), ...(map.stamps || [])].filter((o) => opts.gm || !o.secret);
-}
+// Overlay visibility and the map key live in projection.js, the player
+// projection every export shares; re-exported for the existing importers.
+export { hiddenOverlayLinkIds, mapKey };
 
 export function newLabel(x, y, text, size = 22) {
   return { id: uid(), x, y, text, size };
@@ -712,6 +901,7 @@ function drawShape(ctx, shape, x, y, r, color) {
 /**
  * Draw paths, stamps, labels and markers over the base map.
  * opts.gm       — include secret overlay items (drawn with a dashed halo)
+ * opts.hiddenLinkIds — gmOnly targets whose linked overlays stay out of player renders
  * opts.selected — id of the currently selected item (editor highlight)
  * opts.numbered — numbered badges on markers+stamps for the printed map key
  */
@@ -754,7 +944,7 @@ export function drawOverlay(ctx, map, W, H, opts = {}) {
   }
 
   for (const s of map.stamps || []) {
-    if (s.secret && !opts.gm) continue;
+    if (!overlayVisible(s, opts)) continue;
     if (!onLevel(s)) continue;
     const x = s.x * W, y = s.y * H;
     drawStamp(ctx, s, x, y, style === 'light');
@@ -785,7 +975,7 @@ export function drawOverlay(ctx, map, W, H, opts = {}) {
   }
 
   for (const mk of map.markers || []) {
-    if (mk.secret && !opts.gm) continue;
+    if (!overlayVisible(mk, opts)) continue;
     if (!onLevel(mk)) continue;
     const x = mk.x * W, y = mk.y * H;
     drawShape(ctx, mk.shape, x, y, 7, mk.color);
@@ -834,6 +1024,16 @@ function highlight(ctx, x, y, r) {
 // ---------- full renders ----------
 
 /**
+ * Generator annotations a base render may show. GM renders keep everything;
+ * player renders never show generator guidance (a dungeon's IN/GOAL) and show
+ * room numbers only when the export asks for them (opts.roomNumbers). This is
+ * a per-render choice, not a stored flag.
+ */
+export function baseAnnotations(opts = {}) {
+  return opts.gm ? { roomNumbers: true, guidance: true } : { roomNumbers: !!opts.roomNumbers, guidance: false };
+}
+
+/**
  * Render a complete map (base + overlay) onto `canvas`. opts.scale > 1
  * renders at a multiple of the native size — a true re-render (vector strokes,
  * text, glyphs all stay sharp), not a pixel upscale. Handy for printing.
@@ -846,12 +1046,18 @@ export function renderMap(canvas, map, opts = {}) {
   canvas.height = H * scale;
   const ctx = canvas.getContext('2d');
   // opts.level renders a deeper floor of a multi-level kind
-  const model = opts.model ?? (opts.level ? kind.buildModel(map, opts.level) : null);
-  const base = opts.base || kind.renderBase(map, model, scale);
+  // A GM render of a keyed map builds its model once, for the base and the
+  // key badges; every other render keeps the original path.
+  const keyed = opts.gm && kind.keys && hasKeys(map);
+  const model = opts.model ?? (opts.level || keyed ? kind.buildModel(map, opts.level || 0) : null);
+  const base = opts.base || kind.renderBase(map, model, scale, baseAnnotations(opts));
   ctx.drawImage(base, 0, 0, W * scale, H * scale);
+  finishCartography(canvas,map.params?.cartography);
   ctx.save();
   ctx.scale(scale, scale);
   drawOverlay(ctx, map, W, H, opts);
+  if (keyed) drawKeyBadges(ctx, resolveKeys(map, kind, (level) => (level === (opts.level || 0) ? model : kind.buildModel(map, level)), { level: opts.level || 0 }).placed, opts.level || 0);
+  drawMapLegend(ctx,map,W,H,kind.legendFor?.(map)||kind.legend);
   ctx.restore();
   return canvas;
 }

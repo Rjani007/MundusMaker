@@ -1,19 +1,33 @@
 {
   "name": "mundusmaker",
-  "version": "1.2.0",
+  "version": "1.8.2",
   "description": "A free, open-source, fully local worldbuilding wiki for GMs — typed entities, backlinks, graph view, timelines, per-block secrets, player-safe PDF export, and procedural map generators. No cloud, no accounts, no AI.",
   "license": "MIT",
   "type": "commonjs",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "test": "node --test tests/*.test.js",
+    "test:maps": "node --test tests/maps18.test.js",
+    "test:render": "node scripts/render-check.js",
+    "test:startup": "node --test tests/startup.test.js tests/upgrade.test.js",
+    "test:handouts": "node --test tests/handouts.test.js",
+  "test:wiki": "node --test tests/wiki.test.js tests/reveal.test.js && node scripts/wiki-check.js",
+    "test:safety": "node --test tests/storage.test.js tests/saves.test.js tests/server-safety.test.js tests/sync-copies.test.js tests/folderbackup.test.js",
+    "test:tracker": "node --test tests/tracker.test.js",
+    "test:characters": "node --test tests/characters.test.js tests/sheets-familiar.test.js",
+    "test:references": "node --test tests/references.test.js",
+    "test:package": "node --test tests/package.test.js tests/unix-launchers.test.js tests/installed-config.test.js tests/macos-launcher.test.js",
+    "test:container": "node --test tests/container.test.js",
     "icons": "node scripts/build-icons.js",
     "vendor": "node scripts/vendor.js",
     "bestiary": "node scripts/build-bestiary.js",
-    "srd52": "node scripts/build-srd52.js",
+    "srd52": "node scripts/build-srd52.js && node scripts/build-progression.js",
+    "srd52:progression": "node scripts/build-progression.js",
     "5etools": "node scripts/fetch-5etools.js",
     "package": "node scripts/package.js",
-    "package:all": "node scripts/package.js all"
+    "package:all": "node scripts/package.js universal",
+    "package:platforms": "node scripts/package.js all"
   },
   "devDependencies": {
     "jspdf": "^2.5.2"

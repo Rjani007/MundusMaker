@@ -8,6 +8,10 @@
 
 import { makeRng, makeNoise2D } from '../util.js';
 import { nameFor } from '../names.js';
+import { planTown, coastalTownLayout } from './townplan.js';
+import { renderPlannedTown } from './townart.js';
+import { buildModernTown } from './moderntown.js';
+import { renderModernTown } from './modernart.js';
 
 export const TOWN_W = 900;
 export const TOWN_H = 640;
@@ -20,6 +24,10 @@ export const TOWN_LAYOUTS = {
   grid: 'Planned grid city',
   coastal: 'Coastal harbor',
   riverside: 'Riverside',
+};
+
+export const TOWN_SEA_SIDES = {
+  south: 'South', north: 'North', east: 'East', west: 'West',
 };
 
 export function defaultTownParams() {
@@ -53,6 +61,10 @@ function convexHull(pts) {
 }
 
 export function computeWards(model, seed) {
+  if (model.generation==='1.8') return (model.districts||[]).map(d=>{
+    const mine=model.buildings.filter(b=>b.use===d.use),poly=convexHull(mine.map(b=>[b.x,b.y]));
+    return {...d,poly,cx:d.cx,cy:d.cy};
+  }).filter(d=>d.poly.length>2);
   const blds = model.buildings || [];
   if (blds.length < 14) return []; // hamlets don't have quarters
   const k = Math.max(2, Math.min(6, 1 + (model.size || 2)));
@@ -646,10 +658,76 @@ const LAYOUT_FNS = { organic: layoutOrganic, crossroads: layoutCrossroads, grid:
 
 // ---------- shared model assembly ----------
 
+/** Re-orient a completed coastal model without touching the generator stream.
+ * South is never passed here, so absent seaSide stays on the original path. */
+function orientCoastalModel(model, side) {
+  if (!['north', 'east', 'west'].includes(side)) return model;
+  // East/west use normalized coordinates so the 900×640 model stays inside
+  // its canvas after the quarter turn. North is a simple vertical reflection.
+  const matrix = side === 'north'
+    ? { a: 1, b: 0, c: 0, d: -1, tx: 0, ty: H }
+    : side === 'east'
+      ? { a: 0, b: -H / W, c: W / H, d: 0, tx: 0, ty: H }
+      : { a: 0, b: H / W, c: -W / H, d: 0, tx: W, ty: 0 };
+  const point = ([x, y]) => {
+    return [matrix.a * x + matrix.c * y + matrix.tx, matrix.b * x + matrix.d * y + matrix.ty];
+  };
+  const vector = (x, y) => [matrix.a * x + matrix.c * y, matrix.b * x + matrix.d * y];
+  const move = (obj) => { [obj.x, obj.y] = point([obj.x, obj.y]); };
+  const turn = (obj, resize = false) => {
+    const oldAngle = Number(obj.rot) || 0;
+    const wx = Math.cos(oldAngle), wy = Math.sin(oldAngle);
+    const [tx, ty] = vector(wx, wy);
+    if (resize) {
+      const [hx, hy] = vector(-wy, wx);
+      obj.w *= Math.hypot(tx, ty);
+      obj.h *= Math.hypot(hx, hy);
+    }
+    move(obj);
+    obj.rot = Math.atan2(ty, tx);
+  };
+
+  for (const road of model.roads || []) road.pts = road.pts.map(point);
+  for (const building of model.buildings || []) turn(building, true);
+  for (const parcel of model.parcels || []) turn(parcel,true);
+  for (const district of model.districts || []) [district.cx,district.cy]=point([district.cx,district.cy]);
+  if (model.plaza) move(model.plaza);
+  if (model.wall?.poly) model.wall.poly = model.wall.poly.map(point);
+  if (model.water?.kind === 'sea') {
+    model.water.shore = model.water.shore.map(point);
+    model.water.seaSide = side;
+  }
+  for (const pier of model.piers || []) {
+    [pier.x0, pier.y0] = point([pier.x0, pier.y0]);
+    [pier.x1, pier.y1] = point([pier.x1, pier.y1]);
+  }
+  for (const boat of model.boats || []) turn(boat);
+  for (const detail of model.details || []) turn(detail);
+  for (const bridge of model.bridges || []) turn(bridge);
+  model.trees = (model.trees || []).map(([x, y, r]) => [...point([x, y]), r]);
+  for (const field of model.fields || []) turn(field, true);
+  return model;
+}
+
 export function buildTownModel(map) {
+  // modern towns (1.9) are a separate era with their own streams; the era is
+  // read from the stored params, never from defaults, so no old town changes
+  if (map.params?.era === 'modern') return buildModernTown(map);
   const p = { ...defaultTownParams(), ...(map.params || {}) };
   const size = Math.max(1, Math.min(5, p.size));
   p.size = size;
+  if (map.params?.generation === '1.8') {
+    const layout = LAYOUT_FNS[p.layout] ? p.layout : pickAutoLayout(map.seed + ':v18');
+    const L = layout === 'coastal' ? coastalTownLayout(map,p) : LAYOUT_FNS[layout](makeRng(map.seed + ':v18:streets'), p);
+    const model = planTown(map,L,p,layout);
+    if (p.walls && size>=2 && model.buildings.length>8) {
+      const suitable=L.wallFilter?model.buildings.filter(L.wallFilter):model.buildings;
+      const poly=buildingEnvelope(suitable,28);
+      const wet=(x,y)=>L.water?.kind==='sea'?y>L.water.shoreAt(x)-14:L.water?.kind==='river'?Math.abs(y-riverYAt(L.water,x))<L.water.width/2+14:false;
+      model.wall={poly,gate:poly.map(([x,y])=>wet(x,y)||model.roads.some(r=>r.main&&r.pts.some(([rx,ry])=>Math.hypot(rx-x,ry-y)<24)))};
+    }
+    return layout === 'coastal' ? orientCoastalModel(model,p.seaSide) : model;
+  }
   const rng = makeRng(map.seed);
   const layoutName = LAYOUT_FNS[p.layout] ? p.layout : pickAutoLayout(map.seed);
   const L = LAYOUT_FNS[layoutName](rng, p);
@@ -815,12 +893,15 @@ export function buildTownModel(map) {
   const keptTrees = trees.filter(([x, y]) =>
     !fields.some((f) => Math.abs(x - f.x) < f.w / 2 + 4 && Math.abs(y - f.y) < f.h / 2 + 4));
 
-  return {
+  const model = {
     p, size, layout: layoutName,
     roads: L.roads, buildings, plaza: L.plaza, plazaLabel: L.plazaLabel,
     wall, water: L.water || null, piers: L.piers || [], boats: L.boats || [], bridges,
     trees: keptTrees, fields,
   };
+  // The coastal layout consumes the exact same main-stream draws regardless
+  // of orientation. Only the finished geometry moves.
+  return layoutName === 'coastal' ? orientCoastalModel(model, p.seaSide) : model;
 }
 
 function riverYAt(water, x) {
@@ -830,10 +911,61 @@ function riverYAt(water, x) {
   return pts[i][1] + (pts[i + 1][1] - pts[i][1]) * t;
 }
 
+/** Draw a post-oriented shoreline. The original south-facing draw stays in
+ * renderTownBase so maps without seaSide retain its exact canvas operations. */
+function drawOrientedSea(ctx, water, th) {
+  const shore = water.shore;
+  const side = water.seaSide;
+  const seaVector = side === 'north' ? [0, -1] : side === 'east' ? [1, 0] : [-1, 0];
+  const shifted = ([x, y], distance) => [x + seaVector[0] * distance, y + seaVector[1] * distance];
+
+  // beach strip, ten pixels inland and four pixels into the water
+  ctx.beginPath();
+  let pt = shifted(shore[0], -10);
+  ctx.moveTo(pt[0], pt[1]);
+  for (const raw of shore) { pt = shifted(raw, -10); ctx.lineTo(pt[0], pt[1]); }
+  for (let i = shore.length - 1; i >= 0; i--) { pt = shifted(shore[i], 4); ctx.lineTo(pt[0], pt[1]); }
+  ctx.closePath();
+  ctx.fillStyle = th.beach;
+  ctx.fill();
+
+  // sea polygon closes against the canvas edge that matches the parent coast
+  const corners = side === 'north'
+    ? [[W + 20, -20], [-20, -20]]
+    : side === 'east'
+      ? [[W + 20, -20], [W + 20, H + 20]]
+      : [[-20, H + 20], [-20, -20]];
+  ctx.beginPath();
+  ctx.moveTo(shore[0][0], shore[0][1]);
+  for (const [x, y] of shore) ctx.lineTo(x, y);
+  for (const [x, y] of corners) ctx.lineTo(x, y);
+  ctx.closePath();
+  ctx.fillStyle = th.sea;
+  ctx.fill();
+
+  ctx.strokeStyle = th.wave;
+  ctx.lineWidth = 1.2;
+  for (let row = 1; row <= 4; row++) {
+    ctx.beginPath();
+    for (let i = 0; i < shore.length; i++) {
+      const [x, y] = shore[i];
+      const distance = row * 22 + Math.sin((side === 'north' ? x : y) * 0.03 + row) * 4;
+      const [wx, wy] = shifted([x, y], distance);
+      i === 0 ? ctx.moveTo(wx, wy) : ctx.lineTo(wx, wy);
+    }
+    ctx.stroke();
+  }
+  ctx.strokeStyle = th.shoreline;
+  ctx.lineWidth = 1.6;
+  strokePoly(ctx, shore);
+}
+
 // ---------- rendering ----------
 
 export function renderTownBase(map, model, scale = 1) {
   const m = model || buildTownModel(map);
+  if (m.era === 'modern') return renderModernTown(map, m, scale);
+  if (m.generation === '1.8') return renderPlannedTown(map,m,scale,computeWards(m,map.seed),resolveTownTheme(map));
   const { t: th, p: pav } = resolveTownTheme(map);
   const base = document.createElement('canvas');
   base.width = W * scale;
@@ -855,45 +987,49 @@ export function renderTownBase(map, model, scale = 1) {
 
   // water
   if (m.water?.kind === 'sea') {
-    const shore = m.water.shore;
-    // beach strip
-    ctx.beginPath();
-    ctx.moveTo(shore[0][0], shore[0][1] - 10);
-    for (const [x, y] of shore) ctx.lineTo(x, y - 10);
-    for (let i = shore.length - 1; i >= 0; i--) ctx.lineTo(shore[i][0], shore[i][1] + 4);
-    ctx.closePath();
-    ctx.fillStyle = th.beach;
-    ctx.fill();
-    // sea
-    ctx.beginPath();
-    ctx.moveTo(shore[0][0], shore[0][1]);
-    for (const [x, y] of shore) ctx.lineTo(x, y);
-    ctx.lineTo(W + 20, H + 20);
-    ctx.lineTo(-20, H + 20);
-    ctx.closePath();
-    ctx.fillStyle = th.sea;
-    ctx.fill();
-    // wave lines
-    ctx.strokeStyle = th.wave;
-    ctx.lineWidth = 1.2;
-    for (let row = 1; row <= 4; row++) {
+    if (m.water.seaSide && m.water.seaSide !== 'south') {
+      drawOrientedSea(ctx, m.water, th);
+    } else {
+      const shore = m.water.shore;
+      // beach strip
+      ctx.beginPath();
+      ctx.moveTo(shore[0][0], shore[0][1] - 10);
+      for (const [x, y] of shore) ctx.lineTo(x, y - 10);
+      for (let i = shore.length - 1; i >= 0; i--) ctx.lineTo(shore[i][0], shore[i][1] + 4);
+      ctx.closePath();
+      ctx.fillStyle = th.beach;
+      ctx.fill();
+      // sea
+      ctx.beginPath();
+      ctx.moveTo(shore[0][0], shore[0][1]);
+      for (const [x, y] of shore) ctx.lineTo(x, y);
+      ctx.lineTo(W + 20, H + 20);
+      ctx.lineTo(-20, H + 20);
+      ctx.closePath();
+      ctx.fillStyle = th.sea;
+      ctx.fill();
+      // wave lines
+      ctx.strokeStyle = th.wave;
+      ctx.lineWidth = 1.2;
+      for (let row = 1; row <= 4; row++) {
+        ctx.beginPath();
+        for (let i = 0; i < shore.length; i++) {
+          const [x, y] = shore[i];
+          const yy = y + row * 22 + Math.sin(x * 0.03 + row) * 4;
+          i === 0 ? ctx.moveTo(x, yy) : ctx.lineTo(x, yy);
+        }
+        ctx.stroke();
+      }
+      // shoreline
+      ctx.strokeStyle = th.shoreline;
+      ctx.lineWidth = 1.6;
       ctx.beginPath();
       for (let i = 0; i < shore.length; i++) {
         const [x, y] = shore[i];
-        const yy = y + row * 22 + Math.sin(x * 0.03 + row) * 4;
-        i === 0 ? ctx.moveTo(x, yy) : ctx.lineTo(x, yy);
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
       }
       ctx.stroke();
     }
-    // shoreline
-    ctx.strokeStyle = th.shoreline;
-    ctx.lineWidth = 1.6;
-    ctx.beginPath();
-    for (let i = 0; i < shore.length; i++) {
-      const [x, y] = shore[i];
-      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-    }
-    ctx.stroke();
   }
   if (m.water?.kind === 'river') {
     ctx.lineJoin = 'round';
@@ -1042,11 +1178,15 @@ export function renderTownBase(map, model, scale = 1) {
   ctx.stroke();
 
   // buildings
+  if (m.generation === '1.8') {
+    const inks={market:'#b59a68',craft:'#b59483',residential:'#c8bea4',garden:'#9caf92',harbor:'#9caeb4',citadel:'#ada4ba'};
+    for(const lot of m.parcels||[]){ctx.save();ctx.translate(lot.x,lot.y);ctx.rotate(lot.rot);ctx.fillStyle=inks[lot.use];ctx.globalAlpha=.5;ctx.fillRect(-lot.w/2,-lot.h/2,lot.w,lot.h);ctx.restore();}
+  }
   for (const b of m.buildings) {
     ctx.save();
     ctx.translate(b.x, b.y);
     ctx.rotate(b.rot);
-    ctx.fillStyle = b.landmark ? th.building.landmark : th.building.fill;
+    ctx.fillStyle = b.landmark ? th.building.landmark : (m.generation==='1.8' ? ({craft:'#a77964',garden:'#a6ad81',harbor:'#9c9690',citadel:'#8b8199',market:'#b29864',residential:'#b6a07e'}[b.use] || th.building.fill) : th.building.fill);
     ctx.strokeStyle = th.building.stroke;
     ctx.lineWidth = 1.4;
     ctx.fillRect(-b.w / 2, -b.h / 2, b.w, b.h);

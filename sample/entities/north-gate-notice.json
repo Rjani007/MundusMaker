@@ -1,0 +1,66 @@
+{
+  "id": "north-gate-notice",
+  "name": "Missing: the north-gate keeper",
+  "type": "handout",
+  "tags": [
+    "1.8 example"
+  ],
+  "gmOnly": false,
+  "fields": {},
+  "date": null,
+  "blocks": [
+    {
+      "id": "itcjvs",
+      "kind": "heading",
+      "text": "Missing: the north-gate keeper",
+      "secret": false
+    },
+    {
+      "id": "scr5v3",
+      "kind": "heading",
+      "text": "Last seen at the ferry crossing",
+      "secret": false
+    },
+    {
+      "id": "6h722c",
+      "kind": "text",
+      "text": "The north-gate keeper has not returned from the night watch. He wore a dark green coat and carried a blue lantern.\n\nAnyone with information should speak to the harbor clerk at Port Vellen. Discretion is assured.",
+      "secret": false
+    },
+    {
+      "id": "ehwvbr",
+      "kind": "heading",
+      "text": "Reward: 100 silver crowns",
+      "secret": false
+    },
+    {
+      "id": "gm-annotation",
+      "kind": "text",
+      "text": "GM annotation: this clue points toward the old observatory. Change or remove this note for your campaign.",
+      "secret": true
+    }
+  ],
+  "relations": [
+    {
+      "to": "port-vellen",
+      "label": "found in",
+      "secret": false
+    }
+  ],
+  "map": null,
+  "created": "2026-09-10T00:00:00.000Z",
+  "updated": "2026-09-10T00:00:00.000Z",
+  "handout": {
+    "kind": "notice",
+    "paper": "aged",
+    "border": "ornament",
+    "cover": false,
+    "fontSize": 14,
+    "slots": {
+      "itcjvs": "title",
+      "scr5v3": "heading",
+      "6h722c": "body",
+      "ehwvbr": "footer"
+    }
+  }
+}

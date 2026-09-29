@@ -1,0 +1,7 @@
+#!/bin/sh
+# Finder launches this executable inside MundusMaker.app, without Terminal.
+contents=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd) || exit 1
+mm_app="$contents/Resources/app"
+. "$mm_app/scripts/unix-runtime.sh"
+mm_node=$(mundusmaker_runtime "$mm_app/runtime") || mm_node=''
+exec /usr/bin/osascript -l JavaScript "$contents/Resources/launcher.js" "$mm_app" "$mm_node"

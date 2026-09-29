@@ -1,16 +1,14 @@
 // Markdown-lite rendering with [[wiki-link]] support, plus backlink computation.
-//
-// Supported syntax inside text blocks:
-//   [[Entity Name]] / [[Entity Name|shown text]]   links (auto-backlinked)
-//   **bold**  *italic*  `code`
-//   - list item        > quoted line
-//   blank line         paragraph break
+// The grammar itself lives in markdown.js, shared with the player wiki export.
 
 import { esc } from './util.js';
-import { state, findByName, visibleEntities } from './state.js';
+import { state, findByName, visibleEntities, saveEntity } from './state.js';
 import { formatDate } from './calendar.js';
+import { renderMarkdown, mdToPlain, WIKILINK, mentionMatcher } from './markdown.js';
+import { snippetOf } from './projection.js';
 
-const WIKILINK = /\[\[([^\][|]+)(?:\|([^\][]+))?\]\]/g;
+export { mdToPlain };
+
 const DICE = /\b(\d{1,3}d\d{1,4}(?:\s*[+-]\s*\d{1,3})?)\b/g;
 
 /** Wrap dice notation ("2d6+3") in clickable roll links. Input must be escaped HTML. */
@@ -19,9 +17,10 @@ export function linkDice(html) {
     `<a class="dice" href="#" data-dice="${match.replace(/\s+/g, '')}" title="Click to roll">${match}</a>`);
 }
 
-function inlineMd(text) {
-  let html = esc(text);
-  html = html.replace(/\[\[([^\][|]+)(?:\|([^\][]+))?\]\]/g, (_, target, display) => {
+// The app's reading of the shared grammar (markdown.js): links resolve against
+// the live world and respect player preview; dice become roll links.
+const APP_HOOKS = {
+  link(target, display) {
     const ent = findByName(target);
     const label = esc((display || target).trim());
     if (ent && (state.gm || !ent.gmOnly)) {
@@ -29,62 +28,13 @@ function inlineMd(text) {
     }
     if (ent) return label; // gm-only target in player preview: render as plain text
     return `<a class="wl missing" href="#/new/${encodeURIComponent(target.trim())}" title="Not written yet — click to create">${label}</a>`;
-  });
-  // images, but ONLY from the world's own /assets/ — remote URLs stay plain
-  // text, so a note can never make the app fetch anything off this machine
-  html = html.replace(/!\[([^\]]*)\]\((\/assets\/[^\s)]+)\)/g,
-    '<img class="md-img" src="$2" alt="$1" loading="lazy">');
-  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  html = html.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
-  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-  html = linkDice(html);
-  return html;
-}
+  },
+  image: (alt, url) => `<img class="md-img" src="${url}" alt="${alt}" loading="lazy">`,
+  dice: linkDice,
+};
 
 export function mdToHtml(text) {
-  const lines = String(text || '').split(/\r?\n/);
-  const out = [];
-  let list = null, quote = null, para = [];
-
-  const flushPara = () => {
-    if (para.length) { out.push(`<p>${para.join('<br>')}</p>`); para = []; }
-  };
-  const flushList = () => {
-    if (list) { out.push(`<ul>${list.join('')}</ul>`); list = null; }
-  };
-  const flushQuote = () => {
-    if (quote) { out.push(`<blockquote>${quote.join('<br>')}</blockquote>`); quote = null; }
-  };
-
-  for (const raw of lines) {
-    const line = raw.trimEnd();
-    if (/^- /.test(line)) {
-      flushPara(); flushQuote();
-      (list ??= []).push(`<li>${inlineMd(line.slice(2))}</li>`);
-    } else if (/^> ?/.test(line)) {
-      flushPara(); flushList();
-      (quote ??= []).push(inlineMd(line.replace(/^> ?/, '')));
-    } else if (line === '') {
-      flushPara(); flushList(); flushQuote();
-    } else {
-      flushList(); flushQuote();
-      para.push(inlineMd(line));
-    }
-  }
-  flushPara(); flushList(); flushQuote();
-  return out.join('');
-}
-
-/** Plain text with markup stripped — for snippets and PDF export. */
-export function mdToPlain(text) {
-  return String(text || '')
-    .replace(/!\[([^\]]*)\]\(\/assets\/[^\s)]+\)/g, '$1')
-    .replace(WIKILINK, (_, target, display) => (display || target).trim())
-    .replace(/\*\*([^*]+)\*\*/g, '$1')
-    .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1$2')
-    .replace(/`([^`]+)`/g, '$1')
-    .replace(/^> ?/gm, '')
-    .replace(/^- /gm, '• ');
+  return renderMarkdown(text, APP_HOOKS);
 }
 
 /** Entity ids referenced via [[wiki-links]] in an entity's blocks. */
@@ -120,6 +70,76 @@ export function backlinksFor(id) {
 }
 
 /**
+ * Plan a [[wiki-link]] rewrite for an entity rename: find every text block
+ * that links the old name and count the mentions. Returns null when nothing
+ * links it; otherwise { entries, total, apply }. The caller confirms with the
+ * user, then awaits apply(). Wiki-links resolve by NAME, so every rename path
+ * must offer this — the entity page and the map editor's linked-site rename
+ * both go through here so the wiki can't silently break (1.4).
+ */
+export function planWikiRenames(oldName, newName, entities = state.entities.values()) {
+  const from = String(oldName || '').trim(), to = String(newName || '').trim();
+  if (!from || !to || from === to) return null;
+  const escRx = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const testRx = new RegExp(`\\[\\[\\s*${escRx(from)}\\s*(\\||\\]\\])`, 'i');
+  const affected = [...entities].filter((other) =>
+    (other.blocks || []).some((b) => testRx.test(b.text || '')));
+  if (!affected.length) return null;
+  const total = affected.reduce((n, other) =>
+    n + (other.blocks || []).reduce((m, b) =>
+      m + ((b.text || '').match(new RegExp(`\\[\\[\\s*${escRx(from)}\\s*(?=\\||\\]\\])`, 'gi')) || []).length, 0), 0);
+  return {
+    entries: affected.length,
+    total,
+    async apply() {
+      const replaceRx = new RegExp(`\\[\\[\\s*${escRx(from)}\\s*(\\||\\]\\])`, 'gi');
+      for (const other of affected) {
+        for (const b of other.blocks || []) {
+          if (b.text) b.text = b.text.replace(replaceRx, `[[${to}$1`);
+        }
+        await saveEntity(other);
+      }
+    },
+  };
+}
+
+/**
+ * Plan linking the plain-text mentions of an entry's name (1.9). Same shape
+ * as planWikiRenames: null when there is nothing to link, otherwise
+ * { hits, entries, total, apply(hits?) }. A mention matches the whole name,
+ * ignoring case, with an optional plural ("s"/"es") or possessive ("'s");
+ * text already inside a [[link]] or an image is left alone. The displayed
+ * words never change: "port vellen's" becomes "[[Port Vellen|port vellen]]'s".
+ */
+export function planLinkMentions(entity, entities = state.entities.values()) {
+  const matcher = mentionMatcher(entity?.name);
+  if (!matcher) return null;
+  const hits = [];
+  for (const other of entities) {
+    if (other.id === entity.id) continue;
+    for (const block of other.blocks || []) {
+      if (!['text', 'heading', 'quote'].includes(block.kind) || !block.text) continue;
+      const { count, snippet } = matcher.find(block.text);
+      if (count) hits.push({ entity: other, block, count, snippet });
+    }
+  }
+  if (!hits.length) return null;
+  return {
+    hits,
+    entries: new Set(hits.map((h) => h.entity)).size,
+    total: hits.reduce((n, h) => n + h.count, 0),
+    async apply(chosen = hits) {
+      const touched = new Set();
+      for (const h of chosen) {
+        h.block.text = matcher.link(h.block.text);
+        touched.add(h.entity);
+      }
+      for (const other of touched) await saveEntity(other);
+    },
+  };
+}
+
+/**
  * Format an in-world date against the ACTIVE world — the state-bound convenience
  * wrapper around calendar.js formatDate, which is now the single implementation.
  * Callers get intercalary days, ages and annually recurring dates for free.
@@ -135,11 +155,5 @@ export function formatWorldDate(d) {
 
 /** First visible text block, truncated — used in lists and timeline. */
 export function snippetFor(entity, maxLen = 150) {
-  for (const b of entity.blocks || []) {
-    if (b.kind !== 'text' || !b.text?.trim()) continue;
-    if (b.secret && !state.gm) continue;
-    const plain = mdToPlain(b.text).replace(/\s+/g, ' ').trim();
-    return plain.length > maxLen ? plain.slice(0, maxLen) + '…' : plain;
-  }
-  return '';
+  return snippetOf(entity, state.gm, maxLen);
 }

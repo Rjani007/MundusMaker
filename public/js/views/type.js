@@ -2,7 +2,8 @@
 // table, plus a create box. Reached from the dashboard cards, the sidebar
 // group headings and the type badges — the "manage my Characters" surface.
 
-import { el, helpTip } from '../util.js';
+import { el, helpTip, readSetting, writeSetting } from '../util.js';
+import { categoryGroups, connectedGroups, relatedEntries } from '../categorycore.js';
 import { state, types, typeOf, visibleEntities, createEntity } from '../state.js';
 import { nameStyleForType, randomName } from '../names.js';
 
@@ -46,9 +47,27 @@ export function render(container, rawKey) {
 
   let sortKey = '';   // '' = name
   let sortDir = 1;
+  let query = '';
+  const groupSetting = `category-view.${state.worldId}.${key}`;
+  let grouping = readSetting(groupSetting) || 'name';
+  let relatedId = '';
+  const searchBox = el('input', { type: 'search', placeholder: `Search ${plural}…`, 'aria-label': `Search ${plural}`,
+    oninput: ev => { query = ev.target.value.toLowerCase().trim(); fillTable(); } });
+  const groupSelect = el('select', { 'aria-label': 'Group entries', onchange: ev => {
+    grouping = ev.target.value; writeSetting(groupSetting, grouping); fillTable();
+  } }, el('option', { value: 'name' }, 'All entries'), el('option', { value: 'connections' }, 'Group by connections'), el('option', { value: 'tags' }, 'Group by tag'));
+  groupSelect.value = grouping;
+  const relationSelect = el('select', { 'aria-label': 'Related to entry', onchange: ev => { relatedId = ev.target.value; fillTable(); } },
+    el('option', { value: '' }, 'Related to anyone'),
+    visibleEntities().slice().sort((a, b) => a.name.localeCompare(b.name)).map(e => el('option', { value: e.id }, e.name)));
+  const jump = el('select', { 'aria-label': 'Switch category', onchange: ev => { location.hash = `#/t/${encodeURIComponent(ev.target.value)}`; } },
+    categoryGroups(known, visibleEntities()).map(([k, t]) => el('option', { value: k }, t.plural || t.label)));
+  jump.value = key;
+  const resultCount = el('span', { class: 'muted small', role: 'status' });
 
   function sortedEnts() {
-    return [...ents].sort((a, b) => {
+    const related = relatedId ? new Set(relatedEntries(visibleEntities(), relatedId, state.gm).map(x => x.entry.id)) : null;
+    return ents.filter(e => (!related || related.has(e.id)) && (!query || [e.name, ...(e.tags || []), ...Object.values(e.fields || {})].join(' ').toLowerCase().includes(query))).sort((a, b) => {
       const av = cellValue(a, sortKey), bv = cellValue(b, sortKey);
       if (!av && !bv) return a.name.localeCompare(b.name);
       if (!av) return 1;  // blanks sink to the bottom in both directions
@@ -75,7 +94,19 @@ export function render(container, rawKey) {
 
   function fillTable() {
     tableWrap.innerHTML = '';
-    if (!ents.length) return;
+    const sorted = sortedEnts();
+    resultCount.textContent = `${sorted.length} of ${ents.length} entries`;
+    if (!sorted.length) { tableWrap.append(el('p', { class: 'notice' }, 'No entries match these filters.')); return; }
+    let groups = [{ label: '', items: sorted }];
+    if (grouping === 'connections') groups = connectedGroups(visibleEntities(), sorted, state.gm);
+    if (grouping === 'tags') {
+      const tags = [...new Set(sorted.flatMap(e => e.tags || []))].sort();
+      groups = tags.map(tag => ({ label: tag, items: sorted.filter(e => e.tags?.includes(tag)) }));
+      const untagged = sorted.filter(e => !e.tags?.length);
+      if (untagged.length) groups.push({ label: 'Untagged', items: untagged });
+    }
+    for (const group of groups) {
+    if (group.label) tableWrap.append(el('h3', { class: 'category-group-title' }, group.label, el('span', { class: 'muted small' }, ` · ${group.items.length}`)));
     const head = el('tr', {},
       headCell('', 'Name'),
       fieldCols.map((k) => headCell(k, k)),
@@ -83,7 +114,7 @@ export function render(container, rawKey) {
       el('th', {}, 'Flags',
         helpTip('🗺 has a map · ⚔ has a statblock · 🔒 GM-only: invisible to players everywhere, including exports.')));
     const body = el('tbody', {},
-      sortedEnts().map((e) => el('tr', {},
+      group.items.map((e) => el('tr', {},
         el('td', {},
           el('span', { class: 'dot', style: `background:${typeOf(e).color};margin-right:8px` }),
           el('a', { href: `#/e/${e.id}` }, e.name)),
@@ -91,11 +122,12 @@ export function render(container, rawKey) {
         el('td', {}, (e.tags || []).map((tag) => el('span', { class: 'tag' }, tag))),
         el('td', { class: 'flags' },
           e.map ? el('span', { title: 'has a map' }, '🗺') : null,
-          (e.blocks || []).some((b) => b.kind === 'statblock') ? el('span', { title: 'has a statblock' }, '⚔') : null,
-          (e.blocks || []).some((b) => b.kind === 'sheet') ? el('span', { title: 'has a character sheet' }, '🎭') : null,
-          (e.blocks || []).some((b) => b.kind === 'table') ? el('span', { title: 'has a rollable table' }, '🎲') : null,
+          (e.blocks || []).some((b) => b.kind === 'statblock' && (state.gm || !b.secret)) ? el('span', { title: 'has a statblock' }, '⚔') : null,
+          (e.blocks || []).some((b) => b.kind === 'sheet' && (state.gm || !b.secret)) ? el('span', { title: 'has a character sheet' }, '🎭') : null,
+          (e.blocks || []).some((b) => b.kind === 'table' && (state.gm || !b.secret)) ? el('span', { title: 'has a rollable table' }, '🎲') : null,
           e.gmOnly ? el('span', { title: 'GM-only — invisible to players' }, '🔒') : null))));
     tableWrap.append(el('table', { class: 'type-table' }, el('thead', {}, head), body));
+    }
   }
   fillTable();
 
@@ -139,6 +171,8 @@ export function render(container, rawKey) {
     el('p', { class: 'muted small', style: 'margin:-8px 0 16px' },
       `${ents.length} ${ents.length === 1 ? 'entry' : 'entries'}`,
       nHidden ? ` · 👁 player preview: ${nHidden} GM-only ${nHidden === 1 ? 'entry is' : 'entries are'} hidden` : ''),
-    createCard,
+    el('div', { class: 'category-toolbar row' }, jump, el('a', { href: '#/categories' }, 'Manage categories')),
+    state.gm ? createCard : null,
+    el('div', { class: 'category-toolbar row' }, searchBox, groupSelect, relationSelect, resultCount),
     ents.length ? tableWrap : empty));
 }

@@ -1,51 +1,26 @@
 @echo off
-title MundusMaker
+rem Starts MundusMaker in the background with an icon in the Windows tray, so
+rem there is no window that closing by mistake would stop. Quit it from the
+rem tray icon or from Settings in the app. MundusMaker-Console.bat runs it in a
+rem window instead, which helps when something goes wrong.
 cd /d "%~dp0"
 
-rem Prefer the bundled runtime (one-click download), fall back to installed Node.
-rem 0.10+ ships the runtime as MundusMaker.exe; runtime\node.exe covers older unzips.
-if exist "%~dp0runtime\MundusMaker.exe" (
-  echo.
-  echo  Starting MundusMaker... your browser will open in a moment.
-  echo  Keep this window open while you use it. Close it to stop.
-  echo.
-  "%~dp0runtime\MundusMaker.exe" server.js
-  if errorlevel 1 pause
-  exit /b 0
-)
-if exist "%~dp0runtime\node.exe" (
-  echo.
-  echo  Starting MundusMaker... your browser will open in a moment.
-  echo  Keep this window open while you use it. Close it to stop.
-  echo.
-  "%~dp0runtime\node.exe" server.js
-  if errorlevel 1 pause
-  exit /b 0
-)
-
+rem Without a bundled runtime or an installed Node.js, the console launcher
+rem explains how to get one.
+if exist "%~dp0runtime\MundusMaker.exe" goto runtime_found
+if exist "%~dp0runtime\node.exe" goto runtime_found
 where node >nul 2>nul
-if errorlevel 1 (
-  echo.
-  echo  ============================================================
-  echo   MundusMaker needs Node.js ^(free, one-time install^).
-  echo.
-  echo   1. Your browser will open nodejs.org - click the green
-  echo      "LTS" download button.
-  echo   2. Run the installer. Just click Next until it finishes.
-  echo   3. Double-click Start-MundusMaker.bat again.
-  echo.
-  echo   ^(Or grab the "windows-x64" MundusMaker download instead -
-  echo    it has everything built in.^)
-  echo  ============================================================
-  echo.
-  start "" "https://nodejs.org"
-  pause
-  exit /b 1
-)
+if errorlevel 1 goto console
+:runtime_found
 
-echo.
-echo  Starting MundusMaker... your browser will open in a moment.
-echo  Keep this window open while you use it. Close it to stop.
-echo.
-node server.js
-if errorlevel 1 pause
+rem PowerShell, built into Windows, runs the tray icon. If it is missing or
+rem blocked on this computer, use the console window instead.
+if not exist "%~dp0MundusMaker-Tray.ps1" goto console
+powershell -NoProfile -ExecutionPolicy Bypass -Command "exit 0" >nul 2>nul
+if errorlevel 1 goto console
+
+start "" powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "%~dp0MundusMaker-Tray.ps1"
+exit /b 0
+
+:console
+call "%~dp0MundusMaker-Console.bat"
