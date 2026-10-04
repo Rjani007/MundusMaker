@@ -36,7 +36,7 @@ export function render(container) {
     mapScale: 2, // print-quality by default; 1 keeps the file small
     includeTimeline: true,
     includeRelations: true,
-    sheetLayout: 'standard',
+    sheetLayout: 'screen',
     roomNumbers: false, // player dungeon maps; GM maps always show them
     typeKeys: new Set(groups.map(([key]) => key)),
   };
@@ -199,7 +199,7 @@ export function render(container) {
       check('Timeline', 'A chronological section of every dated entry.', 'includeTimeline'),
       check('Relations', 'List each entry’s typed relationships.', 'includeRelations'),
       el('label', { class: 'opt' }, el('select', { 'aria-label': 'Character sheet layout', onchange: ev => { opts.sheetLayout = ev.target.value; } },
-        el('option', { value: 'standard' }, 'Standard system sheets'), el('option', { value: 'familiar' }, 'Familiar layouts (arranged like each game’s own sheet)'), el('option', { value: 'compact' }, 'Compact text summaries')),
+        el('option', { value: 'screen' }, 'Same as on screen (V5 arranged like its own sheet)'), el('option', { value: 'standard' }, 'Standard system sheets'), el('option', { value: 'familiar' }, 'Familiar layouts for every game'), el('option', { value: 'compact' }, 'Compact text summaries')),
         el('div', {}, 'Character sheets', el('div', { class: 'desc' }, 'Dedicated D&D, Vampire and Call of Cthulhu pages, with full feature and spell descriptions on continuation pages.'))),
       el('h3', { style: 'margin-top:14px' }, 'Entry types'),
       typeChecks),

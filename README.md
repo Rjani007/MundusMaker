@@ -5,6 +5,12 @@ Your campaign is a folder of plain text files on your disk. There's no hosted
 service or subscription. The desktop app stays local; optional Docker hosting
 lets your browsers connect to your own NAS using a DM password.
 
+Version **1.9.0** starts without a console window (a tray icon on Windows;
+Quit sits at the top right of the app), exports a player wiki, adds session
+prep tools and keyboard-friendly character sheets, and fills the publishers'
+own character sheets: the free D&D 2024 and Call of Cthulhu sheets download
+from the publishers when you ask, and Vampire sheets open in a layout
+arranged like Renegade's V5 sheet.
 Version **1.8.1** fixes the Mac app's `NSNull count` startup error and adds
 [Docker / NAS hosting](docs/docker.md). See the [patch notes](docs/1.8.1-release.md).
 Version **1.8.0** brings new world geography, detailed linked provinces, towns

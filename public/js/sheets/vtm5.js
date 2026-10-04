@@ -188,14 +188,14 @@ export function html(data) {
   const d = { ...defaults(), ...(data || {}) };
   const attrCols = Object.entries(ATTR_GROUPS).map(([group, attrs]) =>
     `<div class="sheet-col"><div class="sheet-sec-title">${cap(group)}</div>` +
-    attrs.map((a) => `<div class="sheet-kv"><span class="sk">${cap(a)}</span><span class="sv">${dotsHtml(d.attributes[a] ?? 1, 5, { edit: true, path: `attributes.${a}` })}</span></div>`).join('') +
+    attrs.map((a) => `<div class="sheet-kv"><span class="sk">${cap(a)}</span><span class="sv">${dotsHtml(d.attributes[a] ?? 1, 5, { edit: true, path: `attributes.${a}`, label: cap(a) })}</span></div>`).join('') +
     '</div>').join('');
 
   const specBySkill = {};
   for (const sp of d.specialties || []) (specBySkill[sp.skill] ??= []).push(sp.name);
   const skillCols = Object.entries(SKILL_GROUPS).map(([group, skills]) =>
     `<div class="sheet-col">` +
-    skills.map((s) => `<div class="sheet-kv"><span class="sk">${esc(s)}${specBySkill[s] ? ` <span class="muted small">(${esc(specBySkill[s].join(', '))})</span>` : ''}</span><span class="sv">${dotsHtml(d.skills[s] ?? 0, 5, { edit: true, path: `skills.${s}` })}</span></div>`).join('') +
+    skills.map((s) => `<div class="sheet-kv"><span class="sk">${esc(s)}${specBySkill[s] ? ` <span class="muted small">(${esc(specBySkill[s].join(', '))})</span>` : ''}</span><span class="sv">${dotsHtml(d.skills[s] ?? 0, 5, { edit: true, path: `skills.${s}`, label: s })}</span></div>`).join('') +
     '</div>').join('');
 
   const attrOpts = ALL_ATTRS.map((a) => `<option data-v="${d.attributes[a] ?? 1}">${cap(a)}</option>`).join('');
@@ -207,7 +207,7 @@ export function html(data) {
     '</div>';
 
   const disciplines = (d.disciplines || []).map((disc) =>
-    `<div class="sheet-feature"><strong>${esc(disc.name)}</strong> ${dotsHtml(disc.rating || 0, 5)}` +
+    `<div class="sheet-feature"><strong>${esc(disc.name)}</strong> ${dotsHtml(disc.rating || 0, 5, { label: disc.name })}` +
     (disc.powers || []).map((p) =>
       `<div class="sheet-power">• <strong>${esc(p.name)}</strong> <span class="muted small">L${p.level}</span>` +
       (p.wikiUrl ? ` <a class="muted small" href="${esc(p.wikiUrl)}" target="_blank" rel="noopener">reference ↗</a>` : '') +
@@ -216,7 +216,7 @@ export function html(data) {
     '</div>').join('') || '<div class="muted small">No disciplines yet.</div>';
 
   const advantages = (d.advantages || []).length
-    ? d.advantages.map((a) => `<div class="sheet-kv"><span class="sk">${a.flaw ? '⚑ ' : ''}${esc(a.name)}</span><span class="sv">${dotsHtml(a.dots || 0, 5)}${a.desc ? ` <span class="muted small">${esc(a.desc)}</span>` : ''}</span></div>`).join('')
+    ? d.advantages.map((a) => `<div class="sheet-kv"><span class="sk">${a.flaw ? '⚑ ' : ''}${esc(a.name)}</span><span class="sv">${dotsHtml(a.dots || 0, 5, { label: a.name })}${a.desc ? ` <span class="muted small">${esc(a.desc)}</span>` : ''}</span></div>`).join('')
     : '';
 
   const convictions = (d.convictions || []).map((c, i) => {
@@ -236,11 +236,11 @@ export function html(data) {
     ${sectionHtml('Attributes', `<div class="sheet-cols">${attrCols}</div>`)}
     ${sectionHtml('Skills', `<div class="sheet-cols">${skillCols}</div>`)}
     ${sectionHtml('Trackers',
-      kvHtml('Health', trackHtml(healthMax(d), d.health.superficial, d.health.aggravated, 'health') + ` <span class="muted small">${healthMax(d)}</span>`) +
-      kvHtml('Willpower', trackHtml(willpowerMax(d), d.willpower.superficial, d.willpower.aggravated, 'willpower') + ` <span class="muted small">${willpowerMax(d)}</span>`) +
-      kvHtml('Hunger', dotsHtml(d.hunger, 5, { edit: true, path: 'hunger' })) +
-      kvHtml('Humanity', dotsHtml(d.humanity, 10, { edit: true, path: 'humanity' })) +
-      kvHtml('Blood potency', dotsHtml(d.bloodPotency, 10, { edit: true, path: 'bloodPotency' })))}
+      kvHtml('Health', trackHtml(healthMax(d), d.health.superficial, d.health.aggravated, 'health', 'Health') + ` <span class="muted small">${healthMax(d)}</span>`) +
+      kvHtml('Willpower', trackHtml(willpowerMax(d), d.willpower.superficial, d.willpower.aggravated, 'willpower', 'Willpower') + ` <span class="muted small">${willpowerMax(d)}</span>`) +
+      kvHtml('Hunger', dotsHtml(d.hunger, 5, { edit: true, path: 'hunger', label: 'Hunger' })) +
+      kvHtml('Humanity', dotsHtml(d.humanity, 10, { edit: true, path: 'humanity', label: 'Humanity' })) +
+      kvHtml('Blood potency', dotsHtml(d.bloodPotency, 10, { edit: true, path: 'bloodPotency', label: 'Blood potency' })))}
     ${sectionHtml('Disciplines', disciplines)}
     ${advantages ? sectionHtml('Advantages & flaws', advantages) : ''}
     ${convictions ? sectionHtml('Convictions & touchstones', convictions) : ''}

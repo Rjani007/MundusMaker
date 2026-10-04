@@ -47,6 +47,25 @@ function recoveryRow(primary, secondary, button) {
   button);
 }
 
+// What Check for updates found, as plain text and at most one github.com link.
+function updateMessage(result, status) {
+  if (!result.configured) {
+    return [el('div', { class: 'notice' }, 'Update checks are not switched on yet: this copy of MundusMaker does not name a public release page. Nothing was contacted.')];
+  }
+  if (!result.latest) return [el('div', { class: 'notice' }, result.note || 'No release has been published yet.')];
+  if (!result.newer) return [el('div', { class: 'notice' }, `You have the newest version (${result.current}).`)];
+  const release = result.release || {};
+  const howTo = status.deployment === 'container'
+    ? 'Pull the new image and restart the container (see DOCKER.md in your download); the /data volume keeps your worlds.'
+    : 'Download it from the release page and follow its install notes. Updating keeps your worlds.';
+  const url = typeof release.url === 'string' && release.url.startsWith('https://github.com/') ? release.url : null;
+  return [el('div', { class: 'notice' },
+    el('strong', {}, `MundusMaker ${result.latest} is available`), ` (you have ${result.current}). ${howTo} `,
+    url ? el('a', { href: url, target: '_blank', rel: 'noopener noreferrer' }, 'Open the release page') : null,
+    release.notes ? el('details', { style: 'margin-top:6px' }, el('summary', {}, 'What’s new'),
+      el('div', { style: 'white-space:pre-wrap;margin-top:4px' }, release.notes)) : null)];
+}
+
 export function render(container) {
   // ---------- data folder & sync ----------
   const syncWrap = el('div', {}, el('span', { class: 'muted small' }, 'Loading…'));
@@ -55,10 +74,24 @@ export function render(container) {
   const recoveryWrap = el('div', {}, el('span', { class: 'muted small' }, 'Loading...'));
   // Quit: launchers start MundusMaker without a window, so this is one way to
   // stop it. Hidden for a Docker server, whose lifecycle Docker owns.
+  // Stop by itself once no tab has checked in for a while (server.js scheduleAutoStop)
+  const after = (minutes) => minutes === 60 ? 'an hour' : `${minutes} minute${minutes === 1 ? '' : 's'}`;
+  let autoStopShown = 0;
+  const autoStop = el('select', { id: 'autoStop', onchange: async () => {
+    try {
+      await api.setAutoStop(Number(autoStop.value));
+      autoStopShown = Number(autoStop.value);
+      toast(autoStopShown ? `MundusMaker will stop ${after(autoStopShown)} after its last tab closes.` : 'MundusMaker will keep running until you quit it.');
+    } catch (err) { autoStop.value = String(autoStopShown); toast(`Not saved: ${err.message}`, 5000); }
+  } }, el('option', { value: '0' }, 'Keep running until I quit it'), [5, 15, 60].map((m) => el('option', { value: String(m) }, `Stop after ${after(m)}`)));
   const runCard = el('div', { class: 'card', hidden: true }, el('h3', {}, 'Running MundusMaker'),
-    el('p', { class: 'muted small' }, 'MundusMaker keeps running in the background, so closing this tab does not stop it or lose anything. ',
-      'Quit it here when you are done; saves in progress finish first. The MundusMaker icon in the Windows tray or the Mac menu bar can quit it too.'),
-    el('button', { onclick: () => quitMundusMaker() }, 'Quit MundusMaker'));
+    el('p', { class: 'muted small' }, 'MundusMaker runs in the background, so closing this tab does not stop it or lose anything. ',
+      'Quit it when you are done, here or with ⏻ Quit at the top right; saves in progress finish first. The MundusMaker icon in the Windows tray or the Mac menu bar can quit it too.'),
+    el('button', { onclick: () => quitMundusMaker() }, 'Quit MundusMaker'),
+    el('div', { class: 'row', style: 'margin-top:12px;gap:8px;align-items:center;flex-wrap:wrap' },
+      el('label', { for: 'autoStop' }, 'When its last tab closes:'), autoStop),
+    el('p', { class: 'muted small', style: 'margin-top:6px' }, 'Browsers sometimes put a tab you have not looked at for a while to sleep, and a sleeping tab counts as closed. ',
+      'If MundusMaker stops while a tab is still open, that tab says so: start MundusMaker again and reload it.'));
   const integrityWrap = el('div', {}, el('span', { class: 'muted small' }, 'Checking map links...'));
 
   (async () => {
@@ -98,13 +131,35 @@ export function render(container) {
       el('div', { class: 'row' }, pathInput, moveBtn),
       syncNote);
     runCard.hidden = status.deployment === 'container';
+    autoStopShown = Number(status.autoStop) || 0;
+    // a value written into the config file by hand still shows as itself
+    if (![...autoStop.options].some((o) => Number(o.value) === autoStopShown)) autoStop.append(el('option', { value: String(autoStopShown) }, `Stop after ${after(autoStopShown)}`));
+    autoStop.value = String(autoStopShown);
     if (status.deployment === 'container') {
       syncWrap.replaceChildren(
         el('div', { class: 'small' }, 'Your worlds are stored on your server in ', el('code', {}, status.dataDir), '.'),
         el('p', { class: 'muted small' }, 'Open this same server address on your other devices to use the same worlds. Wait for Saved before switching devices.'),
-        el('p', { class: 'muted small' }, 'Docker manages this data volume. To change its location or back up every world and library pack, follow docs/docker.md in your download. Folder paths here refer to the server, not this browser’s computer.'),
+        el('p', { class: 'muted small' }, 'Docker manages this data volume. To change its location or back up every world and library pack, follow DOCKER.md in your download. Folder paths here refer to the server, not this browser’s computer.'),
         el('p', { class: 'muted small' }, 'Anyone with the server password has full DM access. Give players exported handouts or the player handbook; player preview does not restrict their access to the server.'));
     }
+
+    // Check for updates: the server asks the release feed only on this click
+    // (scripts/updates.js). It reports; it never downloads or installs.
+    const updateResult = el('div', { class: 'small', style: 'margin-top:6px' });
+    const updateButton = el('button', {
+      class: 'ghost small', title: 'Ask the project’s release page whether a newer MundusMaker exists',
+      onclick: async () => {
+        updateButton.disabled = true;
+        updateResult.replaceChildren(el('span', { class: 'muted' }, 'Checking…'));
+        try {
+          updateResult.replaceChildren(...updateMessage(await api.checkForUpdates(), status));
+        } catch (err) {
+          updateResult.replaceChildren(el('div', { class: 'notice warn' }, err.message));
+        } finally {
+          updateButton.disabled = false;
+        }
+      },
+    }, '⟳ Check for updates');
 
     aboutWrap.innerHTML = '';
     aboutWrap.append(
@@ -113,10 +168,15 @@ export function render(container) {
           ? ` — hosted on your ${status.platform} server; your browsers connect to its saved worlds.`
           : ` — running locally on ${status.platform}; your world data never leaves this machine.`)),
       el('div', { class: 'row', style: 'margin-top:6px' },
+        updateButton,
         el('button', {
           class: 'ghost small', title: 'Show the three welcome panes again',
           onclick: () => import('./onboarding.js').then((m) => m.showOnboarding()),
         }, '↻ Replay the welcome tour')),
+      el('p', { class: 'muted small', style: 'margin:6px 0 0' }, status.updates?.configured
+        ? 'Check for updates asks GitHub for the newest release, only when you press it. Nothing about your worlds is sent, and nothing is downloaded or installed.'
+        : 'Check for updates will ask the project’s release page for the newest version once MundusMaker is published. Until then it contacts nothing.'),
+      updateResult,
       el('p', { class: 'muted small', style: 'margin:10px 0 4px' },
         'Free and open source under the MIT license. Third-party material bundled with the app:'),
       el('ul', { class: 'muted small', style: 'margin:4px 0 0 18px;padding:0' },
@@ -134,7 +194,8 @@ export function render(container) {
           'For more information please visit ', el('a', { href: 'https://www.worldofdarkness.com', target: '_blank', rel: 'noopener' }, 'worldofdarkness.com'), '.'),
         el('li', {}, 'The Call of Cthulhu creator is unofficial fan material under Chaosium’s Fan Material Policy. ',
           'Call of Cthulhu is a trademark of Chaosium Inc. The V5 and CoC DM Screen references are original mechanical summaries with source links; no publisher rulebook prose or power descriptions are reproduced.'),
-        el('li', {}, 'The familiar character sheet layouts are drawn for MundusMaker. They follow the arrangement and field names of each game’s character sheet so players can find their numbers, but they are not official sheets and contain no publisher logos, artwork or fonts.')));
+        el('li', {}, 'The familiar character sheet layouts are drawn for MundusMaker. They follow the arrangement and field names of each game’s character sheet so players can find their numbers, but they are not official sheets and contain no publisher logos, artwork or fonts.'),
+        el('li', {}, 'Official sheet… fills your own copy of a publisher’s free fillable character sheet on this computer. MundusMaker ships no publisher sheets: the publishers allow them for personal use only. When you press Get it from…, it downloads the sheet from the publisher’s own website, once, for you; otherwise you add the PDF yourself. The sheets stay in your data folder and are not part of world backups.')));
   })();
 
   // ---------- backup ----------

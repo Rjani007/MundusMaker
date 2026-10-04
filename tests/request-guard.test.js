@@ -114,6 +114,14 @@ test('state-changing routes refuse cross-site, rebinding and non-JSON requests; 
     ['DELETE', `/api/worlds/${WID}`, {}],
     ['POST', '/api/library', { name: 'Planted pack', data: { spell: [{ name: 'Planted', level: 0 }] } }],
     ['POST', '/api/library/download-5etools', { confirmUse: false }],
+    ['POST', '/api/update-check', { confirm: true }],
+    ['POST', '/api/auto-stop', { minutes: 5 }],
+    ['POST', '/api/presence', {}],
+    // an unknown sheet, so even a guard failure could not reach the network
+    ['POST', '/api/sheet-templates/download', { id: 'planted', confirm: true }],
+    ['POST', '/api/sheet-templates', { system: 'dnd2024', fileName: 'planted.pdf', dataBase64: Buffer.from('%PDF-1.7 planted').toString('base64') }],
+    ['PUT', '/api/sheet-templates/planted', { choices: {} }],
+    ['DELETE', '/api/sheet-templates/planted', {}],
     ['DELETE', `/api/library/${pack.id}`, {}],
     ['POST', '/api/scan-path', { path: older }],
     ['POST', '/api/migrate-install', { dataDir: older, worldIds: ['old-campaign'] }],
@@ -188,6 +196,19 @@ test('state-changing routes refuse cross-site, rebinding and non-JSON requests; 
   result = await app('POST', '/api/library/download-5etools', { confirmUse: false });
   assert.equal(result.status, 400, 'the downloader still asks for consent before any network use');
   assert.match(result.text, /confirmUse/);
+  // with no repository in package.json the update check answers without any request
+  result = await app('POST', '/api/update-check', { confirm: true });
+  assert.equal(result.status, 200, result.text);
+  assert.equal(JSON.parse(result.text).configured, false);
+  result = await app('POST', '/api/update-check', {});
+  assert.equal(result.status, 400, 'the update check runs only when asked');
+  // publisher sheet downloads: only on request, only sheets from the fixed table
+  result = await app('POST', '/api/sheet-templates/download', { id: 'dnd2024-wotc' });
+  assert.equal(result.status, 400, 'a sheet downloads only when asked');
+  result = await app('POST', '/api/sheet-templates/download', { id: 'https://example.com/x.pdf', confirm: true });
+  assert.equal(result.status, 400, 'a page names a sheet, never a URL');
+  result = await app('GET', '/api/sheet-templates/sources');
+  assert.deepEqual(JSON.parse(result.text).map((s) => s.id), ['dnd2024-wotc', 'coc7-chaosium-1920s', 'coc7-chaosium-modern']);
   result = await app('POST', `${scoped}/entities/entry/history/${stamp}`, undefined, { 'If-Match': entryRevision });
   assert.equal(result.status, 200, result.text);
   result = await app('DELETE', `${scoped}/entities/entry`, undefined, { 'If-Match': result.headers.etag });

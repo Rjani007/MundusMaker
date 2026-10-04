@@ -432,7 +432,7 @@ export function html(data) {
   if (d.spellcasting) {
     const sc = d.spellcasting;
     const slotRows = Object.entries(sc.slots || {}).filter(([, s]) => s.max > 0)
-      .map(([lvl, s]) => kvHtml(`Level ${lvl} slots`, boxesHtml(s.max, s.used || 0, `spellcasting.slots.${lvl}.used`)))
+      .map(([lvl, s]) => kvHtml(`Level ${lvl} slots`, boxesHtml(s.max, s.used || 0, `spellcasting.slots.${lvl}.used`, `Level ${lvl} spell slots`)))
       .join('');
     spellsHtml = sectionHtml('Spellcasting',
       kvHtml('Ability', `${(sc.ability || '').toUpperCase()} · save DC ${sc.dc ?? '—'} · ${rollBtn({ kind: 'check', mod: sc.attackBonus || 0, label: 'Spell attack' }, `${fmtMod(sc.attackBonus || 0)} to hit`, 'Spell attack roll')}`) +
@@ -459,8 +459,8 @@ export function html(data) {
       kvHtml('AC', `${d.ac}`) + kvHtml('Initiative', rollBtn({ kind: 'check', mod: mod(d.abilities.dex) + (d.initiativeBonus || 0), label: 'Initiative' }, initiative, 'Roll initiative')) +
       kvHtml('Speed', `${d.speed} ft.`) +
       kvHtml('Hit points', `${d.hp.current} / ${d.hp.max}${d.hp.temp ? ` (+${d.hp.temp} temp)` : ''}`) +
-      kvHtml('Hit dice', `${boxesHtml(d.klass.level, d.hitDice.spent || 0, 'hitDice.spent')} d${d.klass.hitDie}`) +
-      kvHtml('Death saves', `${boxesHtml(3, d.deathSaves?.success || 0, 'deathSaves.success')} successes · ${boxesHtml(3, d.deathSaves?.failure || 0, 'deathSaves.failure')} failures`) +
+      kvHtml('Hit dice', `${boxesHtml(d.klass.level, d.hitDice.spent || 0, 'hitDice.spent', 'Hit dice spent')} d${d.klass.hitDie}`) +
+      kvHtml('Death saves', `${boxesHtml(3, d.deathSaves?.success || 0, 'deathSaves.success', 'Death save successes')} successes · ${boxesHtml(3, d.deathSaves?.failure || 0, 'deathSaves.failure', 'Death save failures')} failures`) +
       kvHtml('Proficiency', fmtMod(pb)))}
     ${sectionHtml('Saving throws', `<div class="sheet-pills">${saveRow}</div>`)}
     ${sectionHtml('Skills', `<div class="sheet-skills">${skillRows}</div>` + kvHtml('Passive Perception', String(passivePerception(d, pb))))}

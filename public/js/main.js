@@ -31,6 +31,7 @@ import { randomTableSearchText } from './randomtable.js';
 import { nameStyleForType, randomName } from './names.js';
 import { maybeShowOnboarding } from './views/onboarding.js';
 import { maybeShowUpgrade } from './views/upgrade.js';
+import { quitMundusMaker } from './quit.js';
 import { wireLinkPreviews } from './preview.js';
 
 const viewEl = document.getElementById('view');
@@ -371,6 +372,48 @@ function wireGmToggle() {
 
 // ---------- boot ----------
 
+// Launchers start MundusMaker without a window, so the top bar shows how to
+// stop it and says when the running copy is older than its files on disk.
+// Docker owns a container's lifecycle, so it gets neither.
+async function wireRunning() {
+  let status;
+  try { status = await api.status(); } catch { return; }
+  if (status.deployment === 'container') return;
+  const quitBtn = document.getElementById('quitBtn');
+  quitBtn.hidden = false;
+  quitBtn.addEventListener('click', () => quitMundusMaker());
+  const bar = document.getElementById('restartBar');
+  let shown = '';
+  const show = (kind) => {
+    bar.hidden = !kind;
+    if (kind === shown) return;
+    shown = kind;
+    if (kind === 'stale') bar.replaceChildren(el('span', {}, '⚠ MundusMaker was updated while it was running, so the copy that is running is out of date. Quit it and start MundusMaker again to finish the update.'),
+      el('button', { class: 'small', onclick: () => quitMundusMaker() }, '⏻ Quit now'));
+    // Settings can stop the server once no tab has checked in for a while, and
+    // a browser may have frozen this tab in the meantime
+    else if (kind === 'stopped') bar.replaceChildren(el('span', {}, '⚠ MundusMaker is not running any more, so changes here cannot be saved. Start MundusMaker again, then reload this page.'),
+      el('button', { class: 'small', onclick: () => location.reload() }, 'Reload'));
+  };
+  show(status.restartNeeded ? 'stale' : '');
+  // check in once a minute and whenever the tab comes back into view
+  let checked = Date.now(), beaten = 0;
+  const beat = async () => {
+    if (!document.body.contains(bar)) return clearInterval(timer); // Quit replaced the page
+    beaten = Date.now();
+    try {
+      await api.presence();
+      if (shown === 'stopped') show('');
+      if (Date.now() - checked >= 30000) { checked = Date.now(); show((await api.status()).restartNeeded ? 'stale' : ''); }
+    } catch (err) {
+      if (!err.status) show('stopped'); // no answer at all, rather than an error reply
+    }
+  };
+  const timer = setInterval(beat, 60000);
+  beat();
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && Date.now() - beaten > 10000) beat(); });
+}
+
 async function boot() {
   viewEl.innerHTML = '<div class="page"><p class="muted">Loading worlds…</p></div>';
   try {
@@ -391,6 +434,7 @@ async function boot() {
     return;
   }
   document.title = `${state.world.name || 'MundusMaker'} · MundusMaker`;
+  wireRunning();
   buildSidebar();
   wireGmToggle();
   wireSaveButton();

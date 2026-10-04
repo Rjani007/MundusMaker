@@ -18,16 +18,23 @@ const TARGETS = {
   'linux-arm64': { suffix: 'linux-arm64.tar.gz', bin: 'bin/node', runtime: 'runtime/bin/node' },
 };
 const APP_FILES = ['server.js', 'package.json', 'LICENSE', 'README.md', 'public', 'sample',
-  'scripts/fetch-5etools.js', 'scripts/storage.js', 'scripts/restore.js', 'scripts/upgrade.js', 'scripts/folderbackup.js', 'scripts/unix-runtime.sh',
-  'scripts/container.js', 'Dockerfile', 'compose.yaml', '.dockerignore',
-  'docs/data-safety.md', 'docs/docker.md', 'docs/1.7.0-release.md', 'docs/1.8.0-plan.md', 'docs/1.8.0-release.md', 'docs/1.8.1-release.md', 'docs/1.9.0-plan.md', 'docs/1.9.0-release.md'];
+  'scripts/fetch-5etools.js', 'scripts/updates.js', 'scripts/sheetdownload.js', 'scripts/storage.js', 'scripts/restore.js', 'scripts/upgrade.js', 'scripts/folderbackup.js', 'scripts/unix-runtime.sh',
+  'scripts/container.js', 'Dockerfile', 'compose.yaml', '.dockerignore'];
+// docs/ is contributor material (plans, release notes, audits) and never ships.
+// The few pages written for GMs go to the top of the download under plain names.
+const GUIDES = { 'docs/distribution.html': 'README-FIRST.html', 'docs/docker.md': 'DOCKER.md', 'docs/data-safety.md': 'DATA-SAFETY.md' };
 const WINDOWS_FILES = ['Start-MundusMaker.bat', 'MundusMaker-Console.bat', 'Install-MundusMaker.ps1', 'Install-MundusMaker.bat', 'MundusMaker-Tray.ps1'];
 function includeInPackage(file) {
   return file.split(/[\\/]/).every(part => (!part.startsWith('.') || part === '.dockerignore')
     && !/^(agents|claude|gemini|skill)(?:[.-]|$)/i.test(part)
-    && !/^(?:node_modules|data|secrets|tests?|tmp|dist|coverage|__pycache__)$/i.test(part)
+    && !/^(?:node_modules|data|secrets|tests?|tmp|dist|docs|coverage|__pycache__)$/i.test(part)
     && !/^(?:mundusmaker|tomeweaver|loreweave)\.config\.json$/i.test(part)
     && !/^(?:session_handoff|copilot-instructions)\./i.test(part));
+}
+// README.md is the repository's front page; in the download its links into
+// docs/ point at the guides shipped beside it, and the rest become plain text.
+function packagedReadme(text) {
+  return text.replace(/\[([^\]]+)\]\((docs\/[^)\s]+)\)/g, (link, label, target) => GUIDES[target] ? `[${label}](${GUIDES[target]})` : label);
 }
 const sha256 = data => createHash('sha256').update(data).digest('hex');
 function assertOwnedWork(dir) {
@@ -66,6 +73,7 @@ function copy(src, dest) {
   } else {
     fs.mkdirSync(path.dirname(dest), { recursive: true }); fs.copyFileSync(src, dest);
     if (/\.(?:sh|command)$/.test(src)) fs.writeFileSync(dest, fs.readFileSync(dest, 'utf8').replace(/\r\n/g, '\n'));
+    if (src === path.join(ROOT, 'README.md')) fs.writeFileSync(dest, packagedReadme(fs.readFileSync(dest, 'utf8')));
   }
 }
 function macBundle(outDir) {
@@ -142,7 +150,7 @@ async function build(target, nodeVersion, hashes) {
     for (const dest of new Set([appDir, macDir].filter(Boolean))) for (const file of APP_FILES) copy(path.join(ROOT, file), path.join(dest, file));
     const launchers = universal ? [...WINDOWS_FILES, 'start-mundusmaker.sh', 'Start-MundusMaker.command'] : target.startsWith('windows') ? WINDOWS_FILES : spec.mac ? [] : ['start-mundusmaker.sh'];
     for (const file of launchers) copy(path.join(ROOT, file), path.join(outDir, file));
-    copy(path.join(ROOT, 'docs/distribution.html'), path.join(outDir, 'README-FIRST.html'));
+    for (const [from, to] of Object.entries(GUIDES)) copy(path.join(ROOT, from), path.join(outDir, to));
     const runtimes = [];
     for (const name of universal ? Object.keys(TARGETS) : [target]) {
       const entry = TARGETS[name], dest = entry.mac ? macDir : appDir;
@@ -175,4 +183,4 @@ async function main(args = process.argv.slice(2)) {
   console.log('Done. The release includes bundled runtimes and a README-FIRST.html startup guide.');
 }
 if (require.main === module) main().catch(err => { console.error('Packaging failed:', err.message || err.code || String(err)); process.exitCode = 1; });
-module.exports = { TARGETS, includeInPackage, assertOwnedWork, archiveEntries, macBundle, main };
+module.exports = { TARGETS, APP_FILES, GUIDES, includeInPackage, packagedReadme, copy, assertOwnedWork, archiveEntries, macBundle, main };

@@ -4,6 +4,7 @@
 let worldId = null;
 const revisions = new Map(); // URL -> hash of the bytes this page actually read
 const writes = new Map();
+export const RESTART_NEEDED = 'MundusMaker needs a restart for this: the copy that is running started before it was updated. Quit it (Settings → Running MundusMaker), then start MundusMaker again.';
 
 async function req(method, url, body, revisionUrl = null, record = true) {
   const payload = body ? JSON.stringify(body) : undefined;
@@ -26,6 +27,10 @@ async function req(method, url, body, revisionUrl = null, record = true) {
   if (!res.ok) {
     let msg = res.statusText;
     try { msg = (await res.json()).error || msg; } catch { /* keep statusText */ }
+    // The pages are read from disk on every load but the server only at start,
+    // so an update made while MundusMaker keeps running (in the tray) gives new
+    // pages an old server that has never heard of their routes.
+    if (res.status === 404 && msg === 'unknown api route') msg = RESTART_NEEDED;
     throw Object.assign(new Error(msg), { status: res.status });
   }
   const value = await res.json();
@@ -56,6 +61,11 @@ export const api = {
 
   // server status & data-folder config
   status: () => req('GET', '/api/status'),
+  // asks the release feed only on the user's click (scripts/updates.js)
+  checkForUpdates: () => req('POST', '/api/update-check', { confirm: true }),
+  // publisher sheets the server can fetch on request (scripts/sheetdownload.js)
+  sheetSources: () => req('GET', '/api/sheet-templates/sources'),
+  downloadSheetTemplate: (id) => req('POST', '/api/sheet-templates/download', { id, confirm: true }),
   setDataDir: (dataDir, copyData) => req('POST', '/api/config', { dataDir, copyData }),
 
   // world management
@@ -99,6 +109,17 @@ export const api = {
   backup: (withAssets) => req('GET', w('/backup') + (withAssets ? '?assets=1' : '')),
   restore: (payload) => req('POST', w('/restore'), payload),
 
+  // the GM's own fillable sheet PDFs ("Use my own official sheet")
+  sheetTemplates: () => req('GET', '/api/sheet-templates'),
+  addSheetTemplate: (body) => req('POST', '/api/sheet-templates', body),
+  updateSheetTemplate: (id, body) => req('PUT', `/api/sheet-templates/${encodeURIComponent(id)}`, body),
+  deleteSheetTemplate: (id) => req('DELETE', `/api/sheet-templates/${encodeURIComponent(id)}`),
+  sheetTemplatePdf: async (id) => {
+    const res = await fetch(`/api/sheet-templates/${encodeURIComponent(id)}/pdf`, { cache: 'no-store' });
+    if (!res.ok) throw new Error(res.status === 404 ? 'That sheet is no longer saved.' : res.statusText);
+    return new Uint8Array(await res.arrayBuffer());
+  },
+
   // compendium library (cross-world packs)
   library: () => req('GET', '/api/library'),
   libraryPack: (id) => req('GET', `/api/library/${encodeURIComponent(id)}`),
@@ -119,6 +140,9 @@ export const api = {
 
   // stop the local server; saves already in progress finish first
   quit: () => req('POST', '/api/quit', {}),
+  // each open tab checks in once a minute; Settings can stop the server once none has
+  presence: () => req('POST', '/api/presence', {}),
+  setAutoStop: (minutes) => req('POST', '/api/auto-stop', { minutes }),
   folderBackup: () => req('GET', '/api/folder-backup'),
   setFolderBackup: (settings) => req('POST', '/api/folder-backup', settings),
   runFolderBackup: () => req('POST', '/api/folder-backup/run', {}),

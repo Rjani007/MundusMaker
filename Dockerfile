@@ -2,7 +2,7 @@ FROM node:24-bookworm-slim
 WORKDIR /app
 RUN mkdir -p /data && chown node:node /data
 COPY --chown=node:node server.js package.json LICENSE README.md ./
-COPY --chown=node:node scripts/container.js scripts/storage.js scripts/restore.js scripts/upgrade.js scripts/folderbackup.js scripts/fetch-5etools.js ./scripts/
+COPY --chown=node:node scripts/container.js scripts/storage.js scripts/restore.js scripts/upgrade.js scripts/folderbackup.js scripts/fetch-5etools.js scripts/updates.js scripts/sheetdownload.js ./scripts/
 COPY --chown=node:node public/ ./public/
 COPY --chown=node:node sample/ ./sample/
 USER node

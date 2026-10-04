@@ -1,6 +1,7 @@
 // Quit: stops the local server once every change in this tab has been saved.
 // Launchers start MundusMaker without a visible window, so this (and the tray
-// or menu-bar icon) is how a GM stops it.
+// or menu-bar icon) is how a GM stops it. The top bar's ⏻ Quit and Settings
+// both call quitMundusMaker().
 
 import { el } from './util.js';
 import { api } from './api.js';

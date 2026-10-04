@@ -44,7 +44,7 @@ export async function showOnboarding() {
       body: [
         el('p', {}, 'Everything autosaves as you type. The ✓ in the top bar tells you it landed.'),
         ...(hosted ? [] : [el('p', { class: 'muted' }, 'MundusMaker keeps running when you close this tab, so nothing is lost if you do. ',
-          'To stop it, use Quit in Settings, or the MundusMaker icon in the Windows tray or the Mac menu bar.')]),
+          'To stop it, use ⏻ Quit at the top right, or the MundusMaker icon in the Windows tray or the Mac menu bar.')]),
         el('p', { class: 'muted' }, 'If you\'d rather have MundusMaker as its own window with a Start Menu entry, Edge and Chrome can install it: the little icon at the right end of the address bar. ',
           'And when you have five minutes to spare, the Help tab has the tour.'),
       ],

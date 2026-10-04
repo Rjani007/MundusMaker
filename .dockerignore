@@ -13,6 +13,8 @@
 !scripts/upgrade.js
 !scripts/folderbackup.js
 !scripts/fetch-5etools.js
+!scripts/updates.js
+!scripts/sheetdownload.js
 !public/
 !public/**
 !sample/

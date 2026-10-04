@@ -77,7 +77,7 @@ $script:quitting = $false
 $icon = New-Object System.Windows.Forms.NotifyIcon
 try { $icon.Icon = New-Object System.Drawing.Icon (Join-Path $root 'public\favicon.ico') }
 catch { $icon.Icon = [System.Drawing.SystemIcons]::Application }
-$icon.Text = 'MundusMaker'
+$icon.Text = 'MundusMaker is running - right-click to quit'
 
 $menu = New-Object System.Windows.Forms.ContextMenuStrip
 [void]$menu.Items.Add('Open MundusMaker', $null, { Start-Process $url })
@@ -97,14 +97,33 @@ $menu = New-Object System.Windows.Forms.ContextMenuStrip
 })
 $icon.ContextMenuStrip = $menu
 $icon.add_DoubleClick({ Start-Process $url })
+$icon.add_BalloonTipClicked({ Start-Process $url })
 $icon.Visible = $true
+
+# Windows 11 tucks new tray icons out of sight, so say once that MundusMaker is
+# running and how to stop it. Only for our own server: when another copy holds
+# the port, this one opens it and exits instead (pid comes from /api/status).
+$script:announced = $false
+$script:nextCheck = (Get-Date).AddSeconds(1)
+$script:giveUp = (Get-Date).AddSeconds(90)
+function Announce-Running {
+  if ($script:announced -or (Get-Date) -lt $script:nextCheck) { return }
+  if ((Get-Date) -gt $script:giveUp) { $script:announced = $true; return }
+  $script:nextCheck = (Get-Date).AddSeconds(2)
+  try { $status = Invoke-Local 'GET' '/api/status' | ConvertFrom-Json } catch { return }
+  if ($status.pid -ne $script:child.Id) { return }
+  $script:announced = $true
+  $icon.ShowBalloonTip(10000, 'MundusMaker is running',
+    'It keeps running after you close the browser tab. To stop it, use Quit at the top right of the app, or right-click the MundusMaker icon here (under ^ if hidden).',
+    [System.Windows.Forms.ToolTipIcon]::Info)
+}
 
 # The server exits on Quit (from here or from the app), when a copy is already
 # running (it opened that one), or when it cannot start.
 $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 500
 $timer.add_Tick({
-  if (-not $script:child.HasExited) { return }
+  if (-not $script:child.HasExited) { Announce-Running; return }
   $timer.Stop()
   $icon.Visible = $false
   $code = $script:child.ExitCode

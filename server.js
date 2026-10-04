@@ -25,9 +25,11 @@ const { exec } = require('child_process');
 const upgrade = require('./scripts/upgrade');
 const folderBackup = require('./scripts/folderbackup');
 const { download5etools } = require('./scripts/fetch-5etools');
+const updates = require('./scripts/updates');
+const sheetDownload = require('./scripts/sheetdownload');
 const { atomicWrite, revision, readVersion } = require('./scripts/storage');
 const { validateEntity, validateWorld, restoreBackup, recoverTransactions } = require('./scripts/restore');
-const { randomUUID } = require('crypto');
+const { randomUUID, createHash } = require('crypto');
 
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
@@ -77,10 +79,39 @@ const PORT = Number(portArg || process.env.PORT || config.port || 4870);
 const NO_OPEN = flags.includes('--no-open')
   || !!envAny('MUNDUSMAKER_NO_OPEN', 'TOMEWEAVER_NO_OPEN', 'LOREWEAVE_NO_OPEN');
 const CONTAINER = process.env.MUNDUSMAKER_CONTAINER === '1';
-const VERSION = (() => {
-  try { return JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version; } catch { return '?'; }
+const PKG = (() => {
+  try { return JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')); } catch { return {}; }
 })();
+const VERSION = PKG.version || '?';
+
+// Pages are read from disk on every request but this code only at start, so an
+// update made while MundusMaker keeps running (windowless, in the tray) leaves
+// new pages talking to an old server. /api/status reports it and the app asks
+// for a restart. Only the files this process actually loaded count, and a new
+// timestamp on the same bytes (a checkout, a copy) is not a change.
+const loadedCode = new Map(); // file -> { mtimeMs, size, hash }
+const fileHash = (file) => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+function rememberLoadedCode() {
+  for (const file of [...Object.keys(require.cache), path.join(ROOT, 'package.json')]) {
+    if (!file.startsWith(ROOT + path.sep) || loadedCode.has(file)) continue;
+    try { const st = fs.statSync(file); loadedCode.set(file, { mtimeMs: st.mtimeMs, size: st.size, hash: fileHash(file) }); } catch { /* not a file */ }
+  }
+}
+function codeChangedSinceStart() {
+  for (const [file, seen] of loadedCode) {
+    try {
+      const st = fs.statSync(file);
+      if (st.mtimeMs === seen.mtimeMs && st.size === seen.size) continue;
+      if (fileHash(file) !== seen.hash) return true;
+      seen.mtimeMs = st.mtimeMs; // same bytes: skip the hash next time
+    } catch { return true; } // removed by the update
+  }
+  return false;
+}
+rememberLoadedCode(); // every require is above this line
 let libraryDownloadActive = false;
+let updateCheckActive = false;
+let sheetDownloadActive = false;
 
 // Launchers that run the server without a visible window pass --log: console
 // output also goes to logs/mundusmaker.log in the config folder (never the
@@ -954,6 +985,58 @@ function listLibrary() {
   return out;
 }
 
+// ---------- official sheet PDFs ("Use my own official sheet") ----------
+// The GM's own copies of publishers' fillable character sheets, kept beside
+// library packs and outside worlds/ (backups and snapshots never carry them;
+// the GM can download them again). The PDF is stored as uploaded and only ever
+// sent back to this app as a download, never rendered by the server.
+const SHEET_TEMPLATES_DIR = () => path.join(DATA_DIR, '.sheet-templates');
+const SHEET_SYSTEM_IDS = new Set(['dnd2024', 'vtm5', 'coc7']);
+const MAX_SHEET_TEMPLATE_BYTES = 25 * 1024 * 1024;
+
+function listSheetTemplates() {
+  const dir = SHEET_TEMPLATES_DIR();
+  if (!fs.existsSync(dir)) return [];
+  const out = [];
+  for (const d of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (!d.isDirectory() || !SAFE_ID.test(d.name)) continue;
+    try { out.push(JSON.parse(fs.readFileSync(path.join(dir, d.name, 'meta.json'), 'utf8'))); } catch { /* unreadable: skip */ }
+  }
+  return out.sort((a, b) => String(a.added).localeCompare(String(b.added)));
+}
+
+function sheetTemplateChoices(value) {
+  const out = {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return out;
+  for (const [field, key] of Object.entries(value).slice(0, 5000)) {
+    if (typeof field !== 'string' || field.length > 300 || typeof key !== 'string' || key.length > 200) continue;
+    if (field === '__proto__' || field === 'constructor' || field === 'prototype') continue;
+    out[field] = key;
+  }
+  return out;
+}
+
+/** `downloaded` ({ bytes, source }) is set only by the publisher download route. */
+function storeSheetTemplate(body, downloaded = null) {
+  const fail = (message) => Object.assign(new Error(message), { status: 400 });
+  if (!SHEET_SYSTEM_IDS.has(body?.system)) throw fail('unknown game system');
+  const bytes = downloaded ? downloaded.bytes : Buffer.from(String(body.dataBase64 || ''), 'base64');
+  if (!bytes.length || bytes.length > MAX_SHEET_TEMPLATE_BYTES) throw fail('the sheet must be a PDF of at most 25 MB');
+  if (!bytes.subarray(0, 1024).toString('latin1').includes('%PDF-')) throw fail('that file is not a PDF');
+  const label = String(body.label || body.fileName || 'Character sheet').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 120) || 'Character sheet';
+  const fileName = String(body.fileName || 'sheet.pdf').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').slice(0, 120);
+  const base = `${body.system}-${slugify(label)}`.slice(0, 100);
+  let id = base;
+  for (let i = 2; fs.existsSync(path.join(SHEET_TEMPLATES_DIR(), id)); i++) id = `${base}-${i}`;
+  const dir = path.join(SHEET_TEMPLATES_DIR(), id);
+  fs.mkdirSync(dir, { recursive: true });
+  const meta = { mundusmakerSheetTemplate: 1, id, system: body.system, label, fileName, size: bytes.length, added: new Date().toISOString(), choices: sheetTemplateChoices(body.choices) };
+  if (downloaded) meta.source = downloaded.source; // which publisher sheet, so the dialog stops offering it
+  atomicWrite(path.join(dir, 'sheet.pdf'), bytes);
+  atomicWrite(path.join(dir, 'meta.json'), JSON.stringify(meta, null, 2));
+  return meta;
+}
+
 function storeLibraryPack(name, data) {
   const trimmed = {};
   const counts = {};
@@ -1032,7 +1115,30 @@ async function handleApi(req, res, pathname) {
       // the Sync card claims 'default' while a legacy config is in force
       configuredVia: dataDirArg ? 'command line' : DATA_DIR_ENV ? 'environment variable'
         : config.dataDir ? path.basename(configPathUsed) : 'default',
+      // whether Check for updates has a release feed to ask (scripts/updates.js)
+      updates: { configured: !!updates.feedFor(PKG) },
+      // the app's files changed since this process started (see loadedCode)
+      restartNeeded: codeChangedSinceStart(),
+      // lets the tray tell its own server from another copy holding the port
+      pid: process.pid,
+      // minutes after the last tab closes before stopping; 0 = keep running
+      autoStop: autoStopMinutes(),
     });
+  }
+  // Check for updates: only when the user presses the button, one GET to the
+  // release feed named in package.json, nothing downloaded or installed.
+  if (pathname === '/api/update-check' && method === 'POST') {
+    const body = JSON.parse((await readBody(req, 4 * 1024)).toString('utf8') || '{}');
+    if (body.confirm !== true) return sendJson(res, 400, { error: 'confirm must be true before MundusMaker asks the release feed' });
+    if (updateCheckActive) return sendJson(res, 409, { error: 'an update check is already running' });
+    updateCheckActive = true;
+    try {
+      return sendJson(res, 200, await updates.checkForUpdates({ pkg: PKG, current: VERSION }));
+    } catch (err) {
+      return sendJson(res, 502, { error: err.message });
+    } finally {
+      updateCheckActive = false;
+    }
   }
   // Quit: Settings, the tray and the upgrade screen stop the server here, and
   // guardRequest keeps every other page out. In-flight saves finish first
@@ -1042,6 +1148,24 @@ async function handleApi(req, res, pathname) {
     sendJson(res, 200, { ok: true, stopping: true });
     setImmediate(() => gracefulQuit('Quit was chosen'));
     return;
+  }
+
+  // The app's tabs check in here (see scheduleAutoStop); only they count.
+  if (pathname === '/api/presence' && method === 'POST') {
+    lastTabSeen = Date.now();
+    return sendJson(res, 200, { ok: true, autoStop: autoStopMinutes() });
+  }
+  if (pathname === '/api/auto-stop' && method === 'POST') {
+    if (CONTAINER) return sendJson(res, 409, { error: 'Docker manages this server. Stop it with Docker instead.' });
+    const body = JSON.parse((await readBody(req, 4 * 1024)).toString('utf8') || '{}');
+    const minutes = Number(body.minutes);
+    if (!AUTO_STOP_CHOICES.includes(minutes)) return sendJson(res, 400, { error: `minutes must be one of ${AUTO_STOP_CHOICES.join(', ')}` });
+    const next = { ...config };
+    if (minutes) next.autoStop = { minutes }; else delete next.autoStop;
+    atomicWrite(CONFIG_PATH, JSON.stringify(next, null, 2));
+    config = next;
+    lastTabSeen = Date.now();
+    return sendJson(res, 200, { ok: true, autoStop: autoStopMinutes() });
   }
 
   if (pathname === '/api/config' && method === 'POST') {
@@ -1181,6 +1305,62 @@ async function handleApi(req, res, pathname) {
       const trash = path.join(DATA_DIR, '.trash');
       fs.mkdirSync(trash, { recursive: true });
       fs.renameSync(dir, path.join(trash, `pack-${id}-${Date.now()}`));
+      return sendJson(res, 200, { ok: true, note: 'moved to data/.trash' });
+    }
+  }
+
+  // --- official sheet PDFs ---
+  if (pathname === '/api/sheet-templates' && method === 'GET') return sendJson(res, 200, listSheetTemplates());
+  if (pathname === '/api/sheet-templates' && method === 'POST') {
+    const body = JSON.parse((await readBody(req, Math.ceil(MAX_SHEET_TEMPLATE_BYTES * 1.4) + 64 * 1024)).toString('utf8'));
+    return sendJson(res, 200, storeSheetTemplate(body));
+  }
+  // The third button-started outbound request: one publisher's free sheet,
+  // from scripts/sheetdownload.js's fixed table, into .sheet-templates.
+  if (pathname === '/api/sheet-templates/sources' && method === 'GET') return sendJson(res, 200, sheetDownload.listSources());
+  if (pathname === '/api/sheet-templates/download' && method === 'POST') {
+    const body = JSON.parse((await readBody(req, 4 * 1024)).toString('utf8') || '{}');
+    if (body.confirm !== true) return sendJson(res, 400, { error: 'confirm must be true before MundusMaker contacts the publisher' });
+    if (sheetDownloadActive) return sendJson(res, 409, { error: 'a sheet is already downloading' });
+    sheetDownloadActive = true;
+    try {
+      const got = await sheetDownload.downloadSheet(String(body.id || ''), { version: VERSION });
+      const meta = storeSheetTemplate({ system: got.source.system, fileName: got.fileName, label: got.source.label }, { bytes: got.bytes, source: got.source.id });
+      console.log(`[mundusmaker] downloaded ${got.source.label} from ${new URL(got.source.url).host}`);
+      return sendJson(res, 200, meta);
+    } catch (err) {
+      return sendJson(res, err.status || 500, { error: err.message });
+    } finally {
+      sheetDownloadActive = false;
+    }
+  }
+  const tplMatch = pathname.match(/^\/api\/sheet-templates\/([^/]+)(\/pdf)?$/);
+  if (tplMatch) {
+    const id = decodeURIComponent(tplMatch[1]);
+    if (!SAFE_ID.test(id)) return sendJson(res, 400, { error: 'invalid sheet id' });
+    const dir = path.join(SHEET_TEMPLATES_DIR(), id);
+    if (!fs.existsSync(path.join(dir, 'meta.json'))) return sendJson(res, 404, { error: 'sheet not found' });
+    if (tplMatch[2] && method === 'GET') {
+      const bytes = fs.readFileSync(path.join(dir, 'sheet.pdf'));
+      res.writeHead(200, {
+        'Content-Type': 'application/pdf', 'Content-Length': bytes.length, 'Cache-Control': 'no-store',
+        'Content-Disposition': 'attachment; filename="sheet.pdf"', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': 'sandbox',
+      });
+      return res.end(bytes);
+    }
+    if (!tplMatch[2] && method === 'PUT') {
+      const body = JSON.parse((await readBody(req, 2 * 1024 * 1024)).toString('utf8'));
+      const meta = JSON.parse(fs.readFileSync(path.join(dir, 'meta.json'), 'utf8'));
+      if (typeof body.label === 'string' && body.label.trim()) meta.label = body.label.replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 120);
+      if (body.choices !== undefined) meta.choices = sheetTemplateChoices(body.choices);
+      meta.updated = new Date().toISOString();
+      atomicWrite(path.join(dir, 'meta.json'), JSON.stringify(meta, null, 2));
+      return sendJson(res, 200, meta);
+    }
+    if (!tplMatch[2] && method === 'DELETE') {
+      const trash = path.join(DATA_DIR, '.trash');
+      fs.mkdirSync(trash, { recursive: true });
+      fs.renameSync(dir, path.join(trash, `sheet-${id}-${Date.now()}`));
       return sendJson(res, 200, { ok: true, note: 'moved to data/.trash' });
     }
   }
@@ -1525,6 +1705,30 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+// ---------- stop after the last tab closes (opt-in) ----------
+// Every app tab says it is open once a minute (POST /api/presence). With
+// config.autoStop.minutes set, the server stops once no tab has called for that
+// long. Closed tabs and ones the browser froze or discarded both fall silent,
+// which is why this is an option and not the default. The clock starts at
+// launch, so a browser that never opened stops it too.
+const AUTO_STOP_CHOICES = [0, 5, 15, 60];
+let lastTabSeen = Date.now();
+function autoStopMinutes() {
+  const minutes = Number(config.autoStop?.minutes);
+  return !CONTAINER && Number.isFinite(minutes) && minutes > 0 && minutes <= 1440 ? minutes : 0;
+}
+function scheduleAutoStop(delay = 30000) {
+  const due = Date.now() + delay;
+  setTimeout(() => {
+    const now = Date.now(), minutes = autoStopMinutes();
+    // fired far too late: the computer slept, tabs included, so give them a fresh start
+    if (now - due > 60000) lastTabSeen = now;
+    const left = minutes * 60000 - (now - lastTabSeen);
+    if (minutes && left <= 0) return gracefulQuit(`no MundusMaker tab was open for ${minutes} minute${minutes === 1 ? '' : 's'}; change this in Settings, Running MundusMaker`);
+    scheduleAutoStop(minutes ? Math.max(250, Math.min(30000, left)) : 30000);
+  }, delay).unref();
+}
+
 /**
  * Stop cleanly: accept no new work, let requests already running (saves)
  * finish, then exit. Used by Quit, the tray, and termination signals.
@@ -1630,11 +1834,12 @@ server.listen(PORT, '127.0.0.1', () => {
     : Promise.resolve();
   firstStart.then(() => {
     markReady();
+    if (!CONTAINER) { lastTabSeen = Date.now(); scheduleAutoStop(autoStopMinutes() ? 250 : 30000); }
     const url = `http://localhost:${PORT}`;
     console.log(`[mundusmaker] serving on ${url}`);
     console.log(`[mundusmaker] worlds stored in ${WORLDS_DIR}`);
     console.log(CONTAINER ? '[mundusmaker] internal server ready; use Docker to stop this instance.'
-      : LOG_FILE ? '[mundusmaker] running in the background. Quit it from Settings in the app, or from the MundusMaker tray or menu-bar icon.'
+      : LOG_FILE ? '[mundusmaker] running in the background. Quit it with Quit at the top right of the app, or from the MundusMaker tray or menu-bar icon.'
         : '[mundusmaker] keep this window open while you use MundusMaker. Press Ctrl+C to stop.');
     if (!NO_OPEN) openBrowser(url);
     if (process.send) process.send({ type: 'mundusmaker-ready', port: PORT });

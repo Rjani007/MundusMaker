@@ -36,8 +36,10 @@
         <span class="gm-label"></span>
       </label>
       <a class="gear-btn" href="#/settings" title="App settings — data folder, backups, about">⚙</a>
+      <button id="quitBtn" class="quit-btn" hidden aria-label="Quit MundusMaker" title="Stop MundusMaker. It keeps running in the background after you close this tab, until you quit it here or from its tray or menu-bar icon.">⏻ <span class="quit-label">Quit</span></button>
     </div>
   </header>
+  <div id="restartBar" class="restart-bar" role="status" hidden></div>
   <div id="layout">
     <aside id="sidebar"></aside>
     <main id="view"></main>

@@ -4,12 +4,15 @@
 // sheetcore.js imports the modules — no cycles.
 
 import { el, esc, toast } from '../util.js';
+import { sliderAria, damageAria, ratingAria, attrsHtml } from './sheetaria.js';
 
 // ---------- HTML fragments (string-based, like statblockHtml) ----------
 
-/** Dot rating ●●●○○ as spans. `edit` makes each dot a click target. */
-export function dotsHtml(value, max = 5, { edit = false, path = '' } = {}) {
-  let out = `<span class="dots"${edit ? ` data-dots="${esc(path)}"` : ''}>`;
+/** Dot rating ●●●○○ as spans. `edit` makes each dot a click target and the
+ *  whole rating one keyboard stop (arrow keys, sheetaria.js). */
+export function dotsHtml(value, max = 5, { edit = false, path = '', label = '' } = {}) {
+  const aria = edit ? sliderAria({ label, value: value || 0, max }) : ratingAria({ label, value: value || 0, max });
+  let out = `<span class="dots"${edit ? ` data-dots="${esc(path)}"` : ''}${attrsHtml(aria)}>`;
   for (let i = 1; i <= max; i++) {
     out += `<span class="dot-p${i <= value ? ' on' : ''}"${edit ? ` data-dot="${i}"` : ''}></span>`;
   }
@@ -17,8 +20,8 @@ export function dotsHtml(value, max = 5, { edit = false, path = '' } = {}) {
 }
 
 /** Damage track: boxes cycling none → / (superficial) → X (aggravated). */
-export function trackHtml(max, superficial, aggravated, path) {
-  let out = `<span class="track" data-track="${esc(path)}">`;
+export function trackHtml(max, superficial, aggravated, path, label = '') {
+  let out = `<span class="track" data-track="${esc(path)}"${attrsHtml(damageAria({ label, max, sup: superficial || 0, agg: aggravated || 0 }))}>`;
   for (let i = 0; i < max; i++) {
     const state = i < aggravated ? 'agg' : i < aggravated + superficial ? 'sup' : '';
     out += `<span class="track-box ${state}" data-box="${i}">${state === 'agg' ? '✕' : state === 'sup' ? '╱' : ''}</span>`;
@@ -27,8 +30,8 @@ export function trackHtml(max, superficial, aggravated, path) {
 }
 
 /** Simple boxes track (spell slots, luck spent…): filled up to `used`. */
-export function boxesHtml(max, used, path) {
-  let out = `<span class="track" data-track="${esc(path)}" data-mode="fill">`;
+export function boxesHtml(max, used, path, label = '') {
+  let out = `<span class="track" data-track="${esc(path)}" data-mode="fill"${attrsHtml(sliderAria({ label, value: used || 0, max, text: `${used || 0} of ${max} used` }))}>`;
   for (let i = 0; i < max; i++) {
     out += `<span class="track-box ${i < used ? 'sup' : ''}" data-box="${i}">${i < used ? '●' : ''}</span>`;
   }
@@ -158,22 +161,27 @@ export function wireSheetRolls() {
  * entity.js calls this from its click handling with the sheet block; returns
  * true when data changed (caller saves + re-renders). Path syntax "a.b.c".
  */
+function pathGet(data, path) { return path.split('.').reduce((o, k) => o?.[k], data); }
+function pathSet(data, path, value) {
+  const keys = path.split('.');
+  let obj = data;
+  for (const k of keys.slice(0, -1)) obj = obj?.[k];
+  if (!obj) return false;
+  obj[keys[keys.length - 1]] = value;
+  return true;
+}
+
 export function handleSheetClick(block, target) {
-  const setPath = (path, value) => {
-    const keys = path.split('.');
-    let obj = block.data;
-    for (const k of keys.slice(0, -1)) obj = obj?.[k];
-    if (!obj) return false;
-    obj[keys[keys.length - 1]] = value;
-    return true;
-  };
-  const getPath = (path) => path.split('.').reduce((o, k) => o?.[k], block.data);
+  const setPath = (path, value) => pathSet(block.data, path, value);
+  const getPath = (path) => pathGet(block.data, path);
 
   const box = target.closest('.track-box');
   const track = target.closest('.track');
   if (box && track?.dataset.track) {
     const path = track.dataset.track;
     const idx = Number(box.dataset.box);
+    // numbered tracks (CoC hit points, sanity, luck): click a number to make it current
+    if (track.dataset.mode === 'set') return setPath(path, Number(box.dataset.value));
     if (track.dataset.mode === 'fill') {
       // boxes count a single number (slots used, etc.): click box N → used = N+1, click last used → N
       const used = Number(getPath(path) || 0);
@@ -197,6 +205,47 @@ export function handleSheetClick(block, target) {
     return setPath(dotsEl.dataset.dots, val === cur ? val - 1 : val); // click current rating to step down
   }
   return false;
+}
+
+/**
+ * The keyboard twin of handleSheetClick, for the focused rating or track
+ * (sheetaria.js gives each one role="slider" and its bounds). Returns null
+ * when the key is not a sheet key, false when it was handled but nothing
+ * changed (at a bound), and true when data changed (caller saves, re-renders
+ * and focuses the same widget again).
+ */
+export function handleSheetKey(block, target, { key, shiftKey = false }) {
+  const widget = target?.closest?.('[data-dots], [data-track]');
+  if (!widget || widget.getAttribute('role') !== 'slider') return null;
+  const step = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1, PageUp: 5, PageDown: -5 }[key];
+  if (step === undefined && key !== 'Home' && key !== 'End') return null;
+  const min = Number(widget.getAttribute('aria-valuemin') || 0), max = Number(widget.getAttribute('aria-valuemax') || 0);
+  const path = widget.dataset.dots ?? widget.dataset.track;
+  if (widget.dataset.dots != null || widget.dataset.mode === 'fill' || widget.dataset.mode === 'set') {
+    const cur = Number(pathGet(block.data, path) || 0);
+    const next = key === 'Home' ? min : key === 'End' ? max : Math.max(min, Math.min(max, cur + step));
+    return next === cur ? false : pathSet(block.data, path, next);
+  }
+  // damage track: right marks one more superficial (on a full track it turns
+  // one superficial into aggravated, as the rules do), left heals one; Shift
+  // works on aggravated damage instead
+  let sup = Number(pathGet(block.data, path + '.superficial') || 0), agg = Number(pathGet(block.data, path + '.aggravated') || 0);
+  const before = `${sup}/${agg}`;
+  if (key === 'Home') { sup = 0; agg = 0; }
+  else if (key === 'End') sup = Math.max(0, max - agg);
+  else if (step > 0) {
+    for (let i = 0; i < step; i++) {
+      if (sup + agg < max) { if (shiftKey) agg++; else sup++; }
+      else if (sup > 0) { sup--; agg++; }
+    }
+  } else {
+    for (let i = 0; i < -step; i++) {
+      if (shiftKey ? agg > 0 : sup === 0 && agg > 0) agg--;
+      else if (sup > 0) sup--;
+    }
+  }
+  if (`${sup}/${agg}` === before) return false;
+  return pathSet(block.data, path + '.superficial', sup) && pathSet(block.data, path + '.aggravated', agg);
 }
 
 // ---------- small form helpers for sheet editors ----------

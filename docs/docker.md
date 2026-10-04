@@ -1,6 +1,6 @@
 # MundusMaker on Docker / a NAS
 
-The 1.8.1 download includes a Docker build and a Compose project. One instance
+The download includes a Docker build and a Compose project. One instance
 on your own server lets you continue the same campaign from different devices.
 All world files, uploads, library packs and recovery history live in its `/data`
 volume. MundusMaker has no external database, cloud service or subscription.
@@ -17,7 +17,9 @@ that supports building a Compose project. The official Node 24 Debian image
 supports x86-64 and ARM64, including Apple silicon. Your Docker installation
 must support your NAS processor; 32-bit ARM and MIPS NAS devices are not targets.
 The first build downloads the base image. The running app makes no external
-requests unless you explicitly use the Library's 5etools downloader.
+requests except when you press one of its download buttons: the Library's
+5etools downloader, Check for updates in Settings, or Get it from… in the
+Official sheet dialog.
 
 1. Extract the complete MundusMaker ZIP to a folder on the server. Use the
    folder containing `compose.yaml`. Keep this project folder for future updates.

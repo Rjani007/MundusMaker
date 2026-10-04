@@ -1,7 +1,7 @@
 #!/bin/sh
 # MundusMaker launcher for Linux. Starts MundusMaker in the background, so
 # closing this terminal does not stop it, and your browser opens once it is
-# ready. Quit it from Settings in the app.
+# ready. Quit it with Quit at the top right of the app.
 #
 #   sh start-mundusmaker.sh                     start in the background
 #   sh start-mundusmaker.sh --foreground        run in this terminal (Ctrl+C stops it)
@@ -69,7 +69,7 @@ while [ "$tries" -lt 60 ]; do
   # the log first: a server that logged "serving on" started, whatever the
   # process state by the time this loop looks
   if since | grep -q 'serving on'; then
-    say "MundusMaker is running in the background and your browser is opening. You can close this terminal; to stop MundusMaker, use Quit in Settings."
+    say "MundusMaker is running in the background and your browser is opening. You can close this terminal; to stop MundusMaker, use Quit at the top right of the app."
     exit 0
   fi
   if ! kill -0 "$pid" 2>/dev/null; then

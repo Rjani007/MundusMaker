@@ -4,7 +4,7 @@
 
 import { el, uid, esc, toast, debounce, helpTip, slugify, readSetting, writeSetting } from '../util.js';
 
-const sheetLayout = () => { try { return readSetting('sheetLayout') || 'standard'; } catch { return 'standard'; } };
+const sheetLayout = (system) => sheetLayoutFor(system, readSetting);
 import { buildCharacterPdf } from '../pdf.js';
 import {
   state, types, typeOf, getEntity, visibleEntities,
@@ -18,9 +18,10 @@ import { keyBlockIds } from '../maps/mapkeys.js';
 import { defaultStat, statblockHtml, ABILITIES } from '../statblock.js';
 import { defaultEncounter, computeEncounter, DIFFICULTY_COLORS } from '../encounter.js';
 import { monsterToStat, loadAllMonsters } from '../importers.js';
-import { SHEET_SYSTEMS, handleSheetClick } from '../sheets/sheetcore.js';
-import { familiarHtml, FAMILIAR_SYSTEMS } from '../sheets/familiar.js';
+import { SHEET_SYSTEMS, handleSheetClick, handleSheetKey } from '../sheets/sheetcore.js';
+import { familiarHtml, FAMILIAR_SYSTEMS, sheetLayoutFor } from '../sheets/familiar.js';
 import { withSkillBases } from '../sheets/cocskills.js';
+import { KEY_HINT } from '../sheets/sheetaria.js';
 import { defaultRandomTable, randomTableHtml, rollRandomTable, tableRows } from '../randomtable.js';
 import { nameStyleForType, randomName } from '../names.js';
 import { syncLinkedSiteNames } from '../maps/crossscale.js';
@@ -634,7 +635,7 @@ export function render(container, id) {
     if (b.kind === 'encounter') return encounterHtml(b);
     if (b.kind === 'sheet') {
       const sys = SHEET_SYSTEMS[b.system];
-      if (sys && sheetLayout() === 'familiar' && FAMILIAR_SYSTEMS.includes(b.system)) {
+      if (sys && sheetLayout(b.system) === 'familiar') {
         // CoC lists every skill with its base; that needs the catalog, which
         // loads once and then re-renders the blocks
         const catalog = b.system === 'coc7' ? sys.loadedData?.() : null;
@@ -1112,17 +1113,21 @@ export function render(container, id) {
       }
       if (b.kind === 'sheet' && SHEET_SYSTEMS[b.system]) {
         const format = el('select', { 'aria-label': 'Character PDF paper size' }, el('option', { value: 'a4' }, 'A4'), el('option', { value: 'letter' }, 'US Letter'));
-        // a per-browser view choice (1.9), never stored in the world
-        const layout = el('select', { 'aria-label': 'Character sheet layout', title: 'Familiar arranges the sheet like the game’s own character sheet, on screen and in the PDF.', onchange: () => { writeSetting('sheetLayout', layout.value); refreshBlocks(); } },
-          el('option', { value: 'standard', selected: sheetLayout() !== 'familiar' }, 'Standard layout'), el('option', { value: 'familiar', selected: sheetLayout() === 'familiar' }, 'Familiar layout'));
+        // a per-browser view choice for each game (1.9), never stored in the world
+        const layout = el('select', { 'aria-label': 'Character sheet layout', title: 'Familiar arranges the sheet like the game’s own character sheet, on screen and in the PDF. Each game remembers its own choice.', onchange: () => { writeSetting(`sheetLayout.${b.system}`, layout.value); refreshBlocks(); } },
+          el('option', { value: 'standard', selected: sheetLayout(b.system) !== 'familiar' }, 'Standard layout'), el('option', { value: 'familiar', selected: sheetLayout(b.system) === 'familiar' }, 'Familiar layout'));
         const print = async gm => {
-          try { (await buildCharacterPdf(e, { gm, blockId: b.id, format: format.value, layout: sheetLayout() })).save(`${slugify(e.name)}-${gm ? 'gm' : 'player'}-sheet.pdf`); }
+          try { (await buildCharacterPdf(e, { gm, blockId: b.id, format: format.value, layout: sheetLayout(b.system) })).save(`${slugify(e.name)}-${gm ? 'gm' : 'player'}-sheet.pdf`); }
           catch (err) { toast(err.message); }
         };
         node.append(el('div', { class: 'sheet-actions row' },
-          el('span', { class: 'small muted' }, 'Character sheet'), el('span', { class: 'spacer' }), FAMILIAR_SYSTEMS.includes(b.system) ? layout : null, format,
+          el('span', { class: 'small muted', title: KEY_HINT }, 'Character sheet ', el('span', { 'aria-hidden': 'true' }, '⌨')), el('span', { class: 'spacer' }), FAMILIAR_SYSTEMS.includes(b.system) ? layout : null, format,
           !e.gmOnly && !b.secret ? el('button', { class: 'small', onclick: () => print(false) }, 'Player sheet PDF') : null,
           state.gm ? el('button', { class: 'small', onclick: () => print(true) }, '🔒 GM sheet PDF') : null,
+          state.gm || (!e.gmOnly && !b.secret) ? el('button', {
+            class: 'small', title: 'Fill your own copy of the publisher’s fillable character sheet with this character',
+            onclick: () => import('./officialsheet.js').then((m) => m.openOfficialSheet({ entity: e, block: b })).catch((err) => toast(err.message)),
+          }, '📄 Official sheet…') : null,
           state.gm && b.system === 'dnd2024' ? el('button', { class: 'primary small', onclick: () => {
             if (!state.gm) return; openEditor(b, node); const panel = node.querySelector('[data-advance]'); if (panel) { panel.open = true; panel.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
           } }, 'Level up…') : null));
@@ -1204,6 +1209,22 @@ export function render(container, id) {
           }
           openEditor(b, node);
         });
+      if (b.kind === 'sheet') {
+        // keyboard twin of the click handling: arrow keys change the focused
+        // rating or track (sheetaria.js), then focus returns to it
+        content.addEventListener('keydown', (ev) => {
+          if (readOnly || node.classList.contains('editing') || ev.altKey || ev.ctrlKey || ev.metaKey) return;
+          const widget = ev.target.closest?.('[data-dots], [data-track]');
+          const changed = widget ? handleSheetKey(b, ev.target, ev) : null;
+          if (changed === null) return;
+          ev.preventDefault();
+          if (!changed) return;
+          save();
+          const [attr, value] = widget.dataset.dots != null ? ['data-dots', widget.dataset.dots] : ['data-track', widget.dataset.track];
+          content.innerHTML = blockContentHtml(b, idx);
+          content.querySelector(`[${attr}="${CSS.escape(value)}"][tabindex]`)?.focus();
+        });
+      }
       node.append(content);
       blocksWrap.append(node);
     }

@@ -16,7 +16,8 @@ import { tableRows } from './randomtable.js';
 import { api } from './api.js';
 import { writeSystemSheet } from './sheets/sheetpdf.js';
 import { withSkillBases } from './sheets/cocskills.js';
-import { writeFamiliarSheet } from './sheets/familiar.js';
+import { writeFamiliarSheet, sheetLayoutFor } from './sheets/familiar.js';
+import { readSetting } from './util.js';
 
 async function prepareSheet(block) {
   if (block.system !== 'coc7') return block;
@@ -554,7 +555,9 @@ export async function buildPdf(opts) {
   }
 
   // ---------- footers ----------
-  for (const sheet of characterSheets) (opts.sheetLayout === 'familiar' ? writeFamiliarSheet : writeSystemSheet)(doc, sheet.block.system, sheet.block.data, {
+  // 'screen' prints each game the way its sheets show in this browser (V5 familiar by default)
+  const familiarSheet = (system) => opts.sheetLayout === 'familiar' || (opts.sheetLayout === 'screen' && sheetLayoutFor(system, readSetting) === 'familiar');
+  for (const sheet of characterSheets) (familiarSheet(sheet.block.system) ? writeFamiliarSheet : writeSystemSheet)(doc, sheet.block.system, sheet.block.data, {
     name: sheet.name, gm: opts.gm, secret: sheet.secret, safe: pdfSafe, footer: false, format: 'a4',
   });
   const total = doc.getNumberOfPages();
@@ -563,7 +566,7 @@ export async function buildPdf(opts) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8.5);
     doc.setTextColor(150, 144, 168);
-    // familiar D&D sheets are landscape pages, so measure each page
+    // measure each page: a sheet may bring its own page shape
     const pw = doc.internal.pageSize.getWidth(), ph = doc.internal.pageSize.getHeight(), fy = pw > ph ? ph - 7 : ph - 26;
     doc.text(pdfSafe(`${world.name} · ${edition}`), M, fy);
     doc.text(`${i - 1} / ${total - 1}`, pw - M, fy, { align: 'right' });
@@ -580,8 +583,8 @@ export async function buildCharacterPdf(entity, { gm = false, blockId, format = 
   if (!blocks.length) throw new Error('There is no visible character sheet to export.');
   const familiar = layout === 'familiar';
   const paper = format === 'letter' ? 'letter' : 'a4';
-  // the familiar D&D sheet is landscape, like the standard one it follows
-  const doc = new window.jspdf.jsPDF({ unit: 'pt', format: paper, orientation: familiar && blocks[0].system === 'dnd2024' ? 'landscape' : 'portrait' });
+  // every familiar layout is portrait, like the publishers' sheets
+  const doc = new window.jspdf.jsPDF({ unit: 'pt', format: paper, orientation: 'portrait' });
   const prepared = await Promise.all(blocks.map(prepareSheet));
   prepared.forEach((b, i) => (familiar ? writeFamiliarSheet : writeSystemSheet)(doc, b.system, b.data, {
     name: entity.name, gm, secret: !!(entity.gmOnly || b.secret), safe: pdfSafe, firstPage: i === 0, format: paper,

@@ -115,3 +115,71 @@ test('Quit stops the server gracefully, only from its own pages, and --log keeps
   assert.equal(refused.code, 4);
   assert.match(fs.readFileSync(path.join(tmp, 'logs', 'mundusmaker.log'), 'utf8'), /being used by another program/);
 });
+
+test('status says when the app was updated while it kept running', { timeout: 30000 }, async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mundusmaker-stale-'));
+  const app = path.join(tmp, 'app');
+  fs.mkdirSync(path.join(app, 'public'), { recursive: true });
+  for (const file of ['server.js', 'package.json']) fs.copyFileSync(path.join(ROOT, file), path.join(app, file));
+  for (const dir of ['scripts', 'sample']) fs.cpSync(path.join(ROOT, dir), path.join(app, dir), { recursive: true });
+  fs.writeFileSync(path.join(app, 'public', 'index.html'), '<!doctype html>');
+  const port = await freePort();
+  const server = spawn(process.execPath, ['server.js', path.join(tmp, 'data'), String(port), '--no-open'],
+    { cwd: app, env: serverEnv(tmp), windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  server.log = ''; server.stdout.on('data', (x) => { server.log += x; }); server.stderr.on('data', (x) => { server.log += x; });
+  t.after(async () => {
+    if (server.exitCode === null) { server.kill(); await once(server, 'exit'); }
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+  const status = async () => (await fetch(`http://localhost:${port}/api/status`)).json();
+  const first = await started(server, port);
+  assert.equal(first.restartNeeded, false);
+  assert.equal(first.pid, server.pid, 'the tray tells its own server by pid');
+
+  // a new timestamp on the same bytes (a checkout, a copy) is not an update
+  const updates = path.join(app, 'scripts', 'updates.js');
+  const later = new Date(Date.now() + 60000);
+  fs.utimesSync(updates, later, later);
+  assert.equal((await status()).restartNeeded, false);
+  // pages are read from disk on every request, so changing them needs no restart
+  fs.writeFileSync(path.join(app, 'public', 'index.html'), '<!doctype html><title>new</title>');
+  assert.equal((await status()).restartNeeded, false);
+  // code the running server loaded does
+  fs.appendFileSync(updates, '\n// changed by an update\n');
+  assert.equal((await status()).restartNeeded, true);
+});
+
+test('with the option on, MundusMaker stops once no tab has checked in for a while', { timeout: 30000 }, async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mundusmaker-autostop-'));
+  const running = [];
+  t.after(async () => {
+    for (const child of running) if (child.exitCode === null && child.signalCode === null) { child.kill(); await once(child, 'exit'); }
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+  const post = (port, route, body) => fetch(`http://localhost:${port}${route}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const configFile = path.join(tmp, 'mundusmaker.config.json');
+
+  // off by default; the setting saves to the config file and accepts only the offered choices
+  let port = await freePort();
+  const plain = launch(path.join(tmp, 'data'), port, tmp); running.push(plain);
+  assert.equal((await started(plain, port)).autoStop, 0);
+  assert.equal((await post(port, '/api/auto-stop', { minutes: 7 })).status, 400);
+  assert.equal((await post(port, '/api/auto-stop', { minutes: 15 })).status, 200);
+  assert.deepEqual(JSON.parse(fs.readFileSync(configFile, 'utf8')).autoStop, { minutes: 15 });
+  assert.equal((await (await fetch(`http://localhost:${port}/api/status`)).json()).autoStop, 15);
+  assert.equal((await post(port, '/api/auto-stop', { minutes: 0 })).status, 200);
+  assert.equal(JSON.parse(fs.readFileSync(configFile, 'utf8')).autoStop, undefined);
+  plain.kill(); await once(plain, 'exit');
+
+  // a 0.6 s grace (only reachable by editing the config file) keeps the test short
+  fs.writeFileSync(configFile, JSON.stringify({ autoStop: { minutes: 0.01 } }));
+  port = await freePort();
+  const server = launch(path.join(tmp, 'data'), port, tmp, ['--log']); running.push(server);
+  await started(server, port);
+  const until = Date.now() + 2000;
+  while (Date.now() < until) { assert.equal((await post(port, '/api/presence', {})).status, 200); await new Promise((r) => setTimeout(r, 150)); }
+  assert.equal(server.exitCode, null, 'a tab that keeps checking in keeps it running');
+  const { code } = await exitOf(server); // the tab went quiet
+  assert.equal(code, 0, 'a clean stop, so the tray closes quietly');
+  assert.match(fs.readFileSync(path.join(tmp, 'logs', 'mundusmaker.log'), 'utf8'), /stopping \(no MundusMaker tab was open for 0\.01 minutes/);
+});
