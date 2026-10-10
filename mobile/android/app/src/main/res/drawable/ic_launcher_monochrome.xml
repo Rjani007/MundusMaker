@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Themed-icon version of ic_launcher_foreground: the launcher tints it. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="#FFFFFFFF" android:pathData="M30.857,46.286 a10.286,10.286 0 1,0 20.572,0 a10.286,10.286 0 1,0 -20.572,0 Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M56.571,61.714 a10.286,10.286 0 1,0 20.572,0 a10.286,10.286 0 1,0 -20.572,0 Z" />
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="5.143" android:strokeLineCap="round" android:pathData="M46.286,54 L61.714,56.571" />
+</vector>

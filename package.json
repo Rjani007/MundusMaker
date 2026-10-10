@@ -19,6 +19,8 @@
     "test:references": "node --test tests/references.test.js",
     "test:package": "node --test tests/package.test.js tests/unix-launchers.test.js tests/installed-config.test.js tests/macos-launcher.test.js",
     "test:container": "node --test tests/container.test.js",
+    "test:mobile": "node --test tests/mobile-runtime.test.js && node mobile/scripts/runtime-check.js",
+    "android:check": "node mobile/scripts/android-check.js",
     "icons": "node scripts/build-icons.js",
     "vendor": "node scripts/vendor.js",
     "bestiary": "node scripts/build-bestiary.js",

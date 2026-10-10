@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MundusMaker</string>
+    <string name="save_message">Keep this file on your device, or send it to another app.</string>
+    <string name="save_to_device">Save to device…</string>
+    <string name="share">Share…</string>
+    <string name="share_title">Share %1$s</string>
+    <string name="saved">Saved %1$s</string>
+    <string name="save_failed">The file could not be saved there. Try another folder.</string>
+    <string name="no_file_app">No app on this device can pick or save files.</string>
+    <string name="no_share_app">No app on this device can receive this file.</string>
+    <string name="no_browser">No browser on this device can open that link.</string>
+    <string name="leave_unsaved">Some changes are not saved yet. Leave anyway?</string>
+    <string name="leave">Leave</string>
+    <string name="stay">Stay</string>
+    <string name="start_failed">MundusMaker could not start: %1$s\n\nClose the app and open it again. Your worlds are not affected.</string>
+    <string name="runtime_keeps_stopping">MundusMaker\'s engine keeps stopping (code %1$d), so it was left off.\n\nClose the app and open it again. Your worlds are not affected.</string>
+</resources>

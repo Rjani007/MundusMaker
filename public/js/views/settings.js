@@ -57,7 +57,9 @@ function updateMessage(result, status) {
   const release = result.release || {};
   const howTo = status.deployment === 'container'
     ? 'Pull the new image and restart the container (see DOCKER.md in your download); the /data volume keeps your worlds.'
-    : 'Download it from the release page and follow its install notes. Updating keeps your worlds.';
+    : status.deployment === 'mobile'
+      ? 'Install the new app over this one; updating keeps your worlds.'
+      : 'Download it from the release page and follow its install notes. Updating keeps your worlds.';
   const url = typeof release.url === 'string' && release.url.startsWith('https://github.com/') ? release.url : null;
   return [el('div', { class: 'notice' },
     el('strong', {}, `MundusMaker ${result.latest} is available`), ` (you have ${result.current}). ${howTo} `,
@@ -130,7 +132,7 @@ export function render(container) {
         el('code', {}, 'mundusmaker.config.json'), ' next to the app, or use the box below). Only edit on one device at a time and let syncing finish before opening another. MundusMaker detects file changes already on disk and preserves conflicting drafts in the data folder’s .conflicts folder.'),
       el('div', { class: 'row' }, pathInput, moveBtn),
       syncNote);
-    runCard.hidden = status.deployment === 'container';
+    runCard.hidden = status.deployment === 'container' || status.deployment === 'mobile';
     autoStopShown = Number(status.autoStop) || 0;
     // a value written into the config file by hand still shows as itself
     if (![...autoStop.options].some((o) => Number(o.value) === autoStopShown)) autoStop.append(el('option', { value: String(autoStopShown) }, `Stop after ${after(autoStopShown)}`));
@@ -141,6 +143,12 @@ export function render(container) {
         el('p', { class: 'muted small' }, 'Open this same server address on your other devices to use the same worlds. Wait for Saved before switching devices.'),
         el('p', { class: 'muted small' }, 'Docker manages this data volume. To change its location or back up every world and library pack, follow DOCKER.md in your download. Folder paths here refer to the server, not this browser’s computer.'),
         el('p', { class: 'muted small' }, 'Anyone with the server password has full DM access. Give players exported handouts or the player handbook; player preview does not restrict their access to the server.'));
+    } else if (status.deployment === 'mobile') {
+      // The phone app keeps its data folder inside the app, where nothing else can read it.
+      syncWrap.replaceChildren(
+        el('div', { class: 'small' }, 'Your worlds are stored inside the MundusMaker app on this device, where other apps cannot read them.'),
+        el('p', { class: 'muted small' }, 'To move a world between this device and a computer, use Download backup below (tick Include images), send the file over, then Import → Restore a backup on the other side. Edit on one device at a time.'),
+        el('p', { class: 'muted small' }, 'Uninstalling the app removes its worlds unless you choose to keep the app’s data, so keep a recent backup somewhere safe.'));
     }
 
     // Check for updates: the server asks the release feed only on this click
@@ -166,7 +174,9 @@ export function render(container) {
       el('div', { class: 'small' }, el('strong', {}, `MundusMaker ${status.version}`),
         el('span', { class: 'muted' }, status.deployment === 'container'
           ? ` — hosted on your ${status.platform} server; your browsers connect to its saved worlds.`
-          : ` — running locally on ${status.platform}; your world data never leaves this machine.`)),
+          : status.deployment === 'mobile'
+            ? ` — the ${({ android: 'Android', ios: 'iOS' })[status.platform] || status.platform} app; your world data never leaves this device.`
+            : ` — running locally on ${status.platform}; your world data never leaves this machine.`)),
       el('div', { class: 'row', style: 'margin-top:6px' },
         updateButton,
         el('button', {

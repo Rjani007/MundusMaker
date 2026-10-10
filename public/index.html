@@ -14,6 +14,7 @@
 <body>
 <div id="app">
   <header id="topbar">
+    <button id="sidebarToggle" class="sidebar-toggle" type="button" aria-label="Show entries" aria-controls="sidebar" aria-expanded="false" title="Show entries">☰</button>
     <a class="brand" href="#/">MundusMaker</a>
     <nav id="mainnav">
       <a href="#/" data-nav="dashboard">World</a>
@@ -43,6 +44,7 @@
   <div id="layout">
     <aside id="sidebar"></aside>
     <main id="view"></main>
+    <div id="drawerBackdrop" class="drawer-backdrop" aria-hidden="true"></div>
   </div>
 </div>
 <script src="vendor/jspdf.umd.min.js"></script>

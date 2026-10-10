@@ -1,0 +1,92 @@
+import javax.inject.Inject
+import org.gradle.process.ExecOperations
+
+plugins {
+    id 'com.android.application'
+}
+
+// mobile/android -> the repository root, where the shared app lives
+def repoDir = rootProject.projectDir.parentFile.parentFile
+def appVersion = new groovy.json.JsonSlurper().parse(new File(repoDir, 'package.json')).version
+
+// 1.9.0 -> 10900: every MundusMaker release is a higher versionCode
+def versionCodeOf = { String v ->
+    def (major, minor, patch) = v.tokenize('.-').take(3).collect { it.isInteger() ? it.toInteger() : 0 }
+    major * 10000 + minor * 100 + patch
+}
+
+/**
+ * The app carries the same files as the desktop download, so they are staged
+ * from the repository on every build (mobile/scripts/stage-bundle.js) rather
+ * than copied into this folder.
+ */
+abstract class StageBundle extends DefaultTask {
+    @OutputDirectory
+    abstract DirectoryProperty getOutputDir()
+
+    @InputFiles
+    @PathSensitive(PathSensitivity.RELATIVE)
+    abstract ConfigurableFileCollection getSources()
+
+    @Internal
+    abstract DirectoryProperty getRepoRoot()
+
+    @Inject
+    abstract ExecOperations getExecOperations()
+
+    @TaskAction
+    void stage() {
+        execOperations.exec { spec ->
+            spec.workingDir(repoRoot.get().asFile)
+            spec.commandLine('node', 'mobile/scripts/stage-bundle.js', outputDir.get().asFile.absolutePath)
+        }
+    }
+}
+
+def stageBundle = tasks.register('stageBundle', StageBundle) {
+    description = 'Stages public/, server.js, the server scripts, sample/ and the mobile runtime into bundle.zip.'
+    getRepoRoot().set(repoDir)
+    sources.from(
+        new File(repoDir, 'public'), new File(repoDir, 'sample'), new File(repoDir, 'scripts'),
+        new File(repoDir, 'mobile/shared/runtime'), new File(repoDir, 'server.js'),
+        new File(repoDir, 'package.json'), new File(repoDir, 'mobile/scripts/stage-bundle.js'))
+}
+
+android {
+    namespace = 'app.mundusmaker'
+    compileSdk = 36
+
+    defaultConfig {
+        applicationId = 'app.mundusmaker'
+        minSdk = 26
+        targetSdk = 36
+        versionCode = versionCodeOf(appVersion)
+        versionName = appVersion
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled = false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    androidResources {
+        noCompress += ['zip']
+    }
+
+    lint {
+        abortOnError = true
+        warningsAsErrors = false
+    }
+}
+
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        variant.sources.assets.addGeneratedSourceDirectory(stageBundle, { StageBundle task -> task.outputDir })
+    }
+}

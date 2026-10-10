@@ -2,6 +2,8 @@ node_modules/
 data/
 dist/
 runtime/
+# ...but not the phone apps' JavaScript runtime, which is source
+!mobile/shared/runtime/
 mundusmaker.config.json
 tomeweaver.config.json
 loreweave.config.json

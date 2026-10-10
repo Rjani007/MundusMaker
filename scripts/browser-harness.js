@@ -135,8 +135,10 @@ function connect(url) {
 /**
  * Start MundusMaker on dataDir and a headless browser whose profile lives in
  * temp, open the app and return a small driver. close() stops both.
+ * `launch` swaps the server for another entry point (the phone runtime's
+ * mobile/shared/devhost.js): { script, args(port), ready: RegExp, url(port, line) }.
  */
-async function startSession(temp, dataDir) {
+async function startSession(temp, dataDir, launch = null) {
   const browserPaths = findBrowsers();
   const children = [];
   let client;
@@ -150,10 +152,10 @@ async function startSession(temp, dataDir) {
   };
   try {
     const port = await freePort();
-    const server = spawn(process.execPath, ['server.js', dataDir, String(port), '--no-open'],
+    const server = spawn(process.execPath, launch ? [launch.script, ...launch.args(port)] : ['server.js', dataDir, String(port), '--no-open'],
       { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
     children.push(server);
-    await waitForLine(server.stdout, /serving on/, 'The MundusMaker test server');
+    const readyLine = await waitForLine(server.stdout, launch ? launch.ready : /serving on/, 'The MundusMaker test server');
 
     // Installed browsers are tried in order; one that never opens its DevTools
     // port is skipped for the next.
@@ -192,8 +194,8 @@ async function startSession(temp, dataDir) {
       if (reply.exceptionDetails) throw new Error(reply.exceptionDetails.exception?.description || reply.exceptionDetails.text);
       return reply.result.value;
     };
-    await navigate(`http://localhost:${port}/`);
-    return { client, sessionId, port, send, navigate, evaluate, close };
+    await navigate(launch ? launch.url(port, readyLine) : `http://localhost:${port}/`);
+    return { client, sessionId, port, send, navigate, evaluate, close, server };
   } catch (err) {
     await close();
     throw err;

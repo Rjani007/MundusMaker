@@ -33,6 +33,7 @@ import { maybeShowOnboarding } from './views/onboarding.js';
 import { maybeShowUpgrade } from './views/upgrade.js';
 import { quitMundusMaker } from './quit.js';
 import { wireLinkPreviews } from './preview.js';
+import { wireDrawer } from './drawer.js';
 
 const viewEl = document.getElementById('view');
 const sidebarEl = document.getElementById('sidebar');
@@ -353,6 +354,9 @@ function wireSaveButton() {
     ev.preventDefault();
     ev.returnValue = '';
   });
+  // A phone (or a browser short on memory) may freeze or discard a hidden page
+  // with no unload event at all, so pending saves go out the moment it hides.
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushSaves(); });
 }
 
 // ---------- GM toggle ----------
@@ -374,11 +378,12 @@ function wireGmToggle() {
 
 // Launchers start MundusMaker without a window, so the top bar shows how to
 // stop it and says when the running copy is older than its files on disk.
-// Docker owns a container's lifecycle, so it gets neither.
+// Docker owns a container's lifecycle, and the phone app (mobile/) lives and
+// dies with its own window, so neither gets them.
 async function wireRunning() {
   let status;
   try { status = await api.status(); } catch { return; }
-  if (status.deployment === 'container') return;
+  if (status.deployment === 'container' || status.deployment === 'mobile') return;
   const quitBtn = document.getElementById('quitBtn');
   quitBtn.hidden = false;
   quitBtn.addEventListener('click', () => quitMundusMaker());
@@ -430,12 +435,15 @@ async function boot() {
     viewEl.append(el('div', { class: 'page' },
       el('div', { class: 'notice warn' },
         'Could not load your worlds from the local server (', err.message, '). ',
-        'Make sure you started MundusMaker (double-click Start-MundusMaker, or run node server.js) and are opening it via that server.')));
+        window.mundusShell
+          ? 'Close the app and open it again; your worlds are not affected.'
+          : 'Make sure you started MundusMaker (double-click Start-MundusMaker, or run node server.js) and are opening it via that server.')));
     return;
   }
   document.title = `${state.world.name || 'MundusMaker'} · MundusMaker`;
   wireRunning();
   buildSidebar();
+  wireDrawer();
   wireGmToggle();
   wireSaveButton();
   renderWorldSelect();

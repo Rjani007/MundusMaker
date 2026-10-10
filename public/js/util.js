@@ -212,6 +212,9 @@ export function rollDice(notation) {
 }
 
 export function downloadBlob(blob, filename) {
+  // The phone app's WebView cannot follow a blob: download, so its shell
+  // (mobile/shared/runtime/boot.js) offers Save and Share for the file instead.
+  if (window.mundusShell?.save) return window.mundusShell.save(blob, filename);
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = filename;

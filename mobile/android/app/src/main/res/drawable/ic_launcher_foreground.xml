@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The MundusMaker mark (scripts/build-icons.js: two worlds joined by a route),
+     its 32-unit disc scaled to the 72dp an adaptive icon shows: x' = 54 + (x - 16) * 72 / 28. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="#E0724A" android:pathData="M30.857,46.286 a10.286,10.286 0 1,0 20.572,0 a10.286,10.286 0 1,0 -20.572,0 Z" />
+    <path android:fillColor="#4A9E6F" android:pathData="M56.571,61.714 a10.286,10.286 0 1,0 20.572,0 a10.286,10.286 0 1,0 -20.572,0 Z" />
+    <path android:strokeColor="#CBBFE0" android:strokeWidth="5.143" android:strokeLineCap="round" android:pathData="M46.286,54 L61.714,56.571" />
+</vector>

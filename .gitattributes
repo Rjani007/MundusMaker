@@ -20,3 +20,8 @@ public/bestiary/*.json linguist-generated -diff
 *.jpeg binary
 *.pdf binary
 *.zip binary
+
+# The Android build (mobile/android): the Gradle wrapper script runs on
+# macOS/Linux too, and its jar is binary.
+gradlew text eol=lf
+*.jar binary

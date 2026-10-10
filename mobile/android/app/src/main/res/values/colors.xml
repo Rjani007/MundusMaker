@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The page background (app.css var bg) and the mark disc (scripts/build-icons.js) -->
+    <color name="background">#FF201B2C</color>
+    <color name="icon_background">#FF2C2438</color>
+    <color name="accent">#FFE0724A</color>
+</resources>

@@ -72,6 +72,7 @@ test('the staged app carries no contributor notes, docs folder or git history, a
   for (const name of names) {
     assert.doesNotMatch(name, /(^|\/)(docs|\.git|tests|tmp|data)(\/|$)/i, name);
     assert.doesNotMatch(name, /(^|\/)(agents|claude)\.md$/i, name);
+    assert.doesNotMatch(name, /^MundusMaker\/mobile\//i, name); // the phone apps build from the repo, not the download
   }
   for (const guide of Object.values(GUIDES)) assert.ok(names.includes(`MundusMaker/${guide}`), guide);
   // every relative link in the shipped README and README-FIRST points at a shipped file

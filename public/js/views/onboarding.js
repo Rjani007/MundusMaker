@@ -16,8 +16,8 @@ export async function maybeShowOnboarding() {
 /** Always shows — the "replay the tour" path from Settings. */
 export async function showOnboarding() {
   let dataDir = 'the data folder next to the app';
-  let hosted = false;
-  try { const status = await api.status(); dataDir = status.dataDir; hosted = status.deployment === 'container'; } catch { /* server info is a nicety, not a gate */ }
+  let hosted = false, mobile = false;
+  try { const status = await api.status(); dataDir = status.dataDir; hosted = status.deployment === 'container'; mobile = status.deployment === 'mobile'; } catch { /* server info is a nicety, not a gate */ }
 
   const panes = [
     {
@@ -25,9 +25,11 @@ export async function showOnboarding() {
       body: [
         el('p', {}, hosted
           ? 'A worldbuilding wiki for game masters, hosted on your own server. Open this server address from your other devices to continue with the same worlds.'
-          : 'A worldbuilding wiki for game masters that lives entirely on this computer. No account, no cloud, no AI, nobody reading over your shoulder.'),
-        el('p', { class: 'muted' }, 'Your worlds are plain files in ', el('code', {}, dataDir),
-          '. Copy that folder and you have a complete backup of everything you ever wrote.'),
+          : `A worldbuilding wiki for game masters that lives entirely on this ${mobile ? 'device' : 'computer'}. No account, no cloud, no AI, nobody reading over your shoulder.`),
+        mobile
+          ? el('p', { class: 'muted' }, 'Your worlds stay inside the app. Settings → Download backup makes a file you can keep safe, or open on a computer with Import → Restore a backup.')
+          : el('p', { class: 'muted' }, 'Your worlds are plain files in ', el('code', {}, dataDir),
+            '. Copy that folder and you have a complete backup of everything you ever wrote.'),
       ],
     },
     {
@@ -43,10 +45,12 @@ export async function showOnboarding() {
       title: '📌 Make yourself at home',
       body: [
         el('p', {}, 'Everything autosaves as you type. The ✓ in the top bar tells you it landed.'),
-        ...(hosted ? [] : [el('p', { class: 'muted' }, 'MundusMaker keeps running when you close this tab, so nothing is lost if you do. ',
+        ...(hosted || mobile ? [] : [el('p', { class: 'muted' }, 'MundusMaker keeps running when you close this tab, so nothing is lost if you do. ',
           'To stop it, use ⏻ Quit at the top right, or the MundusMaker icon in the Windows tray or the Mac menu bar.')]),
-        el('p', { class: 'muted' }, 'If you\'d rather have MundusMaker as its own window with a Start Menu entry, Edge and Chrome can install it: the little icon at the right end of the address bar. ',
-          'And when you have five minutes to spare, the Help tab has the tour.'),
+        mobile
+          ? el('p', { class: 'muted' }, 'The ☰ button at the top left opens your entries. When you have five minutes to spare, the Help tab has the tour.')
+          : el('p', { class: 'muted' }, 'If you\'d rather have MundusMaker as its own window with a Start Menu entry, Edge and Chrome can install it: the little icon at the right end of the address bar. ',
+            'And when you have five minutes to spare, the Help tab has the tour.'),
       ],
     },
   ];
