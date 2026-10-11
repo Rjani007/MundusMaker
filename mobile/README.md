@@ -65,9 +65,30 @@ The APK contains no third-party code. AGP 9 would add the Kotlin standard
 library on its own; `android.builtInKotlin=false` in `gradle.properties` stops
 that.
 
-Release signing is deliberately not configured. Create your own upload key and
-add a `signingConfigs` block (or sign with `apksigner`). Keep the key out of the
-repository; `*.jks` and `*.keystore` are git-ignored.
+### Sending a build to testers
+
+Release builds are signed only on a machine that has the key, which never
+enters the repository. `local.properties` (git-ignored) names a properties file
+kept elsewhere:
+
+```
+mundusmaker.signing=D\:/Android/keys/mundusmaker-release.properties
+```
+
+That file holds `storeFile`, `storePassword`, `keyAlias` and `keyPassword`. With
+it, `./gradlew assembleRelease` writes a signed, non-debuggable
+`app/build/outputs/apk/release/app-release.apk` that testers can install
+directly. Without it the release build stays unsigned, as before.
+
+- Every tester build must be signed with the same key. A build signed with
+  another key cannot update an installed copy, so the tester would have to
+  uninstall it and lose the worlds inside. Back up the key and its properties
+  file together.
+- Debug builds are signed with the computer's own debug key, so a debug
+  install and a tester install cannot update each other either. To switch,
+  download a backup (Settings), uninstall, install the other build and restore.
+- An equal versionCode installs as an update, so tester builds within one
+  release need no version bump. A store upload does need one.
 
 ## Testing
 

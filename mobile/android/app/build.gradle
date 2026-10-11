@@ -9,6 +9,19 @@ plugins {
 def repoDir = rootProject.projectDir.parentFile.parentFile
 def appVersion = new groovy.json.JsonSlurper().parse(new File(repoDir, 'package.json')).version
 
+// Release signing, only when this machine has a key: local.properties (never
+// committed) names a properties file kept outside the repository, with
+// storeFile, storePassword, keyAlias and keyPassword. Without one, release
+// builds stay unsigned, as before (mobile/README.md, Sending a build to testers).
+def signing = new Properties()
+def localProperties = rootProject.file('local.properties')
+if (localProperties.exists()) {
+    def local = new Properties()
+    localProperties.withInputStream { local.load(it) }
+    def signingFile = local.getProperty('mundusmaker.signing')
+    if (signingFile) new File(signingFile).withInputStream { signing.load(it) }
+}
+
 // 1.9.0 -> 10900: every MundusMaker release is a higher versionCode
 def versionCodeOf = { String v ->
     def (major, minor, patch) = v.tokenize('.-').take(3).collect { it.isInteger() ? it.toInteger() : 0 }
@@ -64,9 +77,21 @@ android {
         versionName = appVersion
     }
 
+    signingConfigs {
+        if (signing.getProperty('storeFile')) {
+            release {
+                storeFile = file(signing.getProperty('storeFile'))
+                storePassword = signing.getProperty('storePassword')
+                keyAlias = signing.getProperty('keyAlias')
+                keyPassword = signing.getProperty('keyPassword')
+            }
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled = false
+            if (signing.getProperty('storeFile')) signingConfig = signingConfigs.release
         }
     }
 
