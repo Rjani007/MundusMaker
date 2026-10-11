@@ -369,6 +369,29 @@ test('the phone bundle carries the desktop app files and the runtime, and nothin
   }
 });
 
+test('every file the app hands out goes through downloadBlob, which the phone app can save', () => {
+  // A WebView ignores blob: downloads (an <a download> click, or jsPDF's save()),
+  // so on the phone such a button silently did nothing.
+  const files = [];
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.name.endsWith('.js')) files.push(full);
+    }
+  };
+  walk(path.join(ROOT, 'public', 'js'));
+  const offenders = [];
+  for (const file of files) {
+    const rel = path.relative(ROOT, file).replace(/\\/g, '/');
+    if (rel === 'public/js/util.js') continue; // downloadBlob itself
+    fs.readFileSync(file, 'utf8').split('\n').forEach((line, i) => {
+      if (/\.save\(\s*[`'"]/.test(line) || /\.download\s*=|\bdownload:\s*[`'"]/.test(line)) offenders.push(`${rel}:${i + 1}`);
+    });
+  }
+  assert.deepEqual(offenders, [], 'use downloadBlob (util.js) instead');
+});
+
 test('a write that fails at fsync reports its own error and leaves no temporary file', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mundusmaker-flush-'));
   try {

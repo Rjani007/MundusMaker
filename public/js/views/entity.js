@@ -2,7 +2,7 @@
 // secrets and editable statblocks, timeline date, typed relations, backlinks,
 // and an attached map. QoL: [[link]] autocomplete, rename updates mentions.
 
-import { el, uid, esc, toast, debounce, helpTip, slugify, readSetting, writeSetting } from '../util.js';
+import { el, uid, esc, toast, debounce, helpTip, slugify, readSetting, writeSetting, downloadBlob } from '../util.js';
 
 const sheetLayout = (system) => sheetLayoutFor(system, readSetting);
 import { buildCharacterPdf } from '../pdf.js';
@@ -12,6 +12,7 @@ import {
   replaceEntity, requireSaved,
 } from '../state.js';
 import { mdToHtml, backlinksFor, planWikiRenames, planLinkMentions } from '../render.js';
+import { sourceCaret } from '../markdown.js';
 import { slotsOf, formatDate, formatYear, isHistoric, isRecurring } from '../calendar.js';
 import { mapChoices, newMapFrom, renderThumbnail, hiddenOverlayLinkIds } from '../maps/mapcore.js';
 import { keyBlockIds } from '../maps/mapkeys.js';
@@ -685,7 +686,7 @@ export function render(container, id) {
   // `editing` is what makes the mode change visible (accent ring + the toolbar
   // stops hiding). It is never removed by hand: every way out of an editor goes
   // through refreshBlocks(), which rebuilds the node without the class.
-  function openEditor(b, blockNode) {
+  function openEditor(b, blockNode, place = null) {
     if (blockNode.classList.contains('editing')) {
       blockNode.querySelector('textarea, input, select')?.focus();
       return; // already open — re-opening would throw away the caret position
@@ -695,7 +696,52 @@ export function render(container, id) {
     else if (b.kind === 'encounter') editEncounter(b, blockNode);
     else if (b.kind === 'sheet') editSheet(b, blockNode);
     else if (b.kind === 'table') editRandomTable(b, blockNode);
-    else editBlock(b, blockNode);
+    else editBlock(b, blockNode, place);
+  }
+
+  // Where a tap on a rendered text block belongs in its source (markdown.js
+  // sourceCaret), so the editor opens at the tapped word instead of the end.
+  function tapPlace(content, ev, b) {
+    if (['statblock', 'encounter', 'sheet', 'table'].includes(b.kind) || !b.text) return null;
+    const hit = document.caretPositionFromPoint?.(ev.clientX, ev.clientY);
+    const range = hit ? null : document.caretRangeFromPoint?.(ev.clientX, ev.clientY);
+    const node = hit ? hit.offsetNode : range?.startContainer;
+    const offset = hit ? hit.offset : range?.startOffset;
+    if (!node || !content.contains(node)) return null;
+    // the shown text before the caret, with a line break wherever a line ends
+    let before = '', done = false;
+    const walk = (n) => {
+      if (done) return;
+      if (n.nodeType === Node.TEXT_NODE) {
+        before += n === node ? n.data.slice(0, offset) : n.data;
+        done = n === node;
+        return;
+      }
+      if (n.nodeName === 'BR' || (/^(P|LI|UL|BLOCKQUOTE|H3)$/.test(n.nodeName) && before && !before.endsWith('\n'))) before += '\n';
+      n.childNodes.forEach((child, i) => { if (n === node && i === offset) done = true; walk(child); });
+      if (n === node) done = true;
+    };
+    walk(content);
+    return { at: sourceCaret(b.text, before.replace(/\s/g, '').length, !before.trim() || /\s$/.test(before)), y: ev.clientY };
+  }
+
+  // Scroll so the caret's line sits at viewport height y. Where the caret is
+  // inside the box is measured on a hidden copy laid out like the textarea.
+  function keepCaretAt(ta, at, y) {
+    const cs = getComputedStyle(ta);
+    const copy = document.createElement('div');
+    for (const prop of ['boxSizing', 'width', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
+      'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'lineHeight', 'letterSpacing', 'wordSpacing', 'tabSize', 'textIndent']) copy.style[prop] = cs[prop];
+    Object.assign(copy.style, { position: 'absolute', visibility: 'hidden', top: '0', left: '-9999px', borderStyle: 'solid', whiteSpace: 'pre-wrap', overflowWrap: 'break-word' });
+    copy.textContent = ta.value.slice(0, at);
+    const mark = copy.appendChild(document.createElement('span'));
+    mark.textContent = '\u200b';
+    document.body.append(copy);
+    const line = mark.getBoundingClientRect().top - copy.getBoundingClientRect().top + mark.offsetHeight / 2;
+    copy.remove();
+    let scroller = ta.parentElement;
+    while (scroller && !(/auto|scroll/.test(getComputedStyle(scroller).overflowY) && scroller.scrollHeight > scroller.clientHeight)) scroller = scroller.parentElement;
+    (scroller || document.scrollingElement).scrollTop += ta.getBoundingClientRect().top + line - y;
   }
 
   // --- weighted random-table editor ---
@@ -819,16 +865,30 @@ export function render(container, id) {
   }
 
   // --- plain text editor with [[ autocomplete ---
-  function editBlock(b, blockNode) {
+  // `place` is where a tap on the block landed ({ at, y }, from tapPlace): the
+  // caret goes there, and its line stays under the finger.
+  function editBlock(b, blockNode, place = null) {
     const ta = el('textarea', { spellcheck: 'false' });
     ta.value = b.text || '';
     const content = blockNode.querySelector('.block-content');
     const holder = el('div', { class: 'block-content' }, ta);
     content.replaceWith(holder);
-    const grow = () => { ta.style.height = 'auto'; ta.style.height = Math.max(60, ta.scrollHeight + 4) + 'px'; };
+    // Measuring means collapsing the box for a moment, which shortens the page;
+    // the browser then clamps or re-anchors every scroll position above it. On
+    // a phone with the keyboard up (a few hundred pixels of page) that threw
+    // the text out of sight at each new line, so the positions are put back.
+    const grow = () => {
+      const kept = [];
+      for (let n = ta.parentElement; n; n = n.parentElement) if (n.scrollTop) kept.push([n, n.scrollTop]);
+      ta.style.height = 'auto';
+      ta.style.height = Math.max(60, ta.scrollHeight + 4) + 'px';
+      for (const [n, top] of kept) n.scrollTop = top;
+    };
     grow();
-    ta.focus();
-    ta.setSelectionRange(ta.value.length, ta.value.length);
+    const at = place ? place.at : ta.value.length;
+    ta.focus({ preventScroll: !!place });
+    ta.setSelectionRange(at, at);
+    if (place) keepCaretAt(ta, at, place.y);
 
     // One way out, shared by blur, Esc, Done and the Help link. Guarded: Done
     // closes on pointerdown (see below) and some browsers also fire blur when
@@ -1117,7 +1177,11 @@ export function render(container, id) {
         const layout = el('select', { 'aria-label': 'Character sheet layout', title: 'Familiar arranges the sheet like the game’s own character sheet, on screen and in the PDF. Each game remembers its own choice.', onchange: () => { writeSetting(`sheetLayout.${b.system}`, layout.value); refreshBlocks(); } },
           el('option', { value: 'standard', selected: sheetLayout(b.system) !== 'familiar' }, 'Standard layout'), el('option', { value: 'familiar', selected: sheetLayout(b.system) === 'familiar' }, 'Familiar layout'));
         const print = async gm => {
-          try { (await buildCharacterPdf(e, { gm, blockId: b.id, format: format.value, layout: sheetLayout(b.system) })).save(`${slugify(e.name)}-${gm ? 'gm' : 'player'}-sheet.pdf`); }
+          try {
+            // through downloadBlob, never jsPDF's save(): the phone app can't follow its blob: link
+            const doc = await buildCharacterPdf(e, { gm, blockId: b.id, format: format.value, layout: sheetLayout(b.system) });
+            downloadBlob(doc.output('blob'), `${slugify(e.name)}-${gm ? 'gm' : 'player'}-sheet.pdf`);
+          }
           catch (err) { toast(err.message); }
         };
         node.append(el('div', { class: 'sheet-actions row' },
@@ -1207,7 +1271,7 @@ export function render(container, id) {
               return;
             }
           }
-          openEditor(b, node);
+          openEditor(b, node, tapPlace(content, ev, b));
         });
       if (b.kind === 'sheet') {
         // keyboard twin of the click handling: arrow keys change the focused

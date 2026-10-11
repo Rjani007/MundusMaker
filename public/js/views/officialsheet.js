@@ -101,7 +101,8 @@ export function openOfficialSheet({ entity, block }) {
     try {
       // a player copy unless the sheet itself is hidden from players
       const gm = !!(state.gm && (entity.gmOnly || block.secret));
-      (await buildCharacterPdf(entity, { gm, blockId: block.id, format: 'letter', layout: 'familiar' })).save(`${slugify(entity.name || 'character')}-${gm ? 'gm' : 'player'}-sheet.pdf`);
+      const doc = await buildCharacterPdf(entity, { gm, blockId: block.id, format: 'letter', layout: 'familiar' });
+      downloadBlob(doc.output('blob'), `${slugify(entity.name || 'character')}-${gm ? 'gm' : 'player'}-sheet.pdf`);
     } catch (err) { toast(`Could not make the sheet: ${err.message}`, 5000); }
     btn.disabled = false;
   }

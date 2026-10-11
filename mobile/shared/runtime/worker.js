@@ -18,6 +18,10 @@ importScripts('/__shell/config.js', 'node.js');
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
   const url = (route, query = '') => `${C.channel}/__host/${route}?k=${encodeURIComponent(C.key)}${query}`;
+  // Every response must be read or cancelled: the Android WebView keeps an
+  // unread body (about 20 KB) even after garbage collection, and the server
+  // answers each page request with one, so typing grew the app without end.
+  const discard = (res) => { try { if (res.body) res.body.cancel().catch(() => {}); } catch { /* already read */ } };
 
   function frame(meta, body) {
     const head = encoder.encode(`${JSON.stringify(meta)}\n`);
@@ -41,7 +45,7 @@ importScripts('/__shell/config.js', 'node.js');
     if (!pendingLog.length) return;
     const body = encoder.encode(pendingLog.join('\n'));
     pendingLog = [];
-    nativeFetch(url('log'), { method: 'POST', body }).catch(() => { /* the host is gone; nothing to tell */ });
+    nativeFetch(url('log'), { method: 'POST', body }).then(discard).catch(() => { /* the host is gone; nothing to tell */ });
   }
   for (const level of ['log', 'info', 'warn', 'error', 'debug']) {
     const original = console[level].bind(console);
@@ -81,11 +85,12 @@ importScripts('/__shell/config.js', 'node.js');
     },
     respond(id, meta, body) {
       nativeFetch(url('respond', `&id=${encodeURIComponent(id)}`), { method: 'POST', body: frame(meta, body) })
+        .then(discard)
         .catch((err) => console.error(`[mundusmaker] could not answer request ${id}: ${err.message}`));
     },
     exit(code) {
       sendLog();
-      nativeFetch(url('exit', `&code=${Number(code) || 0}`), { method: 'POST' }).catch(() => {});
+      nativeFetch(url('exit', `&code=${Number(code) || 0}`), { method: 'POST' }).then(discard).catch(() => {});
     },
   };
 
@@ -109,7 +114,7 @@ importScripts('/__shell/config.js', 'node.js');
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   async function pump() {
     for (let attempt = 0; ; attempt++) {
-      try { await nativeFetch(url('hello'), { method: 'POST' }); break; } catch { await sleep(Math.min(2000, 100 * (attempt + 1))); }
+      try { discard(await nativeFetch(url('hello'), { method: 'POST' })); break; } catch { await sleep(Math.min(2000, 100 * (attempt + 1))); }
     }
     while (!runtime.exited) {
       let res;
@@ -119,8 +124,11 @@ importScripts('/__shell/config.js', 'node.js');
         await sleep(500);
         continue;
       }
-      if (res.status === 204) continue;
-      if (res.status !== 200) { await sleep(500); continue; }
+      if (res.status !== 200) {
+        discard(res);
+        if (res.status !== 204) await sleep(500);
+        continue;
+      }
       let request;
       try {
         request = unframe(new Uint8Array(await res.arrayBuffer()));

@@ -48,4 +48,28 @@ export function wireDrawer() {
     if (ev.key === 'Escape' && isOpen()) setOpen(false);
     else if ((ev.ctrlKey || ev.metaKey) && /^k$/i.test(ev.key)) setOpen(true);
   });
+  wireKeyboard();
+}
+
+// The on-screen keyboard leaves a phone a few hundred pixels of page, so while
+// something is typed into, the top bar keeps only its first row (app.css,
+// body.keyboard-up). The keyboard shows as the page getting much shorter than
+// it has been at this width.
+function wireKeyboard() {
+  const tallest = new Map(); // width -> tallest height seen: the height without a keyboard
+  const typing = () => {
+    const field = document.activeElement;
+    return !!field && (field.tagName === 'TEXTAREA' || field.isContentEditable
+      || (field.tagName === 'INPUT' && !/^(checkbox|radio|range|color|file|button|submit|reset|image)$/.test(field.type)));
+  };
+  const update = () => {
+    const width = window.innerWidth, height = window.visualViewport?.height ?? window.innerHeight;
+    if (height > (tallest.get(width) || 0)) tallest.set(width, height);
+    document.body.classList.toggle('keyboard-up', PHONE.matches && typing() && height < tallest.get(width) * 0.8);
+  };
+  window.addEventListener('resize', update);
+  window.visualViewport?.addEventListener('resize', update);
+  document.addEventListener('focusin', update);
+  document.addEventListener('focusout', () => setTimeout(update, 0)); // activeElement moves on after focusout
+  update();
 }

@@ -76,6 +76,73 @@ export function renderMarkdown(text, hooks) {
 }
 
 /**
+ * What renderMarkdown() makes of each character of `text`: 1 shown, 2 shown
+ * blank, 0 not shown (markup, a link's target, an image, a line break). It
+ * repeats the grammar above pass by pass on the raw text, which works because
+ * escaping changes no character the patterns test; tests hold the two together.
+ */
+export function shownChars(text) {
+  const src = String(text || '');
+  const kind = new Array(src.length).fill(0);
+  // each pass keeps parts of every match and drops the rest, like the replace it mirrors
+  const pass = (items, rx, keep) => {
+    const str = items.map((x) => src[x]).join('');
+    const out = [];
+    let last = 0;
+    for (const m of str.matchAll(rx)) {
+      out.push(...items.slice(last, m.index));
+      for (const [from, to] of keep(m)) out.push(...items.slice(m.index + from, m.index + to));
+      last = m.index + m[0].length;
+    }
+    return out.concat(items.slice(last));
+  };
+  const trimmed = (s, at) => [[at + s.length - s.trimStart().length, at + s.trimEnd().length]];
+  let start = 0;
+  for (const raw of src.split('\n')) {
+    const line = raw.trimEnd();
+    const lead = /^- /.test(line) ? 2 : (/^> ?/.exec(line)?.[0].length ?? 0);
+    let items = [];
+    for (let i = start + lead; i < start + line.length; i++) items.push(i);
+    items = pass(items, /\[\[([^\][|]+)(?:\|([^\][]+))?\]\]/g, (m) => (m[2] === undefined ? trimmed(m[1], 2) : trimmed(m[2], 3 + m[1].length)));
+    items = pass(items, /!\[([^\]]*)\]\((\/assets\/[^\s)]+)\)/g, () => []);
+    items = pass(items, /\*\*([^*]+)\*\*/g, (m) => [[2, 2 + m[1].length]]);
+    items = pass(items, /(^|[^*])\*([^*\n]+)\*/g, (m) => [[0, m[1].length], [m[1].length + 1, m[1].length + 1 + m[2].length]]);
+    items = pass(items, /`([^`]+)`/g, (m) => [[1, 1 + m[1].length]]);
+    for (const i of items) kind[i] = /\s/.test(src[i]) ? 2 : 1;
+    start += raw.length + 1;
+  }
+  return kind;
+}
+
+/**
+ * Where in `text` a caret goes that sits after the first `count` shown, non-blank
+ * characters of its rendering: for a tap on a block, so the editor opens at
+ * the word that was tapped. `startOfNext` (the caret follows a blank or starts
+ * a line) puts it before the next word's opening markup, otherwise it goes
+ * after the previous word's closing markup, so typing lands outside a link or
+ * a bold run unless the tap was inside one.
+ */
+export function sourceCaret(text, count, startOfNext = false) {
+  const src = String(text || '');
+  const kind = shownChars(src);
+  const shown = [];
+  kind.forEach((k, i) => { if (k === 1) shown.push(i); });
+  if (!shown.length) return src.length;
+  const prev = count > 0 ? shown[Math.min(count, shown.length) - 1] : -1;
+  const next = count < shown.length ? shown[count] : src.length;
+  let at;
+  if (startOfNext || prev < 0) {
+    at = next;
+    while (at > prev + 1 && kind[at - 1] === 0 && src[at - 1] !== '\n') at--;
+    if (at === 0 || src[at - 1] === '\n') at += /^- /.test(src.slice(at)) ? 2 : (/^> ?/.exec(src.slice(at))?.[0].length ?? 0);
+  } else {
+    at = prev + 1;
+    while (at < next && kind[at] === 0 && src[at] !== '\n' && src[at] !== '\r') at++;
+  }
+  return at;
+}
+
+/**
  * Plain-text mentions of a name (1.9 unlinked mentions): the whole name,
  * ignoring case, with an optional plural ("s"/"es") or possessive ("'s").
  * Text inside a [[link]] or an image is never touched. link() keeps the

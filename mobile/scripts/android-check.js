@@ -9,11 +9,13 @@
  * --install installs the APK first; --fresh also clears the app's data, so the
  * first-run path (unpacking, seeding the sample world) runs. It checks that
  * server.js runs in the app, saves round-trip with their revisions and land on
- * the device, images display, Save reaches the native Save/Share dialog, Back
- * closes the drawer, and everything (browser storage included) survives a
- * reload and a full restart of the app. It also checks that another app on
- * the device cannot use the local server. Exit codes: 0 pass, 1 a check
- * failed, 2 no device or no debuggable app.
+ * the device, images display, many requests leave the renderer's memory where
+ * it was, typing into a long text block keeps it in view and the top bar
+ * shrinks to one row, a tap on a word opens the editor there, Save reaches the
+ * native Save/Share dialog, Back closes the drawer, and everything (browser
+ * storage included) survives a reload and a full restart of the app. It also
+ * checks that another app on the device cannot use the local server. Exit
+ * codes: 0 pass, 1 a check failed, 2 no device or no debuggable app.
  */
 const { execFileSync } = require('child_process');
 const fs = require('fs');
@@ -114,6 +116,90 @@ async function main() {
   const timing = await evaluate("(async () => { const t = performance.now(); await (await fetch('/api/w/the-sundered-reach/entities?details=1')).json(); return Math.round(performance.now() - t); })()");
   console.log(`     listing every sample entry took ${timing} ms`);
 
+  // The runtime worker once left each answer's response body unread, and the
+  // WebView kept every one (about 20 KB per request), so typing grew the app
+  // without end. Garbage collection does not free it, which is what this tells apart.
+  // Calibrated on the emulator: at most +4.4 MB over 800 requests after the
+  // warm-up, against +20 to +24 MB every time with the leak.
+  const renderer = rendererPid();
+  if (renderer) {
+    const requests = (n) => evaluate(`(async () => { for (let i = 0; i < ${n}; i++) await (await fetch('/api/status', { cache: 'no-store' })).json(); return true; })()`);
+    await requests(200);
+    await app.client.send('HeapProfiler.collectGarbage');
+    const before = pssKb(renderer);
+    await requests(800);
+    await app.client.send('HeapProfiler.collectGarbage');
+    const grown = pssKb(renderer) - before;
+    check(grown < 10 * 1024, `800 requests leave the renderer's memory where it was (${(grown / 1024).toFixed(1)} MB more)`);
+  } else {
+    console.log('     (no WebView renderer process found; memory check skipped)');
+  }
+
+  // Typing at the end of a long text block, with the page as short as an
+  // on-screen keyboard leaves it. The box's auto-grow once let the page jump
+  // away from the text at every new line.
+  await app.client.send('Emulation.setDeviceMetricsOverride', { width: await evaluate('innerWidth'), height: 520, deviceScaleFactor: 0, mobile: true });
+  const typingId = await evaluate(`(async () => {
+    const { newEntity, saveEntity } = await import('/js/state.js');
+    const para = 'The old lighthouse keeper remembers every ship that ever ran aground on the Teeth, and tells of each for a drink. ';
+    const e = newEntity('Android check typing', 'note');
+    e.gmOnly = true;
+    e.blocks = [{ id: 'android-check', kind: 'text', text: Array.from({ length: 10 }, () => para).join('\\n\\n'), secret: false }];
+    await saveEntity(e);
+    location.hash = '#/e/' + encodeURIComponent(e.id);
+    for (let i = 0; i < 50 && document.querySelector('.ent-title')?.value !== e.name; i++) await new Promise((r) => setTimeout(r, 100));
+    const view = document.getElementById('view');
+    const block = document.querySelector('.block');
+    view.scrollTop += block.getBoundingClientRect().bottom - view.getBoundingClientRect().bottom + 40;
+    block.querySelector('.block-content').click();
+    return e.id;
+  })()`);
+  for (const ch of ' and nobody knows where he keeps the key to the lamp room at the top of the tower') {
+    await app.client.send('Input.insertText', { text: ch });
+    await sleep(30);
+  }
+  await sleep(500);
+  const typed = await evaluate(`(() => {
+    const view = document.getElementById('view').getBoundingClientRect();
+    const box = document.activeElement.getBoundingClientRect();
+    return { editing: document.activeElement.tagName === 'TEXTAREA', top: view.top, bottom: view.bottom, end: box.bottom };
+  })()`);
+  check(typed.editing && typed.end > typed.top + 30 && typed.end < typed.bottom + 80, `typing at the end of a long block keeps it in view (its end at ${Math.round(typed.end)}, page ${Math.round(typed.top)}-${Math.round(typed.bottom)})`);
+  const bar = await evaluate("document.body.classList.contains('keyboard-up') ? document.getElementById('topbar').getBoundingClientRect().height : 0");
+  check(bar > 0 && bar < 80, `with the keyboard up the top bar keeps only its first row (${Math.round(bar)} px)`);
+
+  // A tap on a word opens the editor at that word, not at the end of the block.
+  const word = await evaluate(`(async () => {
+    document.activeElement.blur();
+    // the full top bar comes back a moment after the editor closes
+    for (let i = 0; i < 50 && (document.body.classList.contains('keyboard-up') || !document.querySelector('.block .block-content p')); i++) await new Promise((r) => setTimeout(r, 100));
+    const text = document.querySelectorAll('.block .block-content p')[4].firstChild;
+    const range = document.createRange();
+    range.setStart(text, text.data.indexOf('aground') + 3);
+    range.setEnd(text, text.data.indexOf('aground') + 4);
+    text.parentElement.scrollIntoView({ block: 'center' });
+    const r = range.getBoundingClientRect();
+    return { x: r.left + 1, y: r.top + r.height / 2 };
+  })()`);
+  for (const type of ['mousePressed', 'mouseReleased']) await app.client.send('Input.dispatchMouseEvent', { type, x: word.x, y: word.y, button: 'left', clickCount: 1 });
+  await sleep(500);
+  const caret = await evaluate(`(() => {
+    const ta = document.activeElement;
+    if (ta.tagName !== 'TEXTAREA') return null;
+    let at = -1;
+    for (let i = 0; i < 5; i++) at = ta.value.indexOf('aground', at + 1);
+    return ta.selectionStart - (at + 3);
+  })()`);
+  check(caret === 0, `a tap on a word opens the editor at that word (${caret === null ? 'no editor' : `${caret} characters off`})`);
+  await evaluate(`(async () => {
+    document.activeElement.blur();
+    const { deleteEntity } = await import('/js/state.js');
+    await deleteEntity(${JSON.stringify(typingId)});
+    location.hash = '#/';
+    return true;
+  })()`);
+  await app.client.send('Emulation.clearDeviceMetricsOverride');
+
   // Back closes the drawer before it navigates anywhere
   await evaluate("document.getElementById('sidebarToggle').click(); true");
   const opened = await evaluate("document.getElementById('sidebarToggle').getAttribute('aria-expanded')");
@@ -165,6 +251,16 @@ async function main() {
     process.exit(1);
   }
   console.log('\nMundusMaker works on this Android device.');
+}
+
+/** The WebView renderer process the app's page runs in (an isolated service, so not a child of the app). */
+function rendererPid() {
+  const m = /app=ProcessRecord\{\S+ (\d+):[^}\s]*sandboxed_process/.exec(adb('shell', 'dumpsys', 'activity', 'services', PKG));
+  return m ? m[1] : null;
+}
+
+function pssKb(pid) {
+  return Number(/TOTAL PSS:\s+(\d+)/.exec(adb('shell', 'dumpsys', 'meminfo', pid))[1]);
 }
 
 function dumpUi() {

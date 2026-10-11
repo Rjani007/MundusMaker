@@ -651,9 +651,12 @@ a.type-badge:hover { text-decoration: none; border-color: var(--accent); color: 
   display: flex; opacity: 0; pointer-events: none;
   align-items: center; flex-wrap: nowrap; transition: opacity 0.12s;
 }
-.block:hover .bctrl,
 .block:focus-within .bctrl,
 .block.editing .bctrl { opacity: 1; pointer-events: auto; }
+/* A tap on a touch screen hovers first, which put the toolbar under the finger
+   and gave it the tap (Heading, ↑, Delete…). There a tap opens the editor,
+   and the editor shows the toolbar. */
+@media (hover: hover) { .block:hover .bctrl { opacity: 1; pointer-events: auto; } }
 /* While the editor is open, "Edit" is the one button with nothing left to do. */
 .block.editing .bc-edit { display: none; }
 .block .bctrl button { white-space: nowrap; }
@@ -1088,6 +1091,9 @@ a.sheet-roll:hover { color: var(--accent); border-bottom-color: var(--accent); }
   }
   #mainnav::-webkit-scrollbar { display: none; }
   #mainnav a { display: inline-flex; align-items: center; min-height: 40px; padding: 0 12px; }
+  /* typing with the on-screen keyboard up: the first row only (drawer.js) */
+  body.keyboard-up #worldSelect, body.keyboard-up .gm-toggle, body.keyboard-up #mainnav { display: none; }
+  body.keyboard-up #topbar { padding-top: 2px; padding-bottom: 2px; }
 
   /* the drawer covers the page below the top bar; #layout never scrolls itself */
   #layout { position: relative; }

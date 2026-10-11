@@ -83,13 +83,22 @@ node mobile/shared/devhost.js [dataDir]   # use the mobile stack in your own bro
 - `runtime-check.js` runs the worker, the relay and the synchronous file calls
   in real Chromium, the engine the Android WebView uses.
 - `android-check.js` drives the installed debug app over the WebView's DevTools
-  protocol. It checks saves and revisions, data on the device, images, Save and
-  Share, Back, reload and restart persistence, and that other apps get 403. It
-  needs `adb`: set `ADB` or `ANDROID_HOME`, or have it on `PATH`.
+  protocol. It checks saves and revisions, data on the device, images, the
+  renderer's memory over many requests, typing into a long text block, Save
+  and Share, Back, reload and restart persistence, and that other apps get
+  403. It needs `adb`: set `ADB` or `ANDROID_HOME`, or have it on `PATH`.
 
 The emulator renders in software unless told otherwise, which makes its own
 System UI time out and steal key presses from the app. Start it with
 `-gpu host`.
+
+An emulator with a hardware keyboard (the default Pixel profiles) never shows
+the on-screen keyboard, so typing there is nothing like typing on a phone. Turn
+it on before testing anything you type into:
+
+```
+adb shell settings put secure show_ime_with_hard_keyboard 1
+```
 
 ## On the device
 

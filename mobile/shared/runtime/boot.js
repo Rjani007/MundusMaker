@@ -55,6 +55,7 @@
         headers: { 'Content-Type': blob.type || 'application/octet-stream' },
         body: blob,
       }).then((res) => {
+        if (res.body) res.body.cancel().catch(() => {}); // an unread body stays in memory (worker.js)
         if (!res.ok) throw new Error(`the app answered ${res.status}`);
       }).catch((err) => {
         console.error(`[mundusmaker] could not hand ${filename} to the app: ${err.message}`);
