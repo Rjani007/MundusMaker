@@ -15,21 +15,22 @@ import { makeRng, makeFbm, clamp } from '../util.js';
 
 const W = 900, H = 640, C = 2, GW = W / C, GH = H / C;
 
-export const MODERN_LAYOUTS = { auto: 'Surprise me', grid: 'Downtown grid', sprawl: 'Suburban sprawl', waterfront: 'Waterfront city', river: 'River town' };
+// 'tensor' (Metro, 1.9.1) is built by tensorcity.js; town.js routes it there, and 'auto' never picks it
+export const MODERN_LAYOUTS = { auto: 'Surprise me', grid: 'Downtown grid', sprawl: 'Suburban sprawl', waterfront: 'Waterfront city', river: 'River town', tensor: 'Metro (tensor-field streets)' };
 export const MODERN_THEMES = { day: 'Day', night: 'Night' };
 export const MODERN_USES = { downtown: 'Downtown', residential: 'Homes and apartments', suburban: 'Suburbs', industrial: 'Industry', civic: 'Civic', parkland: 'Parks', waterfront: 'Waterfront' };
 
-// ---------- original name tables ----------
-const TREES = ['Oak', 'Maple', 'Cedar', 'Pine', 'Elm', 'Birch', 'Willow', 'Aspen', 'Chestnut', 'Hawthorn', 'Juniper', 'Laurel', 'Magnolia', 'Poplar', 'Spruce', 'Sycamore', 'Walnut', 'Hickory', 'Linden', 'Alder', 'Cypress', 'Dogwood'];
-const SURNAMES = ['Lincoln', 'Franklin', 'Madison', 'Harrison', 'Monroe', 'Carter', 'Hayes', 'Parker', 'Morgan', 'Holloway', 'Whitman', 'Prescott', 'Calloway', 'Fairbanks', 'Ellery', 'Barlow', 'Kendrick', 'Ashby', 'Delmont', 'Wexford', 'Hartley', 'Sutton'];
-const GIVEN = ['Anne', 'Mary', 'Rosie', 'Mae', 'Lou', 'Frank', 'Dot', 'Hank', 'Joan', 'Earl', 'Iris', 'Walt'];
-const PLACE_WORDS = ['Lake', 'River', 'Hill', 'Grove', 'Meadow', 'Ridge', 'Brook', 'Harbor', 'Valley', 'Prairie', 'Summit', 'Bay'];
+// ---------- original name tables (shared with tensorcity.js) ----------
+export const TREES = ['Oak', 'Maple', 'Cedar', 'Pine', 'Elm', 'Birch', 'Willow', 'Aspen', 'Chestnut', 'Hawthorn', 'Juniper', 'Laurel', 'Magnolia', 'Poplar', 'Spruce', 'Sycamore', 'Walnut', 'Hickory', 'Linden', 'Alder', 'Cypress', 'Dogwood'];
+export const SURNAMES = ['Lincoln', 'Franklin', 'Madison', 'Harrison', 'Monroe', 'Carter', 'Hayes', 'Parker', 'Morgan', 'Holloway', 'Whitman', 'Prescott', 'Calloway', 'Fairbanks', 'Ellery', 'Barlow', 'Kendrick', 'Ashby', 'Delmont', 'Wexford', 'Hartley', 'Sutton'];
+export const GIVEN = ['Anne', 'Mary', 'Rosie', 'Mae', 'Lou', 'Frank', 'Dot', 'Hank', 'Joan', 'Earl', 'Iris', 'Walt'];
+export const PLACE_WORDS = ['Lake', 'River', 'Hill', 'Grove', 'Meadow', 'Ridge', 'Brook', 'Harbor', 'Valley', 'Prairie', 'Summit', 'Bay'];
 const ORDINALS = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th', '11th', '12th', '13th', '14th', '15th', '16th'];
-const LOCAL_SUFFIX = ['Drive', 'Lane', 'Court', 'Way', 'Place', 'Circle', 'Terrace', 'Road'];
+export const LOCAL_SUFFIX = ['Drive', 'Lane', 'Court', 'Way', 'Place', 'Circle', 'Terrace', 'Road'];
 const FUEL = [['Star', 'Rapid', 'Blue', 'Circle', 'Prairie', 'Summit', 'Liberty', 'Beacon'], ['Fuel', 'Gas', 'Service', 'Petrol']];
 const MOTEL = ['Starlite', 'Blue Moon', 'Sleepy Pines', 'Roadside', 'Silver Spur', 'Sunset', 'Wagon Wheel', 'Evergreen'];
 
-const landmarkNames = {
+export const landmarkNames = {
   cityhall: () => 'City Hall',
   police: (r) => r.chance(0.5) ? 'Police Department' : `${r.pick(PLACE_WORDS)} Street Precinct`,
   library: (r) => `${r.pick(SURNAMES)} Public Library`,

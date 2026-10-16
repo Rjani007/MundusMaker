@@ -5,6 +5,10 @@ Your campaign is a folder of plain text files on your disk. There's no hosted
 service or subscription. The desktop app stays local; optional Docker hosting
 lets your browsers connect to your own NAS using a DM password.
 
+Version **1.9.1** adds two map generators: **Terrain world maps** with
+mountain ranges, rain shadows, lakes, optional erosion and terrain brushes,
+and **Modern city maps** with streets that bend along the shore, a railway,
+big parks and towers. See the [release notes](docs/1.9.1-release.md).
 Version **1.9.0** starts without a console window (a tray icon on Windows;
 Quit sits at the top right of the app), exports a player wiki, adds session
 prep tools and keyboard-friendly character sheets, and fills the publishers'
@@ -247,6 +251,13 @@ carve the world into nations with borders, capitals and named settlements if
 you ask it to. Anything you made in an older version keeps the painted look
 it was made with; the styles never touch each other. The terrain brush works
 in both.
+
+The Terrain style draws the world the way mapgen4 does: a relief built from
+mountain ranges and hills, rain carried by the wind with a shadow behind the
+ranges, shallow shelves along every coast, rivers that widen downstream and
+lakes in the basins they fill. Paint it with Mountains, Hills, Lowland and Sea
+brushes, and turn on erosion to cut gullies and valleys. Nations, settlements
+and drill-downs work as they do on the Atlas.
 
 Region maps are the middle scale that was always missing: one province, its
 settlements joined by roads, ruins and shrines out in the hills, and a hex

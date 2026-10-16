@@ -11,6 +11,7 @@ import { nameFor } from '../names.js';
 import { planTown, coastalTownLayout } from './townplan.js';
 import { renderPlannedTown } from './townart.js';
 import { buildModernTown } from './moderntown.js';
+import { buildTensorCity } from './tensorcity.js';
 import { renderModernTown } from './modernart.js';
 
 export const TOWN_W = 900;
@@ -712,7 +713,7 @@ function orientCoastalModel(model, side) {
 export function buildTownModel(map) {
   // modern towns (1.9) are a separate era with their own streams; the era is
   // read from the stored params, never from defaults, so no old town changes
-  if (map.params?.era === 'modern') return buildModernTown(map);
+  if (map.params?.era === 'modern') return map.params.modernLayout === 'tensor' ? buildTensorCity(map) : buildModernTown(map);
   const p = { ...defaultTownParams(), ...(map.params || {}) };
   const size = Math.max(1, Math.min(5, p.size));
   p.size = size;

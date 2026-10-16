@@ -13,6 +13,8 @@ import { siteKey, customKey } from './crossscale.js';
 import { buildGeography, drainage, naturalTerritories } from './geography.js';
 import { drawMapLabels } from './cartography.js';
 import { renderGeographicMap } from './atlasart.js';
+import { buildMeshTerrain, repaintMeshTerrain } from './meshterrain.js';
+import { renderTerrainMap } from './meshart.js';
 
 export const WORLD_W = 960;
 export const WORLD_H = 600;
@@ -24,12 +26,13 @@ export function defaultWorldParams() {
   return { water: 0.5, scale: 3, island: true, rivers: 6, style: 'atlas', nations: 3, settlements: true, labels: true };
 }
 
-export const WORLD_STYLES = { classic: 'Classic (painted relief)', atlas: 'Atlas (inked chart)' };
+export const WORLD_STYLES = { classic: 'Classic (painted relief)', atlas: 'Atlas (inked chart)', terrain: 'Terrain (mesh relief, mapgen4-style)' };
 
 const worldStyle = (map) => map.params?.style || 'classic';
 
 /** Build the height/moisture grids from seed + params + stored brush strokes. */
 export function buildWorldModel(map) {
+  if (worldStyle(map) === 'terrain') return buildTerrainAtlas(map);
   if (worldStyle(map) === 'atlas') return buildAtlasModel(map);
   const p = { ...defaultWorldParams(), ...(map.params || {}) };
   const hf = makeFbm(map.seed, 5);
@@ -74,9 +77,17 @@ function applyStrokeDims(height, s, gw, gh) {
   }
 }
 
-/** Editor brush entry point — works for both styles (the model knows its own grid). */
+/** Editor brush entry point — works for every style (the model knows its own
+ *  grid; terrain-style models paint their constraint and re-derive rivers). */
 export function applyWorldStroke(model, stroke) {
-  applyStrokeDims(model.height, stroke, model.gw, model.gh);
+  applyWorldStrokes(model, [stroke]);
+}
+
+/** A frame's worth of strokes at once: terrain-style models paint them all
+ *  and then derive climate, erosion and rivers a single time. */
+export function applyWorldStrokes(model, strokes) {
+  if (model.mesh) { repaintMeshTerrain(model, strokes); return; }
+  for (const stroke of strokes) applyStrokeDims(model.height, stroke, model.gw, model.gh);
 }
 
 const C = {
@@ -137,6 +148,7 @@ export function traceClassicRivers(model, seed, count) {
  *  renders at higher resolution for printing — the simulation grid stays the
  *  same, but rivers, vignette and the terrain upsampling come out crisp. */
 export function renderWorldBase(map, model, scale = 1) {
+  if (worldStyle(map) === 'terrain') return renderTerrainMap(map, model?.mesh ? model : buildTerrainAtlas(map), scale);
   if (worldStyle(map) === 'atlas') return renderAtlasBase(map, model, scale);
   model = model || buildWorldModel(map);
   const { height, moisture, water, gw, gh } = model;
@@ -277,6 +289,26 @@ function buildGeographicAtlas(map) {
   return model;
 }
 
+// Terrain style (1.9.1): mapgen4's approach on a triangle mesh (meshterrain.js),
+// rasterized onto the shared grid so the atlas's nations, settlements, keys,
+// edits and drill-downs work unchanged. The model reports generation '1.8' so
+// carves, territories and drilled towns take their detailed paths; every
+// stream sits under ':m4' (meshterrain's, then ':m4:nations', ':m4:names',
+// ':m4:settlements' and ':m4:names:towns' here).
+function buildTerrainAtlas(map) {
+  const p = { ...defaultWorldParams(), ...(map.params || {}) };
+  const model = buildMeshTerrain({ ...map, params: p });
+  Object.assign(model, { atlas: true, generation: '1.8', style: 'terrain', params: p });
+  const seed = map.seed + ':m4';
+  // frontiers are grown once, after the capitals settle into their towns
+  if ((p.nations ?? 0) > 0) buildNations(model, seed, p.nations, false);
+  if (p.settlements ?? true) placeSettlements(model, seed);
+  for (const town of model.towns || []) if (town.nationIndex != null) model.nations[town.nationIndex].capital = [town.x, town.y];
+  if (model.nations?.length) growNationTerritories(model);
+  attachAtlasKeys(model); applyAtlasEdits(model, map);
+  return model;
+}
+
 /** Stable identity for links/edits: keys embed the GENERATED name, so they
  *  survive renames and never depend on what the user later calls a site. */
 function attachAtlasKeys(model) {
@@ -402,7 +434,7 @@ function traceAtlasRivers(model, seed, count) {
 }
 
 /** Grow N nations from capital sites across the land, with jittered frontiers. */
-function buildNations(model, seed, n) {
+function buildNations(model, seed, n, grow = true) {
   const { height, water, gw, gh } = model;
   const rng = makeRng(seed + ':nations');
   const land = [];
@@ -423,7 +455,7 @@ function buildNations(model, seed, n) {
   model.natJitter = jitter;
   const nameRng = makeRng(seed + ':names');
   model.nations = capitals.map(([x, y]) => ({ capital: [x, y], name: nameFor(nameRng, 'nation') }));
-  growNationTerritories(model);
+  if (grow) growNationTerritories(model);
 }
 
 /** Multi-source BFS from each visible nation's capital over the preserved

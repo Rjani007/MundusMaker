@@ -5,7 +5,8 @@ import { uid, el } from '../util.js';
 import { hiddenOverlayLinkIds, overlayVisible, mapKey } from '../projection.js';
 import { LANDFORMS } from './geography.js';
 import { finishCartography, drawMapLegend } from './cartography.js';
-import { WORLD_W, WORLD_H, WORLD_STYLES, defaultWorldParams, buildWorldModel, renderWorldBase, applyWorldStroke, traceClassicRivers } from './world.js';
+import { WORLD_W, WORLD_H, WORLD_STYLES, defaultWorldParams, buildWorldModel, renderWorldBase, applyWorldStroke, applyWorldStrokes, traceClassicRivers } from './world.js';
+import { EROSION_MODES, TERRAIN_BRUSHES } from './meshterrain.js';
 import { TOWN_W, TOWN_H, defaultTownParams, buildTownModel, renderTownBase, computeWards, TOWN_LAYOUTS, TOWN_TERRAINS, TOWN_PAVINGS, TOWN_SEA_SIDES } from './town.js';
 import {
   CELL, FLOOR, SOLID, DOOR, STAIR_DOWN, STAIR_UP, DUNGEON_STYLES,
@@ -91,6 +92,8 @@ export const MAP_KINDS = {
     labelStyle: 'light',
     extraPanel: mapTitlePanel,
     siteKinds: ['region', 'settlement'],
+    // the terrain style (1.9.1) as its own entry in the new-map menu
+    variants: [{ key: 'terrain', label: 'Terrain world map (mapgen4-style)', params: { style: 'terrain' } }],
     params: [
       // absent = 'classic': every world map made before 0.13 keeps its exact look
       { key: 'style', label: 'Style', type: 'select', options: WORLD_STYLES, absent: 'classic',
@@ -107,19 +110,36 @@ export const MAP_KINDS = {
         regeneratesSites: ['nation:', 'world:'] },
       { key: 'nations', label: 'Nations', type: 'slider', min: 0, max: 7, step: 1, absent: 3,
         regeneratesSites: ['nation:', 'world:'],
-        show: (p) => (p.style || 'classic') === 'atlas' },
+        show: (p) => ['atlas', 'terrain'].includes(p.style || 'classic') },
       { key: 'settlements', label: 'Settlements', type: 'checkbox', absent: true,
         regeneratesSites: ['world:'],
-        show: (p) => (p.style || 'classic') === 'atlas' },
+        show: (p) => ['atlas', 'terrain'].includes(p.style || 'classic') },
       { key: 'labels', label: 'Auto labels', type: 'checkbox', absent: true,
-        show: (p) => (p.style || 'classic') === 'atlas' },
+        show: (p) => ['atlas', 'terrain'].includes(p.style || 'classic') },
+      // terrain style: how much rain the wind carries inland
+      { key: 'rain', label: 'Rainfall', type: 'slider', min: 0, max: 1, step: 0.05, absent: 0.5,
+        regeneratesSites: ['nation:', 'world:'], show: (p) => p.style === 'terrain',
+        title: 'Wetter worlds grow greener and carry more rivers; drier ones turn to steppe and desert.' },
+      { key: 'erosion', label: 'Erosion', type: 'select', options: EROSION_MODES, absent: 'none',
+        regeneratesSites: ['nation:', 'world:'], show: (p) => p.style === 'terrain',
+        title: 'Rain & sediment cuts gullies and fills valleys with silt; river networks carve valleys along branching rivers and leave ridges between them.' },
+      { key: 'erosionAmount', label: 'Erosion strength', type: 'slider', min: 0.1, max: 1, step: 0.05, absent: 0.6,
+        regeneratesSites: ['nation:', 'world:'], show: (p) => p.style === 'terrain' && (p.erosion || 'none') !== 'none' },
     ],
     tools: [
       { name: 'raise', label: '⛰ Raise', title: 'Brush: raise terrain' },
       { name: 'lower', label: '🌊 Lower', title: 'Brush: lower terrain' },
+      // terrain style: mapgen4-style brushes that paint the land
+      // toward a kind of ground rather than up or down. `sign` keeps a stroke
+      // meaningful (up or down) if the map later switches to another style.
+      ...TERRAIN_BRUSHES.map(({ t, label, title, sign }) => ({ name: `terrain-${t}`, label, title, sign, stroke: { t }, show: (p) => p.style === 'terrain' })),
     ],
     paint: 'brush',
     applyStroke: applyWorldStroke,
+    applyStrokes: applyWorldStrokes,
+    // terrain maps re-place settlements and rerun erosion after each gesture,
+    // like 1.8 maps, whatever their generation
+    rebuildAfterBrush: (map) => map.params?.style === 'terrain',
     clearEdits: {
       has: (map) => !!map.strokes?.length,
       label: 'Clear terrain edits',
@@ -234,7 +254,9 @@ export const MAP_KINDS = {
     populate: true, // people and places per district (1.8 and modern towns; populate.js)
     // new-map choices beyond the plain kind (1.9): a modern town is a town map
     // whose params carry era: 'modern'
-    variants: [{ key: 'modern', label: 'Modern town map', params: { era: 'modern' } }],
+    variants: [{ key: 'modern', label: 'Modern town map', params: { era: 'modern' } },
+      // the tensor-field city (1.9.1) as its own entry in the new-map menu
+      { key: 'metro', label: 'Modern city map (tensor-field streets)', params: { era: 'modern', modernLayout: 'tensor', size: 4 } }],
     legendFor: (map) => (map.params?.era === 'modern' ? ['Gold roads · Arterials', 'Dashed gray line · Railway', 'Orange buildings · Landmarks'] : null),
     renderBase: renderTownBase,
     labelStyle: 'dark',
@@ -396,9 +418,9 @@ for (const [key,def] of Object.entries(MAP_KINDS)) {
   def.legend = key==='world'?['Settlement symbols · Towns & capitals','Dashed boundary · Nation','Blue line · River']:key==='region'?['Settlement & landmark symbols','Dashed road   Dotted ferry','Paired bars · River crossing']:key==='town'?['Colored roofs · District uses','Heavy roads · Main streets','Brown jetties · Docks']:['D · Door','Number · Room','Stair arrows · Floor connection'];
 }
 MAP_KINDS.world.params.splice(2,0,
-  {key:'landform',label:'Landform',type:'select',options:LANDFORMS,absent:'continents',show:p=>p.generation==='1.8'&&p.style==='atlas',regeneratesSites:['world:','nation:']},
-  {key:'ruggedness',label:'Mountain chains',type:'slider',min:.1,max:1,step:.1,absent:.7,show:p=>p.generation==='1.8',regeneratesSites:['world:','nation:']},
-  {key:'wind',label:'Moisture from',type:'select',absent:'west',options:{west:'West',east:'East'},show:p=>p.generation==='1.8'});
+  {key:'landform',label:'Landform',type:'select',options:LANDFORMS,absent:'continents',show:p=>(p.generation==='1.8'&&p.style==='atlas')||p.style==='terrain',regeneratesSites:['world:','nation:']},
+  {key:'ruggedness',label:'Mountain chains',type:'slider',min:.1,max:1,step:.1,absent:.7,show:p=>p.generation==='1.8'||p.style==='terrain',regeneratesSites:['world:','nation:']},
+  {key:'wind',label:'Moisture from',type:'select',absent:'west',options:{west:'West',east:'East'},show:p=>p.generation==='1.8'||p.style==='terrain'});
 MAP_KINDS.town.params.splice(1,0,{key:'character',label:'Town character',type:'select',absent:'market',options:{market:'Market town',hill:'Hill town',fortified:'Fortified settlement'},show:p=>p.generation==='1.8',confirmGrid:false});
 MAP_KINDS.town.params.splice(2,0,
   {key:'harborDepth',label:'Harbor inlet',type:'slider',min:0,max:1,step:.1,absent:.6,show:p=>p.generation==='1.8'&&p.layout==='coastal',preview:true},

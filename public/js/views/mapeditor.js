@@ -303,7 +303,11 @@ export function render(container, id) {
     ctx.restore();
   }
 
+  // every rebuild bumps this, so a brush rebuild still running in the worker
+  // knows it has been overtaken
+  let modelRev = 0;
   function rebuild() {
+    modelRev++;
     const count = kind.levelCount ? kind.levelCount(map) : 1;
     if (level >= count) level = count - 1;
     model = kind.buildModel(map, level);
@@ -317,6 +321,31 @@ export function render(container, id) {
     refreshPopulate();
     journeys?.refresh();
     redraw();
+  }
+
+  // After a brush gesture the map is rebuilt from its strokes (settlements
+  // re-place, erosion reruns). Kinds that generate in the worker do it there,
+  // so letting go of the mouse never freezes the page; until it answers the
+  // live-painted model stays on screen. A newer gesture or edit wins.
+  let settling = null;
+  function settleBrush() {
+    settling?.abort();
+    if (!kind.worker || typeof Worker === 'undefined') { rebuild(); refreshLists(); return; }
+    const controller = settling = new AbortController();
+    const rev = modelRev, strokes = map.strokes?.length || 0;
+    previewModel(map, kind, { signal: controller.signal, level }).then((next) => {
+      if (controller.signal.aborted || rev !== modelRev || (map.strokes?.length || 0) !== strokes) return;
+      settling = null;
+      modelRev++;
+      model = next;
+      base = kind.renderBase(map, model, 1, baseAnnotations({ gm: state.gm }));
+      refreshExtraPanel?.(); refreshKeys(); refreshPopulate(); journeys?.refresh();
+      redraw(); refreshLists();
+    }).catch(() => {
+      if (controller.signal.aborted || rev !== modelRev) return;
+      settling = null;
+      rebuild(); refreshLists();
+    });
   }
 
   async function refreshMapFromParent() {
@@ -374,8 +403,10 @@ export function render(container, id) {
   function redraw() {
     if (rafPending) return;
     rafPending = true;
-    requestAnimationFrame(() => {
-      rafPending = false;
+    requestAnimationFrame(() => { rafPending = false; drawNow(); });
+  }
+  function drawNow() {
+    {
       ctx.fillStyle='#f7f4eb';ctx.fillRect(0,0,W,H);
       if(layers.base){ctx.drawImage(base,0,0);finishCartography(canvas,map.params?.cartography);}
       const shown={...map};for(const key of ['markers','stamps','paths','labels'])if(!layers[key])shown[key]=[];
@@ -388,7 +419,7 @@ export function render(container, id) {
       }
       drawMapLegend(ctx,map,W,H,kind.legendFor?.(map)||kind.legend);
       if(layers.base)drawSiteLinkHints();
-    });
+    }
   }
 
   // floor chips for multi-level kinds (dungeons); hidden at 1 level
@@ -460,18 +491,33 @@ export function render(container, id) {
 
   let dragging = null, painting = false, lastPaint = null;
 
-  // 'brush' kinds append normalized strokes and re-apply them to the model
+  // 'brush' kinds append normalized strokes and re-apply them to the model.
+  // Strokes are recorded at once, but applied and drawn once per frame
+  // however fast the pointer moves, so the brush never falls behind it.
+  let pendingDabs = [], dabFrame = 0;
+  function flushDabs() {
+    if (dabFrame) { cancelAnimationFrame(dabFrame); dabFrame = 0; }
+    if (!pendingDabs.length) return;
+    const dabs = pendingDabs;
+    pendingDabs = [];
+    if (kind.applyStrokes) kind.applyStrokes(model, dabs);
+    else for (const s of dabs) kind.applyStroke(model, s);
+    base = kind.renderBase(map, model, 1, baseAnnotations({ gm: state.gm }));
+    drawNow();
+  }
   function paintBrush(p) {
+    // a tool may add fields to its strokes (the terrain style's target brushes)
+    const def = (kind.tools || []).find((t) => t.name === tool);
     const stroke = {
       x: p.x / W, y: p.y / H, r: brush.r,
-      d: (tool === 'lower' ? -1 : 1) * brush.strength,
+      d: (def?.sign ?? (tool === 'lower' ? -1 : 1)) * brush.strength,
+      ...(def?.stroke || {}),
     };
     if (lastPaint && Math.hypot(lastPaint.x - stroke.x, lastPaint.y - stroke.y) < brush.r * 0.35) return;
     lastPaint = stroke;
     (map.strokes ??= []).push(stroke);
-    kind.applyStroke(model, stroke);
-    base = kind.renderBase(map, model, 1, baseAnnotations({ gm: state.gm }));
-    redraw();
+    pendingDabs.push(stroke);
+    if (!dabFrame) dabFrame = requestAnimationFrame(() => { dabFrame = 0; flushDabs(); });
     save();
   }
 
@@ -543,6 +589,7 @@ export function render(container, id) {
       else toast('Nothing to key there. Click a room, a settlement, a landmark or, with the hex grid on, a hex.');
     } else if ((kind.tools || []).some((t) => t.name === tool)) {
       painting = true; lastPaint = null;
+      settling?.abort(); settling = null;
       if (kind.paint === 'brush') paintBrush(p);
       else if (kind.paint === 'grid') paintGrid(p);
     }
@@ -616,12 +663,13 @@ export function render(container, id) {
     }
     const brushed=painting&&kind.paint==='brush';
     const painted=painting;
+    if(brushed)flushDabs();
     dragging = null; painting = false; lastPaint = null;
-    if(brushed&&map.params?.generation==='1.8'){rebuild();refreshLists();}
+    if(brushed&&(map.params?.generation==='1.8'||kind.rebuildAfterBrush?.(map)))settleBrush();
     else if(painted){refreshKeys();redraw();} // a repainted room can unplace its note
     history.end();syncHistory();
   });
-  canvas.addEventListener('pointercancel',()=>{dragging=null;painting=false;drawingPath=null;siteDrag=null;history.end();syncHistory();save();redraw();});
+  canvas.addEventListener('pointercancel',()=>{flushDabs();dragging=null;painting=false;drawingPath=null;siteDrag=null;history.end();syncHistory();save();redraw();});
 
   // double-click a linked marker/stamp to open its entry (works in player view too)
   canvas.addEventListener('dblclick', (ev) => {
@@ -762,11 +810,13 @@ export function render(container, id) {
   // generic param rows from the kind's declarative schema (see mapcore.js)
   const paramSection = el('div', {});
   const paramRowEls = [];
+  let syncTools = () => {}; // paint tools may also have show(params); set once the tool row exists
   const syncParamRows = () => {
     for (const { spec, row, input } of paramRowEls) {
       row.style.display = !spec.show || spec.show(p) ? '' : 'none';
       if(input.type==='checkbox')input.checked=!!(p[spec.key]??spec.absent);else input.value=String(p[spec.key]??spec.absent);
     }
+    syncTools();
   };
   for (const spec of kind.params || []) {
     const cur = () => p[spec.key] ?? spec.absent;
@@ -888,8 +938,22 @@ export function render(container, id) {
     Object.entries({base:'Generated map',markers:'Markers',stamps:'Placed objects',paths:'Drawings',labels:'Labels'}).map(([key,label])=>el('label',{},el('input',{type:'checkbox',checked:true,onchange:ev=>{layers[key]=ev.target.checked;selected=null;redraw();}}),label)));
 
   // tools per kind, from the registry
-  const toolRow = el('div', { class: 'tool-row' }, toolBtn('move', '✋ Move', 'Select and drag markers/labels'));
-  for (const t of kind.tools || []) toolRow.append(toolBtn(t.name, t.label, t.title));
+  const moveToolBtn = toolBtn('move', '✋ Move', 'Select and drag markers/labels');
+  const toolRow = el('div', { class: 'tool-row' }, moveToolBtn);
+  const shownTools = [];
+  for (const t of kind.tools || []) {
+    const btn = toolBtn(t.name, t.label, t.title);
+    toolRow.append(btn);
+    if (t.show) shownTools.push([t, btn]);
+  }
+  syncTools = () => {
+    for (const [t, btn] of shownTools) {
+      const visible = t.show(p);
+      btn.style.display = visible ? '' : 'none';
+      if (!visible && tool === t.name) moveToolBtn.click();
+    }
+  };
+  syncTools();
   toolRow.append(
     toolBtn('stamp', '🏰 Place', 'Place a building or landmark: houses, castles, cities, forests…'),
     toolBtn('draw', '✏️ Draw', 'Draw roads, rivers, borders, travel routes and walls'),

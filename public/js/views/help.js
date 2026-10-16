@@ -61,6 +61,7 @@ export function render(container) {
     p('Attach a map to any entry, or make one from the Maps tab. Five scales: world, region, town, building, dungeon. ',
       'Every map grows from a seed. Hit 🎲 until you like the bones of it, then fix it by hand.'),
     p('World and region maps have a terrain brush. New world maps come in the Atlas look, with climate, lakes, and named towns, and they\'ll draw nations with borders if you ask; maps you made before keep the style they were made in. ',
+      'For a painted relief, choose ', el('strong', {}, 'Terrain world map'), ': mountain ranges, rain shadows, lakes and optional erosion, with Mountains, Hills, Lowland and Sea brushes that paint the kind of ground you want. ',
       'Region maps are one province: settlements joined by roads, ruins in the hills, a hex grid if you count travel that way. ',
       'Towns pick a shape (harbor, riverside, planned grid…) and can name their own quarters. ',
       'Buildings are floor plans with the furniture already in them. ',
@@ -85,6 +86,7 @@ export function render(container) {
       'What you keep becomes GM-only entries with markers on the right buildings; run it again and it only offers roles you have not filled. ',
       'Region maps have a ', el('strong', {}, '🧭 Journey planner'), ': pick two settlements and a pace, and it follows the roads and ferries, counts the days, and can draw the route, move the campaign clock and note the trip on a session.'),
     p('For modern games, choose ', el('strong', {}, 'Modern town map'), ' when you make a map, or set Era to Modern on a town. You get avenues and cul-de-sacs, downtown, suburbs, an industrial park by the railway, parks, and a diner, a motel and a police station to key. ',
+      'For a big city, choose ', el('strong', {}, 'Modern city map'), ': streets that bend along the shore and the river, a railway with its station, big parks with ponds, and towers downtown. ',
       'The Night palette suits a Vampire chronicle. Street and place names can be changed in the editor. The Maps page sets whether towns you open from world and region maps are historical or modern by default, and any world or region map can choose its own under “Towns opened here”.'),
 
     h('✉ Handouts'),

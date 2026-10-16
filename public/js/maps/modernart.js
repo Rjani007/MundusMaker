@@ -15,6 +15,8 @@ const PALETTES = {
     casing: { arterial: '#d6a84a', collector: '#b9b6ad', local: '#c7c4bc', culdesac: '#c7c4bc' },
     fill: { arterial: '#fbe3a0', collector: '#ffffff', local: '#ffffff', culdesac: '#ffffff' },
     rail: '#7c7a78', railTie: '#aaa7a2', bridge: '#8e8a82',
+    block: { downtown: '#e2e1dd', residential: '#e9e6e0', suburban: '#e7ecdc', industrial: '#e0e0dc', waterfront: '#e4e7e6', rural: '#e3ead2' },
+    path: '#f4eedc', beach: '#efe6c6', platform: '#dcd6ca',
     building: { downtown: '#b3b2c4', residential: '#d6c7b6', suburban: '#dfd0bd', industrial: '#bfc0ba', civic: '#d8c39a', waterfront: '#b8c6c9', parkland: '#c9b99f' },
     buildingEdge: '#8c887f', landmark: '#e2a86e', landmarkEdge: '#9c6a3a',
     text: '#2c2f36', halo: 'rgba(250,250,246,.92)', district: 'rgba(70,74,86,.55)', districtHalo: 'rgba(240,241,236,.6)',
@@ -26,6 +28,8 @@ const PALETTES = {
     casing: { arterial: '#0b0d12', collector: '#0b0d12', local: '#0e1016', culdesac: '#0e1016' },
     fill: { arterial: '#8a6d2c', collector: '#4a4f5c', local: '#3a3f4b', culdesac: '#3a3f4b' },
     rail: '#5c5a57', railTie: '#3e3c3a', bridge: '#555149',
+    block: { downtown: '#232733', residential: '#22262f', suburban: '#20252b', industrial: '#22252a', waterfront: '#212830', rural: '#1f2a24' },
+    path: '#4a5040', beach: '#3b3a31', platform: '#4b4945',
     building: { downtown: '#353a4c', residential: '#383542', suburban: '#3a3744', industrial: '#353835', civic: '#463f33', waterfront: '#2f3a40', parkland: '#3a3528' },
     buildingEdge: '#12141b', landmark: '#6a4b2c', landmarkEdge: '#e0b070',
     text: '#e9e6dc', halo: 'rgba(16,18,26,.9)', district: 'rgba(210,205,190,.5)', districtHalo: 'rgba(20,22,30,.5)',
@@ -34,6 +38,7 @@ const PALETTES = {
 };
 
 function rect(ctx, r, pad = 0) {
+  if (r.poly) { polyline(ctx, r.poly); ctx.closePath(); return; } // tensor-field cities
   ctx.save(); ctx.translate(r.x, r.y); ctx.rotate(r.rot || 0);
   ctx.beginPath(); ctx.rect(-r.w / 2 - pad, -r.h / 2 - pad, r.w + pad * 2, r.h + pad * 2);
   ctx.restore();
@@ -43,6 +48,15 @@ function polyline(ctx, pts) {
   for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
 }
 const WIDTH = { arterial: 11, collector: 8, local: 5.6, culdesac: 5.2 };
+
+function inPoly(x, y, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
 
 /** Labels along a straight run of each named street; returns placed boxes. */
 function streetLabels(ctx, m, pal, boxes, nameOf) {
@@ -85,7 +99,9 @@ function pointLabels(ctx, items, pal, boxes) {
   for (const f of [...items].sort((a, b) => (b.priority || 0) - (a.priority || 0))) {
     ctx.font = `${f.bold ? '600 ' : ''}${f.caps ? '' : ''}${f.size}px ${SANS}`;
     const text = f.caps ? f.text.toUpperCase() : f.text, width = ctx.measureText(text).width + 6, height = f.size + 5;
-    const spots = f.center ? [[f.x, f.y]] : [[f.x, f.y + 14], [f.x, f.y - 14], [f.x + width / 2 + 10, f.y], [f.x - width / 2 - 10, f.y]];
+    const around = [[f.x, f.y + 14], [f.x, f.y - 14], [f.x + width / 2 + 10, f.y], [f.x - width / 2 - 10, f.y]];
+    // exact: a spot the model chose (a big park's name beside its pond), then the usual ones
+    const spots = f.center ? [[f.x, f.y]] : f.exact ? [[f.x, f.y], ...around] : around;
     for (const [x0, y0] of spots) {
       const x = Math.min(W - width / 2 - 14, Math.max(width / 2 + 14, x0)), y = Math.min(H - 20, Math.max(20, y0));
       const collide = boxes.some((o) => (o.cx !== undefined
@@ -128,7 +144,24 @@ export function renderModernTown(map, m, scale = 1) {
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     ctx.strokeStyle = pal.waterEdge; ctx.lineWidth = m.water.width + 3; polyline(ctx, m.water.pts); ctx.stroke();
     ctx.strokeStyle = pal.water; ctx.lineWidth = m.water.width; polyline(ctx, m.water.pts); ctx.stroke();
+  } else if (m.water?.kind === 'metro') {
+    // tensor-field cities: a sea polygon and/or a river channel. A
+    // beach along the sea and green banks along the river come first; blocks
+    // cover them, so they show only between the shore roads and the water
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    const bands = m.shoreBands;
+    if (bands && m.water.sea) { ctx.strokeStyle = pal.beach; ctx.lineWidth = bands.sea * 2; polyline(ctx, m.water.sea.coast); ctx.stroke(); }
+    if (m.water.river) {
+      if (bands) { ctx.strokeStyle = pal.park; ctx.lineWidth = m.water.river.width + bands.river * 2; polyline(ctx, m.water.river.pts); ctx.stroke(); }
+      ctx.strokeStyle = pal.waterEdge; ctx.lineWidth = m.water.river.width + 3; polyline(ctx, m.water.river.pts); ctx.stroke();
+      ctx.strokeStyle = pal.water; ctx.lineWidth = m.water.river.width; polyline(ctx, m.water.river.pts); ctx.stroke();
+    }
+    if (m.water.sea) {
+      polyline(ctx, m.water.sea.poly); ctx.closePath(); ctx.fillStyle = pal.water; ctx.fill();
+      ctx.strokeStyle = pal.waterEdge; ctx.lineWidth = 2; polyline(ctx, m.water.sea.coast); ctx.stroke();
+    }
   }
+  for (const block of m.blocks || []) { polyline(ctx, block.poly); ctx.closePath(); ctx.fillStyle = pal.block[block.use] || pal.block.residential; ctx.fill(); }
 
   // ground uses
   for (const lot of m.lots) { if (lot.use === 'suburban' || lot.use === 'residential') { rect(ctx, lot); ctx.fillStyle = lot.use === 'suburban' ? pal.yard : pal.lot; ctx.fill(); } }
@@ -160,6 +193,14 @@ export function renderModernTown(map, m, scale = 1) {
   for (const cls of classes) for (const road of m.roads) if (road.cls === cls) { ctx.strokeStyle = pal.fill[cls]; ctx.lineWidth = WIDTH[cls]; polyline(ctx, road.pts); ctx.stroke(); }
   for (const c of m.culdesacs) { ctx.fillStyle = pal.fill.culdesac; ctx.beginPath(); ctx.arc(c.x, c.y, 6.2, 0, TAU); ctx.fill(); }
 
+  // the station's platforms along the tracks (tensor-field cities)
+  if (m.station?.platform) {
+    ctx.save(); ctx.translate(m.station.x, m.station.y); ctx.rotate(m.station.rot);
+    ctx.fillStyle = pal.platform; ctx.fillRect(-28, -6.5, 56, 13);
+    ctx.strokeStyle = pal.rail; ctx.lineWidth = 0.7; ctx.strokeRect(-28, -6.5, 56, 13);
+    ctx.restore();
+  }
+
   // rail: a dark line with ties
   if (m.rail) {
     ctx.lineCap = 'butt';
@@ -172,14 +213,49 @@ export function renderModernTown(map, m, scale = 1) {
   for (const pier of m.piers) { ctx.strokeStyle = pal.pier; ctx.lineWidth = 3.5; polyline(ctx, [[pier.x0, pier.y0], [pier.x1, pier.y1]]); ctx.stroke(); }
   for (const boat of m.boats) { ctx.save(); ctx.translate(boat.x, boat.y); ctx.rotate(boat.rot); ctx.fillStyle = pal.boat; ctx.beginPath(); ctx.ellipse(0, 0, 6, 2.4, 0, 0, TAU); ctx.fill(); ctx.restore(); }
 
+  // footpaths in the big parks of tensor-field cities, under the trees
+  for (const park of m.parks) {
+    if (!park.paths?.length) continue;
+    ctx.strokeStyle = pal.path; ctx.lineWidth = 1.6; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for (const pts of park.paths) { polyline(ctx, pts); ctx.stroke(); }
+  }
+
   // trees in parks
   for (const park of m.parks) {
     const count = Math.round(park.w * park.h / 140);
     for (let i = 0; i < count; i++) {
       const u = ink.range(-park.w / 2 + 4, park.w / 2 - 4), v = ink.range(-park.h / 2 + 4, park.h / 2 - 4);
       const x = park.x + u * Math.cos(park.rot) - v * Math.sin(park.rot), y = park.y + u * Math.sin(park.rot) + v * Math.cos(park.rot);
+      if (park.poly && !inPoly(x, y, park.poly)) continue;
+      if (park.pond && inPoly(x, y, park.pond)) continue;
       ctx.fillStyle = pal.tree[i % 3]; ctx.beginPath(); ctx.arc(x, y, ink.range(2.2, 4), 0, TAU); ctx.fill();
     }
+    if (park.pond) {
+      polyline(ctx, park.pond); ctx.closePath(); ctx.fillStyle = pal.water; ctx.fill();
+      ctx.strokeStyle = pal.waterEdge; ctx.lineWidth = 1; ctx.stroke();
+    }
+  }
+
+  // shadows (tensor-field cities, which know each building's storeys): every
+  // footprint swept away from the light, drawn opaque on a layer of its own
+  // so overlaps don't darken, then laid over the ground at one strength
+  if (theme === 'day' && m.buildings.some((b) => b.levels)) {
+    const layer = document.createElement('canvas');
+    layer.width = canvas.width; layer.height = canvas.height;
+    const lc = layer.getContext('2d');
+    lc.scale(scale, scale); lc.fillStyle = '#000';
+    for (const b of m.buildings) {
+      if (!b.levels || !b.poly) continue;
+      const len = Math.min(18, 0.6 + b.levels * 0.45), dx = len * 0.62, dy = len * 0.78;
+      // each side's sweep is filled on its own: opposite sides wind opposite
+      // ways, and one path would cancel where they overlap
+      for (let i = 0; i < b.poly.length; i++) {
+        const [ax, ay] = b.poly[i], [bx, by] = b.poly[(i + 1) % b.poly.length];
+        lc.beginPath(); lc.moveTo(ax, ay); lc.lineTo(bx, by); lc.lineTo(bx + dx, by + dy); lc.lineTo(ax + dx, ay + dy); lc.closePath(); lc.fill();
+      }
+      polyline(lc, b.poly.map(([x, y]) => [x + dx, y + dy])); lc.closePath(); lc.fill();
+    }
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 0.2; ctx.drawImage(layer, 0, 0); ctx.restore();
   }
 
   // buildings: flat fills; landmarks stand out
@@ -189,7 +265,9 @@ export function renderModernTown(map, m, scale = 1) {
     ctx.strokeStyle = b.landmark ? pal.landmarkEdge : pal.buildingEdge; ctx.lineWidth = b.landmark ? 1.2 : 0.6; ctx.stroke();
     if (theme === 'night' && !b.landmark) {
       const lights = Math.floor(b.w * b.h / 45);
-      ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.rot); ctx.fillStyle = pal.window;
+      ctx.save();
+      if (b.poly) { rect(ctx, b); ctx.clip(); }
+      ctx.translate(b.x, b.y); ctx.rotate(b.rot); ctx.fillStyle = pal.window;
       for (let i = 0; i < lights; i++) if (ink.chance(b.use === 'industrial' ? 0.15 : 0.45)) ctx.fillRect(ink.range(-b.w / 2 + 1, b.w / 2 - 2), ink.range(-b.h / 2 + 1, b.h / 2 - 2), 1.3, 1.3);
       ctx.restore();
     }
@@ -205,13 +283,13 @@ export function renderModernTown(map, m, scale = 1) {
     streetLabels(ctx, m, pal, boxes, streetName);
     pointLabels(ctx, [
       ...landmarks.map((b) => ({ text: placeName(b), x: b.x, y: b.y, size: 9, bold: true, priority: b.landmarkKind === 'cityhall' ? 9 : 8 })),
-      ...m.parks.map((park) => ({ text: park.name, x: park.x, y: park.y, size: 8.5, center: false, priority: 5 })),
+      ...m.parks.map((park) => ({ text: park.name, x: park.labelX ?? park.x, y: park.labelY ?? park.y, exact: park.labelX !== undefined, size: 8.5, center: false, priority: 5 })),
       ...m.districts.filter((d) => d.use !== 'civic' && d.use !== 'parkland').map((d) => ({ text: d.name, x: d.cx, y: d.cy, size: 11, caps: true, center: true, priority: 3 })),
     ], pal, boxes);
     ctx.fillStyle = theme === 'night' ? 'rgba(22,25,34,.94)' : 'rgba(250,250,246,.95)'; ctx.fillRect(18, 14, 250, 44);
     ctx.strokeStyle = pal.frame; ctx.lineWidth = 0.8; ctx.strokeRect(18, 14, 250, 44);
     ctx.fillStyle = pal.text; ctx.font = `600 17px ${SANS}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    ctx.fillText(p.title || { grid: 'Downtown & Neighborhoods', sprawl: 'Town & Suburbs', waterfront: 'The Waterfront City', river: 'River Town' }[m.layout] || 'Street Map', 29, 36, 230);
+    ctx.fillText(p.title || { grid: 'Downtown & Neighborhoods', sprawl: 'Town & Suburbs', waterfront: 'The Waterfront City', river: 'River Town', tensor: 'City & Districts' }[m.layout] || 'Street Map', 29, 36, 230);
   }
   ctx.strokeStyle = pal.frame; ctx.lineWidth = 1; ctx.strokeRect(6, 6, W - 12, H - 12);
   return canvas;
