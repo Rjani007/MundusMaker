@@ -3,6 +3,7 @@ import { state, bus, visibleEntities, newEntity, saveEntity, scheduleSave, getEn
 import { api } from '../api.js';
 import { HANDOUT_KINDS, PAGE_SIZES, ROLES, initializeHandout, presentation } from '../handouts/handoutcore.js';
 import { prepareHandouts, drawHandoutPage, handoutPdf, handoutImages, zipImages } from '../handouts/output.js';
+import { openCardPicker } from './cardpicker.js';
 
 const field = (label, input) => { input.setAttribute('aria-label', label); return el('label', { class: 'handout-field' }, el('span', {}, label), input); };
 function select(options, value, onchange, label) {
@@ -68,7 +69,16 @@ export function render(container,id) {
         const draft=initializeHandout(newEntity(title.value.trim()||`Untitled ${def.label.toLowerCase()}`,'handout'),kind,uid);
         try{await saveEntity(draft);if(currentGm())location.hash=`#/handouts/${encodeURIComponent(draft.id)}`;}catch(err){toast(`Could not save: ${err.message}`);}finally{making=false;}
       }},el('span',{class:'handout-template-mark','aria-hidden':'true'},def.icon),el('strong',{},def.label),el('span',{class:'muted small'},def.description)));
-      page.append(el('div',{class:'handout-create'},el('h2',{},'Start with a template'),title,templates));
+      // One card opens in the designer; several join the packet, ready to export together.
+      const cardsMade=({cards,made})=>{
+        if(!currentGm()||!cards.length)return;
+        if(cards.length===1){location.hash=`#/handouts/${encodeURIComponent(cards[0].id)}`;return;}
+        for(const card of cards)if(!selected.includes(card.id))selected.push(card.id);
+        persistPacket();refresh();refreshPacket();
+        toast(`${made===1?'Made 1 card':`Made ${made} cards`}${cards.length>made?` and reused ${cards.length-made}`:''}. They are in your packet.`,4000);
+      };
+      page.append(el('div',{class:'handout-create'},el('h2',{},'Start with a template'),title,templates,
+        el('div',{class:'row handout-from-library'},el('button',{type:'button',onclick:()=>{if(currentGm())openCardPicker(cardsMade);}},'◇ Cards from the library…'),el('span',{class:'muted small'},'Items, spells and monsters from the SRD and your imported 5etools packs.'))));
     }
     // A packet can belong to a Session entry (1.9): an ordered list of handout
     // IDs in session.handoutPacket, so it survives navigation and reloads.

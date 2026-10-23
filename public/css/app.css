@@ -25,6 +25,7 @@
 .handout-create { padding:22px; border:1px solid var(--line); background:var(--bg2); border-radius:12px; margin-bottom:30px; }
 .handout-create h2 { margin-top:0; }.handout-create>input { width:min(100%,430px); margin-bottom:18px; }
 .handout-template-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:12px; }
+.handout-from-library { margin-top:16px; }
 .handout-template { display:flex; flex-direction:column; align-items:flex-start; text-align:left; gap:10px; background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:18px 14px; }
 .handout-template:hover { border-color:#c6b487; }.handout-template strong { font:17px Georgia,serif; color:#e4d7b5; }
 .handout-template-mark { display:grid; place-items:center; height:72px; width:58px; background:#ebe2c6; color:#7a6a4b; border:3px double #a69977; box-shadow:3px 4px 0 #15121a; font:32px Georgia; }
@@ -528,6 +529,9 @@ a.dice:hover { color: #ffd97a; text-decoration: none; }
 .hist-row:last-child { border-bottom: none; }
 /* "Use my own official sheet" (views/officialsheet.js) */
 .overlay .dialog.official-sheet { width: 760px; }
+/* Cards from the library (views/cardpicker.js) */
+.overlay .dialog.card-picker { width: 640px; }
+.card-picker-list { max-height: 46vh; }
 .official-fields { max-height: 46vh; overflow-y: auto; border-top: 1px solid var(--line); }
 .official-row { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.3fr) minmax(0, 1fr); gap: 8px; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--line); }
 .official-row select { width: 100%; }

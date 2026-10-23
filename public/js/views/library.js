@@ -4,56 +4,15 @@
 
 import { el, uid, toast } from '../util.js';
 import { state, types, newEntity, saveEntity, findByName } from '../state.js';
-import {
-  loadAllMonsters, invalidateLibraryCache, monsterToStat,
-  normalizeSpell, spellToEntity, normalizeItem, itemToEntity,
-} from '../importers.js';
+import { monsterToStat, spellToEntity, itemToEntity } from '../importers.js';
 import { crFromStat } from '../encounter.js';
 import { invalidateCreatorData } from '../sheets/dnd2024.js';
 import { api } from '../api.js';
-
-let spellsCache = null, itemsCache = null;
-
-async function loadSpells() {
-  if (spellsCache) return spellsCache;
-  const out = [];
-  try {
-    const res = await fetch('/srd52/spells.json');
-    if (res.ok) out.push(...(await res.json()).spells.map((s) => ({ ...normalizeSpell(s), _pack: 'SRD 5.2' })));
-  } catch { /* pack-only */ }
-  try {
-    for (const meta of await api.library()) {
-      if (!meta.kinds?.includes('spell')) continue;
-      const pack = await api.libraryPack(meta.id);
-      out.push(...(pack.spell || []).map((s) => ({ ...normalizeSpell(s), _pack: meta.name })));
-    }
-  } catch { /* no server library */ }
-  spellsCache = out;
-  return out;
-}
-
-async function loadItems() {
-  if (itemsCache) return itemsCache;
-  const out = [];
-  try {
-    const res = await fetch('/srd52/equipment.json');
-    if (res.ok) out.push(...(await res.json()).equipment.map((i) => ({ ...normalizeItem(i), _pack: 'SRD 5.2' })));
-  } catch { /* pack-only */ }
-  try {
-    for (const meta of await api.library()) {
-      if (!meta.kinds?.includes('item')) continue;
-      const pack = await api.libraryPack(meta.id);
-      out.push(...(pack.item || []).map((i) => ({ ...normalizeItem(i), _pack: meta.name })));
-    }
-  } catch { /* no server library */ }
-  itemsCache = out;
-  return out;
-}
+import { COMPENDIUM, searchCompendium, rowSummary, invalidateCompendium } from '../compendium.js';
+import { makeLibraryCards } from './cardpicker.js';
 
 function invalidateAll() {
-  spellsCache = null;
-  itemsCache = null;
-  invalidateLibraryCache();
+  invalidateCompendium();
   invalidateCreatorData(); // the wizard's merged class/species/spell lists
 }
 
@@ -63,7 +22,7 @@ export function render(container) {
     return;
   }
 
-  let tab = 'monsters';
+  let tab = 'monster';
   let query = '';
   let filter = '';
   let expanded = null;
@@ -77,7 +36,7 @@ export function render(container) {
   const countNote = el('span', { class: 'muted small' });
 
   const tabsRow = el('div', { class: 'tool-row' },
-    [['monsters', '🐉 Monsters'], ['spells', '✨ Spells'], ['items', '🗡 Items']].map(([key, label]) =>
+    Object.entries(COMPENDIUM).map(([key, { label }]) =>
       el('button', {
         class: tab === key ? 'on' : '',
         onclick: (ev) => {
@@ -94,19 +53,7 @@ export function render(container) {
       }, label)));
 
   function syncFilter() {
-    filterSel.innerHTML = '';
-    if (tab === 'spells') {
-      filterSel.append(el('option', { value: '' }, 'any level'),
-        ...Array.from({ length: 10 }, (_, i) => el('option', { value: String(i) }, i === 0 ? 'cantrips' : `level ${i}`)));
-    } else if (tab === 'monsters') {
-      filterSel.append(el('option', { value: '' }, 'any CR'),
-        ...['0', '1/8', '1/4', '1/2', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'].map((cr) => el('option', { value: cr }, `CR ${cr}`)));
-    } else {
-      filterSel.append(el('option', { value: '' }, 'all items'),
-        el('option', { value: 'weapon' }, 'weapons'),
-        el('option', { value: 'armor' }, 'armor & shields'),
-        el('option', { value: 'gear' }, 'gear'));
-    }
+    filterSel.replaceChildren(...COMPENDIUM[tab].filters.map(([value, label]) => el('option', { value }, label)));
   }
   syncFilter();
 
@@ -132,41 +79,26 @@ export function render(container) {
     toast(`Added ${it.name} to ${state.world.name}`);
   }
 
+  async function makeCard(row) {
+    try {
+      const { cards: [card], made } = await makeLibraryCards([{ kind: tab, row }]);
+      if (!card) return;
+      toast(made ? `Made a card for ${row.name}` : `${row.name} already has a card`, 5000,
+        { label: 'Open card', onAction: () => { location.hash = `#/handouts/${encodeURIComponent(card.id)}`; } });
+    } catch (err) {
+      toast(`Could not make the card: ${err.message}`, 5000);
+    }
+  }
+
   async function renderList() {
     listWrap.innerHTML = '';
     listWrap.append(el('div', { class: 'muted small', style: 'padding:8px' }, 'Loading…'));
-    let rows = [];
-    if (tab === 'monsters') {
-      const all = await loadAllMonsters();
-      rows = all.filter((m) => {
-        if (query && !m.name.toLowerCase().includes(query)) return false;
-        if (filter && String(typeof m.cr === 'object' ? m.cr?.cr : m.cr ?? '') !== filter) return false;
-        return true;
-      });
-    } else if (tab === 'spells') {
-      rows = (await loadSpells()).filter((s) => {
-        if (query && !s.name.toLowerCase().includes(query)) return false;
-        if (filter !== '' && String(s.level) !== filter) return false;
-        return true;
-      });
-    } else {
-      rows = (await loadItems()).filter((i) => {
-        if (query && !i.name.toLowerCase().includes(query)) return false;
-        if (filter === 'weapon' && !/weapon/.test(i.kind)) return false;
-        if (filter === 'armor' && !/armor|shield/.test(i.kind)) return false;
-        if (filter === 'gear' && /weapon|armor|shield/.test(i.kind)) return false;
-        return true;
-      });
-    }
-    countNote.textContent = `${rows.length} ${tab}`;
+    const rows = await searchCompendium(tab, query, filter);
+    countNote.textContent = `${rows.length} ${COMPENDIUM[tab].noun}`;
     listWrap.innerHTML = '';
     for (const row of rows.slice(0, 300)) {
       const name = row.name;
-      const sub = tab === 'monsters'
-        ? `CR ${typeof row.cr === 'object' ? row.cr?.cr : row.cr ?? '?'} · ${row._pack}`
-        : tab === 'spells'
-          ? `${row.level === 0 ? 'cantrip' : `L${row.level}`} ${row.school} · ${row._pack}`
-          : `${row.kind}${row.rarity ? ` · ${row.rarity}` : ''} · ${row._pack}`;
+      const sub = rowSummary(tab, row);
       const rowEl = el('div', { class: 'import-row', style: 'cursor:pointer;flex-wrap:wrap' },
         el('span', {}, name),
         el('span', { class: 'muted small' }, sub),
@@ -175,20 +107,24 @@ export function render(container) {
           class: 'ghost small',
           onclick: (ev) => {
             ev.stopPropagation();
-            if (tab === 'monsters') addMonster(row);
-            else if (tab === 'spells') addSpell(row);
+            if (tab === 'monster') addMonster(row);
+            else if (tab === 'spell') addSpell(row);
             else addItem(row);
           },
-        }, '+ Add to world'));
+        }, '+ Add to world'),
+        el('button', {
+          class: 'ghost small', title: 'Make a card handout to print or export as an image',
+          onclick: (ev) => { ev.stopPropagation(); makeCard(row); },
+        }, '◇ Card'));
       rowEl.addEventListener('click', () => {
         expanded = expanded === row ? null : row;
         renderList();
       });
       listWrap.append(rowEl);
       if (expanded === row) {
-        const detail = tab === 'spells'
+        const detail = tab === 'spell'
           ? [`${row.castingTime} · ${row.range} · ${row.duration}`, row.components ? `Components: ${row.components}` : '', row.text, row.higherLevel ? `At higher levels. ${row.higherLevel}` : ''].filter(Boolean).join('\n\n')
-          : tab === 'items'
+          : tab === 'item'
             ? [[row.cost, row.weight ? `${row.weight} lb.` : '', row.damage, row.ac ? `AC ${row.ac}` : '', row.attune].filter(Boolean).join(' · '), row.text].filter(Boolean).join('\n\n')
             : `${(row.size || []).join?.('/') || ''} — use “+ Add to world” for the full statblock.`;
         listWrap.append(el('div', {

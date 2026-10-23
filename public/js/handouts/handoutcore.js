@@ -22,7 +22,7 @@ export const HANDOUT_KINDS = {
 };
 
 export const PAGE_SIZES = { a4: [595.28, 841.89], letter: [612, 792], card: [198.43, 297.64], largecard: [283.46, 425.20] };
-export const ROLES = { title: 'Printed title', body: 'Body', heading: 'Chapter / heading', author: 'Author', sender: 'Sender', date: 'Date', recipient: 'Recipient', closing: 'Closing', signature: 'Signature', footer: 'Footer' };
+export const ROLES = { title: 'Printed title', body: 'Body', heading: 'Chapter / heading', author: 'Author', sender: 'Sender', date: 'Date', recipient: 'Recipient', closing: 'Closing', signature: 'Signature', footer: 'Footer', subtitle: 'Subtitle', credit: 'Credit line' };
 const bound = (n, low, high, fallback) => Number.isFinite(Number(n)) ? Math.min(high, Math.max(low, Number(n))) : fallback;
 export function presentation(entity) {
   const h = entity.handout || {}, kind = HANDOUT_KINDS[h.kind] ? h.kind : 'letter';

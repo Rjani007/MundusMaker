@@ -1,4 +1,4 @@
-import { PAGE_SIZES } from './handoutcore.js';
+import { PAGE_SIZES, projectHandout } from './handoutcore.js';
 import { slugify } from '../util.js';
 
 const MM = 72 / 25.4;
@@ -112,9 +112,9 @@ export function layoutHandout(model, measure, images = new Map()) {
     if (block.kind === 'image') { imageBlock(block.url, block.tall ? H * .62 : undefined); continue; }
     if (block.secret) { need(p.fontSize * 3); textOp('SECRET', margin, y + 8, 8, 'bold', 'left', 'sans', '#8e2525'); y += 15; }
     const role = block.role, heading = role === 'heading' || block.kind === 'heading';
-    const style = heading ? 'bold' : role === 'signature' || block.kind === 'quote' || role === 'author' ? 'italic' : 'normal';
-    const size = heading ? p.fontSize * 1.25 : role === 'signature' ? Math.min(22, p.fontSize * 1.6) : p.fontSize;
-    textBlock(block.text, { size, style, align: role === 'date' ? 'right' : p.kind === 'notice' || role === 'author' ? 'center' : 'left', gap: ['sender', 'date', 'closing'].includes(role) ? 3 : size * .7, keep: heading, drop: firstBody && role === 'body' && p.dropCap });
+    const style = heading ? 'bold' : role === 'signature' || block.kind === 'quote' || ['author', 'subtitle', 'credit'].includes(role) ? 'italic' : 'normal';
+    const size = heading ? p.fontSize * 1.25 : role === 'signature' ? Math.min(22, p.fontSize * 1.6) : role === 'credit' ? Math.max(6, p.fontSize * .75) : p.fontSize;
+    textBlock(block.text, { size, style, align: role === 'date' ? 'right' : p.kind === 'notice' || ['author', 'subtitle', 'credit'].includes(role) ? 'center' : 'left', gap: ['sender', 'date', 'closing'].includes(role) ? 3 : size * .7, keep: heading, drop: firstBody && role === 'body' && p.dropCap });
     if (role === 'body') firstBody = false;
   }
   if (model.image && p.kind === 'letter') imageBlock(model.image, 80, true);
@@ -123,6 +123,20 @@ export function layoutHandout(model, measure, images = new Map()) {
   });
   if(p.kind==='card'&&pages.length>1)warnings.push('This card continues into another slot. Shorten the text, use a larger card, or reduce type size to keep it on one card.');
   return { pages, warnings: [...new Set(warnings)], title: model.title, images };
+}
+
+// Smallest change first: smaller type on the standard card, then the large card.
+const CARD_FITS = [['card', 10], ['card', 9], ['card', 8], ['largecard', 10], ['largecard', 9], ['largecard', 8]];
+/** Sets entity.handout's card and type size to the first that keeps the
+ * player edition on one card. Returns false (left at the roomiest) when even
+ * that runs on, so the layout's continuation warning still shows. */
+export function fitCard(entity, measure, worldId) {
+  for (const [size, fontSize] of CARD_FITS) {
+    Object.assign(entity.handout, { size, fontSize });
+    const model = projectHandout(entity, { entities: new Map([[entity.id, entity]]), worldId });
+    if (layoutHandout(model, measure).pages.length === 1) return true;
+  }
+  return false;
 }
 
 /** Consecutive card pages share printable sheets. Mixed packets preserve their

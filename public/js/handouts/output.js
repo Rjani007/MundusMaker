@@ -67,11 +67,15 @@ function mapFragment(url, context) {
   return { width: sw, height: sh, canvas, dataUrl: canvas.toDataURL('image/png') };
 }
 
+const measureWith = doc => (text, font, style, size) => { doc.setFont(font, style); doc.setFontSize(size); return doc.getTextWidth(text); };
+/** The text measure layout uses, for sizing a handout before it is saved. */
+export async function handoutMeasure() { return measureWith(makePdf(await loadHandoutFonts())); }
+
 export async function prepareHandouts(entities, context, { signal, onProgress = () => {}, sheets = false, sheetSize = 'a4', inkSaving = false } = {}) {
   const fonts = await loadHandoutFonts(); abort(signal);
   const doc = makePdf(fonts), images = new Map(), pages = [], warnings = new Set();
   let unsupported = false;
-  const measure = (text, font, style, size) => { doc.setFont(font, style); doc.setFontSize(size); return doc.getTextWidth(text); };
+  const measure = measureWith(doc);
   function normalize(text, font) {
     doc.setFont(font, 'normal');
     const cmap = doc.getFont().metadata?.cmap?.unicode?.codeMap || {};

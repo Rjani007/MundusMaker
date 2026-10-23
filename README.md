@@ -118,7 +118,9 @@ seal, and choose which linked campaign material to include. Preview the player
 edition while keeping GM annotations secret. Export selectable-text PDFs or
 PNG images, one per page, individually or as an ordered packet. An item card
 exports as an image of just the card; in the PDF, cards can share A4 or US
-Letter sheets with cutting guides. Fonts and artwork stay local.
+Letter sheets with cutting guides. Cards from the library makes item, spell
+and monster cards straight from the SRD and your imported 5etools packs.
+Fonts and artwork stay local.
 
 New **maps** use the 1.8 generator: continental and island compositions,
 mountain ranges, drainage, terrain-aware provincial roads and parcel-based
