@@ -48,3 +48,27 @@ test('map fragments store a crop, and a hidden map never reaches players', async
   assert.match(player.warnings.join(' '), /hidden or missing/);
   assert.ok(projectHandout(frag, { entities, worldId: 'w', gm: true }).blocks.some((b) => b.kind === 'image'));
 });
+test('image exports keep a card at card size and name one file per page', async () => {
+  const { layoutHandout, pageImageNames, cardSheets } = await load('handouts/layout.js');
+  const { projectHandout, initializeHandout, PAGE_SIZES } = await load('handouts/handoutcore.js');
+  const measure = (s, font, style, size) => [...s].length * size * .55;
+  let n = 0;
+  const card = initializeHandout({ id: 'key', name: 'Brass key', blocks: [] }, 'card', () => String(++n));
+  const pages = layoutHandout(projectHandout(card, { worldId: 'w' }), measure).pages;
+  assert.equal(pages.length, 1);
+  assert.deepEqual([pages[0].width, pages[0].height], PAGE_SIZES.card, 'the image is the card, not a sheet');
+  assert.deepEqual([cardSheets(pages)[0].width, cardSheets(pages)[0].height], PAGE_SIZES.a4, 'sheets are the PDF layout');
+  assert.deepEqual(pageImageNames(pages), ['brass-key-players.png']);
+
+  const book = { id: 'book', name: 'Chronicle', type: 'handout', handout: { kind: 'book', cover: true }, blocks: [{ id: 't', kind: 'text', text: 'Words '.repeat(900) }] };
+  const bookPages = layoutHandout(projectHandout(book, { worldId: 'w', gm: true }), measure).pages;
+  assert.ok(bookPages.length > 1 && bookPages.every((p) => p.id === 'book'));
+  const twin = { ...pages[0], id: 'other-key' }, untitled = { ...pages[0], id: 'blank', title: '  ' };
+  const names = pageImageNames([...pages, ...bookPages, twin, untitled]);
+  assert.equal(names.length, bookPages.length + 3);
+  assert.equal(new Set(names).size, names.length, 'every file name is unique');
+  assert.equal(names[0], 'brass-key-players.png');
+  assert.equal(names[1], `chronicle-GM-p${'1'.padStart(String(bookPages.length).length, '0')}.png`);
+  assert.ok(names.slice(1, -2).every((name) => /^chronicle-GM-p\d+\.png$/.test(name)));
+  assert.deepEqual(names.slice(-2), ['brass-key-players-2.png', 'handout-players.png']);
+});

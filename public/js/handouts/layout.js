@@ -1,4 +1,5 @@
 import { PAGE_SIZES } from './handoutcore.js';
+import { slugify } from '../util.js';
 
 const MM = 72 / 25.4;
 const glyphs = text => typeof Intl?.Segmenter === 'function' ? [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)].map(v => v.segment) : [...text];
@@ -56,7 +57,7 @@ export function layoutHandout(model, measure, images = new Map()) {
   const textOp = (text, x, at, size, style = 'normal', align = 'left', font = p.font, color = p.ink) => page.ops.push({ kind: 'text', text, x, y: at, size, font, style, color, align });
   function newPage() {
     if (pages.length >= 250) throw Error('This handout exceeds 250 pages. Split it into separate entries before exporting.');
-    page = { width: W, height: H, ops: [], title: model.title, gm: model.gm };
+    page = { width: W, height: H, ops: [], title: model.title, gm: model.gm, id: model.id };
     pages.push(page); decorate(page, model, pages.length); y = margin + (model.gm ? 7 : 0);
   }
   const need = height => { if (y + height > bottom && y > margin + 20) newPage(); };
@@ -146,4 +147,23 @@ export function cardSheets(pages, size = 'a4') {
     }
   }
   return result;
+}
+
+/** One file name per page for image exports: the handout's printed title and
+ * edition, numbered only when that handout runs to several pages, and unique
+ * across a packet (two handouts may share a title). */
+export function pageImageNames(pages) {
+  const runs = [], taken = new Set();
+  for (const page of pages) {
+    const last = runs[runs.length - 1];
+    if (last && page.id != null && last.id === page.id) last.count++; else runs.push({ id: page.id, page, count: 1 });
+  }
+  return runs.flatMap(({ page, count }) => {
+    const stem = `${String(page.title || '').trim() ? slugify(page.title) : 'handout'}-${page.gm ? 'GM' : 'players'}`;
+    let base = stem;
+    for (let n = 2; taken.has(base); n++) base = `${stem}-${n}`;
+    taken.add(base);
+    const width = String(count).length;
+    return Array.from({ length: count }, (_, i) => `${base}${count > 1 ? `-p${String(i + 1).padStart(width, '0')}` : ''}.png`);
+  });
 }

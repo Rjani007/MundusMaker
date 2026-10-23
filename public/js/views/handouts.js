@@ -2,7 +2,7 @@ import { el, uid, toast, slugify, downloadBlob, readSetting, writeSetting } from
 import { state, bus, visibleEntities, newEntity, saveEntity, scheduleSave, getEntity, requireSaved } from '../state.js';
 import { api } from '../api.js';
 import { HANDOUT_KINDS, PAGE_SIZES, ROLES, initializeHandout, presentation } from '../handouts/handoutcore.js';
-import { prepareHandouts, drawHandoutPage, handoutPdf, handoutImages } from '../handouts/output.js';
+import { prepareHandouts, drawHandoutPage, handoutPdf, handoutImages, zipImages } from '../handouts/output.js';
 
 const field = (label, input) => { input.setAttribute('aria-label', label); return el('label', { class: 'handout-field' }, el('span', {}, label), input); };
 function select(options, value, onchange, label) {
@@ -18,12 +18,15 @@ export function render(container,id) {
   const context=gm=>({worldId:wid,gm,entities:new Map([...state.entities].map(([id,e])=>[id,structuredClone(e)]))});
   const status=el('p',{class:'small muted',role:'status'}),cancel=el('button',{type:'button',hidden:true,onclick:()=>exportController?.abort()},'Cancel export');
   const edition=select({player:'Player edition',gm:'GM edition — includes secrets'},'player',()=>{});
-  const sheets=el('input',{type:'checkbox',checked:true,'aria-label':'Arrange cards on printable sheets'});
+  const sheets=el('input',{type:'checkbox',checked:true,'aria-label':'Arrange cards on printable sheets in the PDF'});
   const sheetSize=select({a4:'A4 sheets',letter:'US Letter sheets'},'a4',()=>{});
   const dpi=select({150:'150 DPI images',300:'300 DPI images'},'150',()=>{});
   const ink=el('input',{type:'checkbox','aria-label':'Ink-saving paper'});
+  // Several images download one after another. The phone app offers one file
+  // at a time, so there they always arrive as one ZIP.
+  const bundle=el('input',{type:'checkbox','aria-label':'Put several images in one ZIP'});
   function exportOptions(){return el('div',{class:'handout-export-options'},state.gm?field('Edition',edition):null,field('Print sheet',sheetSize),field('Image resolution',dpi),
-    el('label',{},sheets,' Arrange cards on sheets'),el('label',{},ink,' Ink-saving paper'));}
+    el('label',{},sheets,' Arrange cards on sheets (PDF)'),el('label',{},ink,' Ink-saving paper'),window.mundusShell?null:el('label',{},bundle,' Several images in one ZIP'));}
   async function exportEntries(ids,format) {
     if(!current()||exportController)return;
     const gm=state.gm&&edition.value==='gm',entries=ids.map(getEntity).filter(e=>e&&(gm||!e.gmOnly));
@@ -32,15 +35,23 @@ export function render(container,id) {
     try {
       await requireSaved();if(!current())return;
       const frozen=entries.map(e=>structuredClone(e)),ctx=context(gm),snapshot=JSON.stringify([...state.entities]);
-      status.textContent='Preparing handouts…';
-      const prepared=await prepareHandouts(frozen,ctx,{signal:controller.signal,sheets:sheets.checked,sheetSize:sheetSize.value,inkSaving:ink.checked,onProgress:p=>{status.textContent=`Preparing ${Math.round(p*100)}%`;}});
+      status.textContent='Preparing handouts…';const pdf=format==='pdf';
+      // Card sheets are a print layout. Images keep every page at its own size,
+      // so an item card exports as the card alone, not a mostly blank sheet.
+      const prepared=await prepareHandouts(frozen,ctx,{signal:controller.signal,sheets:pdf&&sheets.checked,sheetSize:sheetSize.value,inkSaving:ink.checked,onProgress:p=>{status.textContent=`Preparing ${Math.round(p*100)}%`;}});
       if(!current()||gm&&!state.gm||controller.signal.aborted)return;
       const options={signal:controller.signal,dpi:Number(dpi.value),onProgress:p=>{status.textContent=`Exporting ${Math.round(p*100)}%`;}};
-      const blob=format==='pdf'?new Blob([await handoutPdf(prepared,options)],{type:'application/pdf'}):await handoutImages(prepared,options);
+      const base=`${ids.length===1?slugify(entries[0].name):'handout-packet'}-${gm?'GM':'players'}`;
+      let files=pdf?[{name:`${base}.pdf`,blob:new Blob([await handoutPdf(prepared,options)],{type:'application/pdf'})}]:await handoutImages(prepared,options);
+      const zipped=!pdf&&files.length>1&&(bundle.checked||!!window.mundusShell);
+      if(zipped)files=[{name:`${base}.zip`,blob:await zipImages(files)}];
       if(!current()||controller.signal.aborted||gm&&!state.gm)return;
       if(snapshot!==JSON.stringify([...state.entities]))throw Error('Content changed during export. Export again to use its current visibility and text.');
-      const name=`${ids.length===1?slugify(entries[0].name):'handout-packet'}-${gm?'GM':'players'}.${format==='pdf'?'pdf':'zip'}`;
-      downloadBlob(blob,name);status.textContent=`Downloaded ${prepared.pages.length} ${prepared.pages.length===1?'page':'pages'}. ${prepared.warnings.join(' ')}`;
+      let sent=0;
+      for(const file of files){if(sent)await new Promise(resolve=>setTimeout(resolve,350));if(controller.signal.aborted||gm&&!state.gm)break;downloadBlob(file.blob,file.name);sent++;}
+      if(sent<files.length){if(current())status.textContent=`Stopped after ${sent} of ${files.length} images.`;return;}
+      const n=prepared.pages.length,count=`${n} ${pdf?(n===1?'page':'pages'):(n===1?'image':'images')}`;
+      status.textContent=`Downloaded ${zipped?`a ZIP of ${count}`:count}.${!pdf&&!zipped&&n>1?' If your browser asks, allow this page to download several files.':''} ${prepared.warnings.join(' ')}`;
     } catch(err){if(current())status.textContent=err.name==='AbortError'?'Export cancelled.':`Could not export: ${err.message}`;}
     finally{if(exportController===controller)exportController=null;cancel.hidden=true;}
   }
@@ -74,7 +85,7 @@ export function render(container,id) {
       selected.forEach((id,i)=>{const e=getEntity(id);if(!e||(!state.gm&&e.gmOnly))return;const move=delta=>{const j=i+delta;if(j<0||j>=selected.length)return;[selected[i],selected[j]]=[selected[j],selected[i]];persistPacket();refreshPacket();};
         packet.append(el('div',{class:'handout-packet-row'},el('span',{},`${i+1}. ${e.name}`),el('button',{type:'button',class:'ghost small',disabled:i===0,'aria-label':`Move ${e.name} earlier`,onclick:()=>move(-1)},'↑'),el('button',{type:'button',class:'ghost small',disabled:i===selected.length-1,'aria-label':`Move ${e.name} later`,onclick:()=>move(1)},'↓')));
       });
-      packet.append(exportOptions(),el('div',{class:'row'},el('button',{class:'primary',disabled:!selected.length,onclick:()=>exportEntries([...selected],'pdf')},'Export packet PDF'),el('button',{disabled:!selected.length,onclick:()=>exportEntries([...selected],'png')},'Page images ZIP'),cancel),status);
+      packet.append(exportOptions(),el('div',{class:'row'},el('button',{class:'primary',disabled:!selected.length,onclick:()=>exportEntries([...selected],'pdf')},'Export packet PDF'),el('button',{disabled:!selected.length,onclick:()=>exportEntries([...selected],'png')},'Export packet images'),cancel),status);
     }
     function refresh(){
       if(!current())return;const entries=visibleEntities().filter(e=>(e.handout||e.type==='handout')&&e.name.toLowerCase().includes(search.value.toLowerCase())).sort((a,b)=>a.name.localeCompare(b.name));cards.replaceChildren();
@@ -158,7 +169,7 @@ export function render(container,id) {
     refreshWriting();editor.append(writing);
   }
   preview.append(el('div',{class:'handout-preview-head'},el('h2',{},'Print preview'),editable?select({player:'As players see it',gm:'GM edition'},'player',v=>{previewEdition=v;queuePreview();}):el('span',{class:'muted small'},'Player edition')),warnings,pageView,pagination,
-    el('details',{class:'card handout-export',open:true},el('summary',{},'Share this handout'),exportOptions(),el('div',{class:'row'},el('button',{class:'primary',onclick:()=>exportEntries([id],'pdf')},'Export PDF'),el('button',{onclick:()=>exportEntries([id],'png')},'Page images ZIP'),cancel),status),
+    el('details',{class:'card handout-export',open:true},el('summary',{},'Share this handout'),exportOptions(),el('div',{class:'row'},el('button',{class:'primary',onclick:()=>exportEntries([id],'pdf')},'Export PDF'),el('button',{onclick:()=>exportEntries([id],'png')},'Export image'),cancel),status),
     el('p',{class:'muted small'},'Preview, PDF and images use the same page layout. PDF text stays selectable.'));
   page.append(el('div',{class:`handout-designer${editable?'':' preview-only'}`},editable?editor:null,preview));
   let sourceSnapshot='';changed=()=>{const h=entity.handout||{},snapshot=JSON.stringify(getEntity(h.sourceId));if(sourceSnapshot!==snapshot){sourceSnapshot=snapshot;queuePreview();}};bus.addEventListener('change',changed);

@@ -1,5 +1,5 @@
 import { projectHandout } from './handoutcore.js';
-import { layoutHandout, cardSheets } from './layout.js';
+import { layoutHandout, cardSheets, pageImageNames } from './layout.js';
 import { MAP_KINDS, renderMap, hiddenOverlayLinkIds } from '../maps/mapcore.js';
 import { makeRng } from '../util.js';
 
@@ -163,13 +163,20 @@ export async function zipFilesCompressed(files) {
   return new Blob([...parts, ...central, end], { type: 'application/zip' });
 }
 
+// One PNG per page, each the size of its own page: prepare without card sheets
+// and an item card comes out as just the card. The caller downloads the files
+// one by one or bundles them with zipImages.
 export async function handoutImages(prepared, { dpi = 150, signal, onProgress = () => {} } = {}) {
-  const files = [];
+  const files = [], names = pageImageNames(prepared.pages);
   for (const [i, page] of prepared.pages.entries()) {
     abort(signal); const canvas = drawHandoutPage(page, prepared.images, Math.max(72, Math.min(300, dpi)) / 72);
     const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png')); if (!blob) throw Error('The browser could not render this page. Try a lower resolution.');
-    files.push([`page-${String(i + 1).padStart(3, '0')}${page.gm ? '-GM' : ''}.png`, new Uint8Array(await blob.arrayBuffer())]); canvas.width = canvas.height = 1;
+    files.push({ name: names[i], blob }); canvas.width = canvas.height = 1;
     onProgress((i + 1) / prepared.pages.length); await breathe();
   }
-  abort(signal); return zipFiles(files);
+  abort(signal); return files;
+}
+
+export async function zipImages(files) {
+  return zipFiles(await Promise.all(files.map(async f => [f.name, new Uint8Array(await f.blob.arrayBuffer())])));
 }
