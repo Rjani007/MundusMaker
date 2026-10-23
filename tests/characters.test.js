@@ -52,6 +52,19 @@ test('starting equipment chooses one option, carries quantities and gold, and de
   assert.equal(sword.bonus, 5); assert.equal(sword.damage, '1d8+3 slashing');
 });
 
+test('SRD equipment: only the Shield is a shield, and armor carries its weight class', async () => {
+  const r = await rules, find = n => library.equipment.find(e => e.name === n);
+  assert.deepEqual(library.equipment.filter(e => /shield/i.test(e.category)).map(e => e.name), ['Shield']);
+  for (const focus of ['Crystal', 'Orb', 'Rod', 'Wand']) assert.equal(find(focus).category, 'gear', focus);
+  const weights = { light: ['Padded Armor', 'Leather Armor', 'Studded Leather Armor'], medium: ['Hide Armor', 'Chain Shirt', 'Scale Mail', 'Breastplate', 'Half Plate Armor'], heavy: ['Ring Mail', 'Chain Mail', 'Splint Armor', 'Plate Armor'] };
+  for (const [weight, names] of Object.entries(weights)) for (const n of names) assert.equal(find(n).category, `${weight} armor`, n);
+  assert.equal(library.equipment.filter(e => /armor/.test(e.category)).length, 12);
+  // The weight class alone sets the Dex cap, so renamed armor still adds the right amount.
+  const abs = { str: 10, dex: 18, con: 10, int: 10, wis: 10, cha: 10 };
+  assert.equal(r.armorClass(abs, klass('Fighter'), { ...find('Breastplate'), name: 'Dwarven cuirass' }), 16);
+  assert.equal(r.armorClass(abs, klass('Fighter'), { ...find('Plate Armor'), name: 'Old plate' }), 18);
+});
+
 test('all SRD classes have bounded level 1-20 progression and correct full/half/pact slots', async () => {
   const { spellProgression } = await rules;
   assert.equal(progression.classes.length, 12); assert.match(progression._meta.license, /Creative Commons/);

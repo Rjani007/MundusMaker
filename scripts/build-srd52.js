@@ -225,9 +225,15 @@ async function buildEquipment() {
     properties: (it.property || []).map((p) => String(typeof p === 'string' ? p : p?.uid || '').split('|')[0]).filter(Boolean),
     mastery: (it.mastery || []).map((m) => String(m).split('|')[0]),
   });
-  const cat = (it) => it.weaponCategory ? `${it.weaponCategory} weapon`
-    : it.armor ? `${({ 'L': 'light', 'M': 'medium', 'H': 'heavy' })[it.type?.split('|')[0]] || ''} armor`.trim()
-    : it.type?.startsWith('S') ? 'shield' : 'gear';
+  // Compare the whole type code: 'SCF' (spellcasting focus) also starts with
+  // 'S', and armor weights are 'LA'/'MA'/'HA', not 'L'/'M'/'H'.
+  const cat = (it) => {
+    const type = String(it.type || '').split('|')[0];
+    if (it.weaponCategory) return `${it.weaponCategory} weapon`;
+    if (type === 'S') return 'shield';
+    if (it.armor) return `${({ LA: 'light', MA: 'medium', HA: 'heavy' })[type] || ''} armor`.trim();
+    return 'gear';
+  };
   const base = (baseData.baseitem || []).filter((i) => i.srd52 && !i._copy).map(bySrdName).map((i) => conv(i, cat(i)));
   const items = (itemData.item || []).filter((i) => i.srd52 && !i._copy && !i.wondrous && !/^\+\d/.test(i.name)).map(bySrdName)
     .map((i) => conv(i, 'gear'));
