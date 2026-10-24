@@ -224,7 +224,7 @@ test('state-changing routes refuse cross-site, rebinding and non-JSON requests; 
   assert.equal(JSON.parse(result.text).migrated.length, 1);
 });
 
-test('uploads accept raster images only, and assets are never served as active content', { timeout: 30000 }, async (t) => {
+test('uploads accept raster images only, assets are never served as active content, and no other site may frame the app', { timeout: 30000 }, async (t) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mundusmaker-guard-'));
   const data = path.join(tmp, 'data');
   const port = await freePort();
@@ -304,4 +304,14 @@ test('uploads accept raster images only, and assets are never served as active c
   }
   assert.deepEqual(fs.readdirSync(path.join(data, 'worlds', WID, 'exports')).sort(),
     ['campaign.pdf', 'crypt-map-player.uvtt', 'harbor-map-gm.png', 'world-player-wiki.zip']);
+
+  // A framed copy of the app makes same-origin requests, which the guard lets
+  // through, so another page could overlay it and borrow the GM's clicks.
+  const framed = { 'Sec-Fetch-Site': 'cross-site', 'Sec-Fetch-Dest': 'iframe', 'Sec-Fetch-Mode': 'navigate' };
+  for (const url of ['/', '/index.html']) {
+    const served = await send(port, { url, headers: framed });
+    assert.equal(served.status, 200, url);
+    assert.equal(served.headers['x-frame-options'], 'DENY', url);
+    assert.match(served.headers['content-security-policy'] || '', /frame-ancestors 'none'/, url);
+  }
 });

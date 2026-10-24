@@ -405,7 +405,7 @@ export function html(data) {
   const abilityTiles = ABILITIES.map((a) => {
     const m = mod(d.abilities[a]);
     return `<div class="sb-ab"><div class="ab-n">${a.toUpperCase()}</div>` +
-      `<div class="ab-v">${d.abilities[a] ?? 10}</div>` +
+      `<div class="ab-v">${esc(d.abilities[a] ?? 10)}</div>` +
       `<div class="ab-m">${rollBtn({ kind: 'check', mod: m, label: `${ABILITY_NAMES[a]} check` }, fmtMod(m), 'Roll — Shift for advantage, Ctrl for disadvantage')}</div></div>`;
   }).join('');
 
@@ -419,7 +419,7 @@ export function html(data) {
     const entry = (d.skills || []).find((s) => s.key === name);
     const bonus = skillBonus(d, name, pb);
     const mark = entry ? (entry.prof === 'expert' ? '◉' : '●') : '○';
-    return `<div class="sheet-skill">${mark} ${rollBtn({ kind: 'check', mod: bonus, label: name }, `${esc(name)} ${fmtMod(bonus)}`, 'Roll — Shift/Ctrl for adv/dis')} <span class="muted">(${a.toUpperCase()})</span></div>`;
+    return `<div class="sheet-skill">${mark} ${rollBtn({ kind: 'check', mod: bonus, label: name }, `${name} ${fmtMod(bonus)}`, 'Roll — Shift/Ctrl for adv/dis')} <span class="muted">(${a.toUpperCase()})</span></div>`;
   }).join('');
 
   const toHit = (atk) => { const b = attackBonus(atk); return b == null ? esc(atk.bonus) : rollBtn({ kind: 'check', mod: b, label: `${atk.name} attack` }, `${fmtMod(b)} to hit`, 'Attack roll — Shift/Ctrl adv/dis'); };
@@ -436,7 +436,7 @@ export function html(data) {
       .map(([lvl, s]) => kvHtml(`Level ${lvl} slots`, boxesHtml(s.max, s.used || 0, `spellcasting.slots.${lvl}.used`, `Level ${lvl} spell slots`)))
       .join('');
     spellsHtml = sectionHtml('Spellcasting',
-      kvHtml('Ability', `${(sc.ability || '').toUpperCase()} · save DC ${sc.dc ?? '—'} · ${rollBtn({ kind: 'check', mod: sc.attackBonus || 0, label: 'Spell attack' }, `${fmtMod(sc.attackBonus || 0)} to hit`, 'Spell attack roll')}`) +
+      kvHtml('Ability', `${esc((sc.ability || '').toUpperCase())} · save DC ${esc(sc.dc ?? '—')} ·${rollBtn({ kind: 'check', mod: sc.attackBonus || 0, label: 'Spell attack' }, `${fmtMod(sc.attackBonus || 0)} to hit`, 'Spell attack roll')}`) +
       slotRows +
       ((sc.cantrips || []).length ? kvHtml('Cantrips', esc(sc.cantrips.join(', '))) : '') +
       ((sc.prepared || []).length ? kvHtml('Prepared', esc(sc.prepared.join(', '))) : ''));
@@ -447,7 +447,7 @@ export function html(data) {
   const features = (d.features || []).map((f) =>
     `<div class="sheet-feature"><strong>${esc(f.name)}</strong>${f.source ? ` <span class="muted small">(${esc(f.source)})</span>` : ''}<div class="sheet-feature-text">${esc(f.text || '').replace(/\n/g, '<br>')}</div></div>`).join('');
 
-  const equipment = (d.equipment || []).map((e) => `${esc(e.name)}${e.qty > 1 ? ` ×${e.qty}` : ''}`).join(', ');
+  const equipment = (d.equipment || []).map((e) => `${esc(e.name)}${e.qty > 1 ? ` ×${esc(e.qty)}` : ''}`).join(', ');
   const initiative = fmtMod(mod(d.abilities.dex) + (d.initiativeBonus || 0));
 
   return `<div class="sheet sheet-dnd">
@@ -457,20 +457,20 @@ export function html(data) {
     </div>
     <div class="sb-abilities">${abilityTiles}</div>
     ${sectionHtml('Combat',
-      kvHtml('AC', `${d.ac}`) + kvHtml('Initiative', rollBtn({ kind: 'check', mod: mod(d.abilities.dex) + (d.initiativeBonus || 0), label: 'Initiative' }, initiative, 'Roll initiative')) +
-      kvHtml('Speed', `${d.speed} ft.`) +
-      kvHtml('Hit points', `${d.hp.current} / ${d.hp.max}${d.hp.temp ? ` (+${d.hp.temp} temp)` : ''}`) +
-      kvHtml('Hit dice', `${boxesHtml(d.klass.level, d.hitDice.spent || 0, 'hitDice.spent', 'Hit dice spent')} d${d.klass.hitDie}`) +
+      kvHtml('AC', esc(d.ac)) + kvHtml('Initiative', rollBtn({ kind: 'check', mod: mod(d.abilities.dex) + (d.initiativeBonus || 0), label: 'Initiative' }, initiative, 'Roll initiative')) +
+      kvHtml('Speed', `${esc(d.speed)} ft.`) +
+      kvHtml('Hit points', `${esc(d.hp.current)} / ${esc(d.hp.max)}${d.hp.temp ? ` (+${esc(d.hp.temp)} temp)` : ''}`) +
+      kvHtml('Hit dice', `${boxesHtml(d.klass.level, d.hitDice.spent || 0, 'hitDice.spent', 'Hit dice spent')} d${esc(d.klass.hitDie)}`) +
       kvHtml('Death saves', `${boxesHtml(3, d.deathSaves?.success || 0, 'deathSaves.success', 'Death save successes')} successes · ${boxesHtml(3, d.deathSaves?.failure || 0, 'deathSaves.failure', 'Death save failures')} failures`) +
       kvHtml('Proficiency', fmtMod(pb)))}
     ${sectionHtml('Saving throws', `<div class="sheet-pills">${saveRow}</div>`)}
     ${sectionHtml('Skills', `<div class="sheet-skills">${skillRows}</div>` + kvHtml('Passive Perception', String(passivePerception(d, pb))))}
     ${sectionHtml('Attacks', attacks)}
     ${spellsHtml}
-    ${d.innateSpells?.length ? sectionHtml('Species & feat spells', d.innateSpells.map(s => kvHtml(esc(s.name), `${esc(s.source)} · ${esc((s.ability || '').toUpperCase())}${s.uses ? ` · ${s.uses}/Long Rest` : ''}`)).join('')) : ''}
+    ${d.innateSpells?.length ? sectionHtml('Species & feat spells', d.innateSpells.map(s => kvHtml(s.name, `${esc(s.source)} · ${esc((s.ability || '').toUpperCase())}${s.uses ? ` · ${esc(s.uses)}/Long Rest` : ''}`)).join('')) : ''}
     ${d.languages?.length ? sectionHtml('Languages & proficiencies', kvHtml('Languages', esc(d.languages.join(', '))) + kvHtml('Training', esc([...(d.proficiencies?.armor || []), ...(d.proficiencies?.weapons || []), ...(d.proficiencies?.tools || [])].join(', ')))) : ''}
     ${features ? sectionHtml('Features & traits', features) : ''}
-    ${equipment ? sectionHtml('Equipment', `<div class="small">${equipment}</div>` + kvHtml('Coins', `${d.coins.gp || 0} gp, ${d.coins.sp || 0} sp, ${d.coins.cp || 0} cp`)) : ''}
+    ${equipment ? sectionHtml('Equipment', `<div class="small">${equipment}</div>` + kvHtml('Coins', `${esc(d.coins.gp || 0)} gp, ${esc(d.coins.sp || 0)} sp, ${esc(d.coins.cp || 0)} cp`)) : ''}
     ${Object.values(d.personality || {}).some(Boolean) ? sectionHtml('Personality',
       ['traits', 'ideals', 'bonds', 'flaws'].filter((k) => d.personality[k]).map((k) => kvHtml(k[0].toUpperCase() + k.slice(1), esc(d.personality[k]))).join('')) : ''}
     ${d.notes ? sectionHtml('Notes', `<div class="small">${esc(d.notes).replace(/\n/g, '<br>')}</div>`) : ''}

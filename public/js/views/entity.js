@@ -677,7 +677,7 @@ export function render(container, id) {
       ${c.rows.length ? `<table>${rows}</table>` : '<div class="muted small">Click to add monsters.</div>'}
       <div class="enc-summary">
         <span><b>${c.totalXp.toLocaleString()}</b> XP (×${c.multiplier} = <b>${c.adjustedXp.toLocaleString()}</b> adjusted)</span>
-        <span>party of ${enc.partySize} · level ${enc.partyLevel}</span>
+        <span>party of ${esc(enc.partySize)} · level ${esc(enc.partyLevel)}</span>
         <span>easy ${c.party.easy.toLocaleString()} · medium ${c.party.medium.toLocaleString()} · hard ${c.party.hard.toLocaleString()} · deadly ${c.party.deadly.toLocaleString()}</span>
       </div>
     </div>`;

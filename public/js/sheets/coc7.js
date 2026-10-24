@@ -128,7 +128,7 @@ export function html(data) {
 
   const skills = (d.skills || []).slice().sort((a, b) => a.name.localeCompare(b.name));
   const skillRows = skills.map((s) =>
-    `<div class="sheet-skill">${s.occupational ? '●' : '○'}${s.improve ? ' <span title="Marked for a development check">✓</span>' : ''} ${rollBtn({ kind: 'pct', target: s.value, label: s.name }, `${esc(s.name)} ${s.value}%`, 'Roll — Shift bonus die, Ctrl penalty die')} <span class="muted small">(${half(s.value)}/${fifth(s.value)})</span></div>`).join('');
+    `<div class="sheet-skill">${s.occupational ? '●' : '○'}${s.improve ? ' <span title="Marked for a development check">✓</span>' : ''} ${rollBtn({ kind: 'pct', target: s.value, label: s.name }, `${s.name} ${s.value}%`, 'Roll — Shift bonus die, Ctrl penalty die')} <span class="muted small">(${half(s.value)}/${fifth(s.value)})</span></div>`).join('');
 
   const weapons = (d.weapons || []).length
     ? d.weapons.map((w) => `<div class="sheet-kv"><span class="sk">${esc(w.name)}</span><span class="sv">` +
@@ -146,7 +146,7 @@ export function html(data) {
   const lastPhase = d.development?.log?.[d.development.log.length - 1];
   const development = lastPhase?.results?.map((result) => result.skipped
     ? `${esc(result.name)}: skipped`
-    : `${esc(result.name)}: ${result.roll} vs ${result.before}${result.improved ? ` · +${result.gain} → ${result.after}` : ' · no increase'}`).join('<br>');
+    : `${esc(result.name)}: ${esc(result.roll)} vs ${esc(result.before)}${result.improved ? ` · +${esc(result.gain)} → ${esc(result.after)}` : ' · no increase'}`).join('<br>');
 
   return `<div class="sheet sheet-coc">
     <div class="sheet-head">
@@ -154,12 +154,12 @@ export function html(data) {
     </div>
     <div class="sb-abilities">${charTiles}</div>
     ${sectionHtml('Derived',
-      kvHtml('Hit points', `${d.hp.current} / ${d.hp.max}`) +
-      kvHtml('Magic points', `${d.mp.current} / ${d.mp.max}`) +
+      kvHtml('Hit points', `${esc(d.hp.current)} / ${esc(d.hp.max)}`) +
+      kvHtml('Magic points', `${esc(d.mp.current)} / ${esc(d.mp.max)}`) +
       kvHtml('Luck', pct(d.luck, 'Luck roll')) +
-      kvHtml('Sanity', `${pct(d.san.current, 'Sanity roll')} <span class="muted small">(start ${d.san.start}, max ${d.san.max})</span>`) +
-      kvHtml('Damage bonus', `${esc(d.damageBonus)} · build ${d.build}`) +
-      kvHtml('Move', String(d.move)) +
+      kvHtml('Sanity', `${pct(d.san.current, 'Sanity roll')} <span class="muted small">(start ${esc(d.san.start)}, max ${esc(d.san.max)})</span>`) +
+      kvHtml('Damage bonus', `${esc(d.damageBonus)} · build ${esc(d.build)}`) +
+      kvHtml('Move', esc(String(d.move))) +
       kvHtml('Dodge', pct(d.dodge, 'Dodge')))}
     ${sectionHtml('Skills', `<div class="sheet-skills">${skillRows || '<span class="muted small">No skills recorded.</span>'}</div>`)}
     ${pending || development ? sectionHtml('Development',
