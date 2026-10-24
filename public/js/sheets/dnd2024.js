@@ -332,7 +332,7 @@ export const wizardData = loadCreatorData;
 // ---------- rules constants ----------
 
 export { ABILITIES, SKILLS, mod, profBonus, defaults } from './dndrules.js';
-import { ABILITIES, ABILITY_NAMES, SKILLS, mod, profBonus, defaults, fmtMod, passivePerception, skillBonus } from './dndrules.js';
+import { ABILITIES, ABILITY_NAMES, SKILLS, mod, profBonus, defaults, fmtMod, passivePerception, skillBonus, attackBonus } from './dndrules.js';
 
 /** Mutates a sheet by exactly one level and returns the applied changes. */
 export function advanceLevel(data, classData, { hpGain, addToCurrent = true } = {}) {
@@ -422,9 +422,10 @@ export function html(data) {
     return `<div class="sheet-skill">${mark} ${rollBtn({ kind: 'check', mod: bonus, label: name }, `${esc(name)} ${fmtMod(bonus)}`, 'Roll — Shift/Ctrl for adv/dis')} <span class="muted">(${a.toUpperCase()})</span></div>`;
   }).join('');
 
+  const toHit = (atk) => { const b = attackBonus(atk); return b == null ? esc(atk.bonus) : rollBtn({ kind: 'check', mod: b, label: `${atk.name} attack` }, `${fmtMod(b)} to hit`, 'Attack roll — Shift/Ctrl adv/dis'); };
   const attacks = (d.attacks || []).length
     ? d.attacks.map((atk) => `<div class="sheet-kv"><span class="sk">${esc(atk.name)}</span><span class="sv">` +
-        rollBtn({ kind: 'check', mod: atk.bonus || 0, label: `${atk.name} attack` }, `${fmtMod(atk.bonus || 0)} to hit`, 'Attack roll — Shift/Ctrl adv/dis') +
+        toHit(atk) +
         ` · ${linkDice(esc(atk.damage || ''))}${atk.notes ? ` <span class="muted">${esc(atk.notes)}</span>` : ''}</span></div>`).join('')
     : '<div class="muted small">No attacks recorded.</div>';
 
@@ -616,7 +617,7 @@ export function writePdf(w, data) {
       return `${n} ${fmtMod(mod(d.abilities[a]) + pb * (entry.prof === 'expert' ? 2 : 1))}`;
     }).join(', ')}`);
   }
-  for (const atk of d.attacks || []) w.line(`Attack: ${atk.name} ${fmtMod(atk.bonus || 0)} to hit, ${atk.damage || ''} ${atk.notes || ''}`);
+  for (const atk of d.attacks || []) { const b = attackBonus(atk); w.line(`Attack: ${atk.name} ${b == null ? atk.bonus : `${fmtMod(b)} to hit`}, ${atk.damage || ''} ${atk.notes || ''}`); }
   if (d.spellcasting) {
     const sc = d.spellcasting;
     w.line(`Spellcasting (${(sc.ability || '').toUpperCase()}): DC ${sc.dc}, ${fmtMod(sc.attackBonus || 0)} to hit; slots ${Object.entries(sc.slots || {}).filter(([, s]) => s.max).map(([l, s]) => `L${l}: ${s.max}`).join(', ')}`);

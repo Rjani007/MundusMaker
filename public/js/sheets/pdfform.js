@@ -486,7 +486,8 @@ export async function readForm(doc) {
       let page = annotPage.get(wref.num);
       if (page == null && w.get('P') instanceof Ref) page = pages.findIndex((p) => p.ref instanceof Ref && p.ref.num === w.get('P').num);
       const mk = await doc.resolve(w.get('MK'));
-      widgets.push({ ref: wref, rect: [Math.min(rect[0], rect[2]), Math.min(rect[1], rect[3]), Math.max(rect[0], rect[2]), Math.max(rect[1], rect[3])], page: page ?? -1, onStates, rotate: isDict(mk) ? Number(mk.get('R') || 0) : 0 });
+      // `state` is the widget's own /AS: some producers tick a box there and leave the field's /V unset
+      widgets.push({ ref: wref, rect: [Math.min(rect[0], rect[2]), Math.min(rect[1], rect[3]), Math.max(rect[0], rect[2]), Math.max(rect[1], rect[3])], page: page ?? -1, onStates, rotate: isDict(mk) ? Number(mk.get('R') || 0) : 0, state: nameOf(await doc.resolve(w.get('AS'))) });
     }
     const ft = nameOf(own.FT), ff = Number(own.Ff || 0);
     const type = ft === 'Tx' ? 'text' : ft === 'Ch' ? 'choice' : ft === 'Sig' ? 'signature'
@@ -502,10 +503,25 @@ export async function readForm(doc) {
     });
   };
   for (const f of (await doc.resolve(acro?.get('Fields'))) || []) await walk(f, '', {}, 0);
+  // Some producers (D&D Beyond's PDFsharp export) put complete fields on the
+  // pages as widget annotations and never list them in an AcroForm, which
+  // viewers still show. Read those from the top of each one's /Parent chain.
+  const listed = fields.length;
+  for (const p of pages) {
+    for (const a of (await doc.resolve(p.node.get('Annots'))) || []) {
+      if (!(a instanceof Ref) || seen.has(a.num)) continue;
+      const w = await doc.resolve(a);
+      if (!isDict(w) || nameOf(w.get('Subtype')) !== 'Widget') continue;
+      let top = a;
+      for (let depth = 0, node = w; node.get('Parent') instanceof Ref && depth < 32; depth++) { top = node.get('Parent'); node = await doc.resolve(top); if (!isDict(node)) break; }
+      await walk(top, '', {}, 0);
+    }
+  }
   return {
     fields,
     pages: pages.map((p) => { const b = p.box.map(Number); return { width: b[2] - b[0], height: b[3] - b[1] }; }),
-    hasForm: !!acro,
+    hasForm: !!acro || fields.length > listed,
+    unlisted: fields.length - listed,
     xfa: !!acro?.get('XFA'),
   };
 }

@@ -13,6 +13,9 @@ import {
 } from '../importers.js';
 import { crFromStat } from '../encounter.js';
 import { api } from '../api.js';
+import { readPdf, readForm } from '../sheets/pdfform.js';
+import { characterFromForm } from '../sheets/dndpdfimport.js';
+import { SHEET_SYSTEMS } from '../sheets/sheetcore.js';
 
 const IMG_EXT = /\.(png|jpe?g|webp|gif|svg)$/i;
 
@@ -316,8 +319,88 @@ function foundryImporter() {
   };
 }
 
+// ---------- D&D character sheet PDF (D&D Beyond export) ----------
+
+function dndPdfImporter() {
+  let staged = null; // { result, nameInput, gmOnly }
+  const bullets = (items) => el('ul', { class: 'small', style: 'margin:4px 0 8px;padding-left:20px' }, items.map((t) => el('li', {}, t)));
+  return {
+    id: 'dnd-pdf',
+    title: 'D&D character sheet PDF (D&D Beyond)',
+    desc: () => el('p', { class: 'muted small' },
+      'Pick the PDF that D&D Beyond’s “Export to PDF” makes, or any filled-in fillable 5e character sheet. ',
+      'It becomes one character with a playable D&D 2024 sheet, filled from the PDF’s form fields. ',
+      'You see what comes across before anything is saved. The PDF itself is read here in your browser and not kept.'),
+    pick: { kind: 'file', accept: '.pdf,application/pdf' },
+    typeDefault: 'character',
+    async stage(files) {
+      staged = null;
+      let form;
+      try {
+        form = await readForm(await readPdf(new Uint8Array(await files[0].arrayBuffer())));
+      } catch (err) {
+        if (/encryption/i.test(err.message)) return { summary: 'This PDF is protected with encryption, so MundusMaker can’t read its fields. Export the character again without a password and pick that copy.', ready: false };
+        return { summary: `MundusMaker couldn’t read this PDF: ${err.message}`, ready: false };
+      }
+      const filled = form.fields.filter((f) => (f.type === 'text' || f.type === 'choice') && String(f.value || '').trim());
+      if (!form.fields.length) {
+        return { summary: 'This PDF has no form fields to read. Printing to PDF, flattening or scanning turns a character sheet’s fields into plain page content, which MundusMaker can’t sort into a sheet. Export the character from D&D Beyond again with “Export to PDF”, and pick that file without printing or re-saving it.', ready: false };
+      }
+      if (!filled.length) return { summary: 'This PDF has fillable fields, but they are all empty. Pick the copy with your character filled in.', ready: false };
+      let classes = [];
+      try { classes = (await SHEET_SYSTEMS.dnd2024.loadData()).classes; } catch { /* hit dice then come only from the PDF */ }
+      const result = characterFromForm(form, { classes });
+      const { report } = result;
+      const nameInput = el('input', { value: result.name, placeholder: 'Character name', style: 'flex:1;min-width:min(14em,100%)' });
+      const clash = el('div', { class: 'small', style: 'margin-top:4px' });
+      const checkName = () => {
+        const name = nameInput.value.trim();
+        clash.textContent = !name ? 'The sheet has no character name. Type one before importing.'
+          : findByName(name) ? `An entry called “${name}” already exists. Import asks before making a second one.` : '';
+      };
+      nameInput.addEventListener('input', checkName);
+      checkName();
+      const gmOnly = el('input', { type: 'checkbox' });
+      staged = { result, nameInput, gmOnly };
+      return {
+        summary: `${report.layout ? `Read as ${report.layout}` : 'This layout isn’t one MundusMaker knows field by field, so its fields were matched by name'}: ${report.imported.length} part${report.imported.length === 1 ? '' : 's'} of the character found. Check them, then import.`,
+        preview: el('div', { class: 'notice', style: 'margin-top:10px' },
+          el('div', { class: 'row' }, el('label', { class: 'small' }, 'Name'), nameInput,
+            el('label', { class: 'small' }, gmOnly, '🔒 GM-only character')),
+          clash,
+          el('div', { class: 'small', style: 'margin-top:8px' }, el('strong', {}, 'Will be imported')),
+          bullets(report.imported),
+          report.warnings.length ? [el('div', { class: 'small' }, el('strong', {}, 'Worth checking')), bullets(report.warnings)] : null,
+          report.skipped.length ? [el('div', { class: 'small' }, el('strong', {}, 'Not on the sheet, or not readable')), bullets(report.skipped)] : null,
+          report.leftovers ? el('p', { class: 'muted small' }, `${report.leftovers} other filled-in field${report.leftovers === 1 ? '' : 's'} didn’t match anything on MundusMaker’s sheet; ${report.leftovers === 1 ? 'it goes' : 'they go'} into the sheet’s notes as written.`) : null),
+        ready: true,
+      };
+    },
+    async commit({ typeKey }) {
+      const { result, nameInput, gmOnly } = staged;
+      const name = nameInput.value.trim();
+      if (!name) { nameInput.focus(); return { keep: true, done: 'Type a name for the character first.' }; }
+      if (findByName(name) && !confirm(`An entry called “${name}” already exists.\n\nImport this character as a second entry with the same name? Cancel to change the name first.`)) {
+        nameInput.focus();
+        return { keep: true, done: 'Nothing was imported. Change the name, then press Import again.' };
+      }
+      const e = newEntity(name, typeKey);
+      e.gmOnly = gmOnly.checked;
+      e.fields = { ...e.fields, ...result.fields };
+      e.tags = [result.data.klass.name.toLowerCase()].filter(Boolean);
+      // what has no place on the sheet (D&D Beyond's actions) follows it as ordinary sections
+      const extra = result.blocks.flatMap((b) => [{ id: uid(), kind: 'heading', text: b.title, secret: false }, { id: uid(), kind: 'text', text: b.text, secret: false }]);
+      e.blocks = [{ id: uid(), kind: 'sheet', system: 'dnd2024', data: result.data, text: '', secret: false }, ...extra, ...e.blocks];
+      await saveEntity(e);
+      staged = null;
+      location.hash = `#/e/${e.id}`;
+      return { done: `Imported ${name}.` };
+    },
+  };
+}
+
 // Registry — stage() parses and previews, commit() writes entities.
-const IMPORTERS = [markdownImporter, csvImporter, worldAnvilImporter, foundryImporter];
+const IMPORTERS = [markdownImporter, csvImporter, worldAnvilImporter, foundryImporter, dndPdfImporter];
 
 // ---------- generic card over a registry entry ----------
 
@@ -357,6 +440,7 @@ function importerCard(spec) {
     try {
       const res = await spec.commit({ typeKey: typeSel.value, setStatus: (s) => { status.textContent = s; } });
       status.textContent = res.done;
+      if (res.keep) return; // nothing written; the preview stays for another try
       previewWrap.innerHTML = '';
       ready = false;
       input.value = '';
