@@ -1,6 +1,6 @@
 // Original, ink-friendly system layouts. All user text passes through the
 // caller's PDF sanitizer; every continuation repeats its secrecy banner.
-import { ABILITIES, ABILITY_NAMES, SKILLS, mod, fmtMod, profBonus, passivePerception, skillBonus } from './dndrules.js';
+import { ABILITIES, ABILITY_NAMES, SKILLS, mod, fmtMod, profBonus, passivePerception, skillBonus, attackBonus } from './dndrules.js';
 
 export function writeSystemSheet(doc, system, data, { name, gm = false, secret = false, safe, firstPage = false, footer = true }) {
   const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight();
@@ -116,14 +116,17 @@ export function writeSystemSheet(doc, system, data, { name, gm = false, secret =
     frame('Weapons & attacks', x2, 371, rightW, 150);
     text('ATTACK', x2 + 8, 407, 7, true, gray); text('HIT', x2 + rightW * .48, 407, 7, true, gray); text('DAMAGE / TYPE', x2 + rightW * .62, 407, 7, true, gray);
     const attacks = d.attacks || [];
+    // a save DC ("DC 15") prints as written, a bonus as "+5 to hit"
+    const hit = (a) => (attackBonus(a) == null ? String(a.bonus) : fmtMod(attackBonus(a)));
+    const toHit = (a) => (attackBonus(a) == null ? hit(a) : `${hit(a)} to hit`);
     for (const [i, a] of attacks.slice(0, 5).entries()) {
       const y = 427 + i * 18;
       const n = lines(a.name, rightW * .43, 8.5); text(n[0] || '', x2 + 8, y, 8.5);
-      text(fmtMod(a.bonus || 0), x2 + rightW * .48, y, 9, true);
+      text(hit(a), x2 + rightW * .48, y, 9, true);
       const damage = lines(a.damage || '', rightW * .36, 8.5); text(damage[0] || '', x2 + rightW * .62, y, 8.5);
-      if (n.length > 1 || damage.length > 1) continuations.push({ title: a.name, text: `${fmtMod(a.bonus || 0)} to hit; ${a.damage || ''}. ${a.notes || ''}` });
+      if (n.length > 1 || damage.length > 1) continuations.push({ title: a.name, text: `${toHit(a)}; ${a.damage || ''}. ${a.notes || ''}` });
     }
-    if (attacks.length > 5) continuations.push({ title: 'All attacks', text: attacks.map(a => `${a.name}: ${fmtMod(a.bonus || 0)} to hit, ${a.damage || ''}; ${a.notes || ''}`).join('\n') });
+    if (attacks.length > 5) continuations.push({ title: 'All attacks', text: attacks.map(a => `${a.name}: ${toHit(a)}, ${a.damage || ''}; ${a.notes || ''}`).join('\n') });
     box('Features & traits · descriptions follow', (d.features || []).map(f => f.name).join('\n') || ' ', x2, 533, rightW, 180, 9);
     const bottomH = H - 38 - 725;
     if (bottomH >= 44) box('Proficiencies & languages', `Proficiency bonus ${fmtMod(pb)} · ${d.languages?.join(', ') || 'Languages not recorded'}\n${[...(d.proficiencies?.armor || []), ...(d.proficiencies?.weapons || []), ...(d.proficiencies?.tools || [])].join(', ')}`, M, 725, CW, bottomH, 8.5);
@@ -131,7 +134,7 @@ export function writeSystemSheet(doc, system, data, { name, gm = false, secret =
     details('Equipment, personality & features', [
       { title: 'Identity', text: identity },
       { title: 'Equipment & treasure', text: (d.equipment || []).map(e => `${e.qty || 1} × ${e.name}`).join('\n') + `\n\nCoins: ${d.coins?.gp || 0} gp · ${d.coins?.sp || 0} sp · ${d.coins?.cp || 0} cp` },
-      { title: 'Weapons & attack notes', text: attacks.map(a => `${a.name}: ${fmtMod(a.bonus || 0)} to hit; ${a.damage || ''}${a.notes ? `\n${a.notes}` : ''}`).join('\n\n') },
+      { title: 'Weapons & attack notes', text: attacks.map(a => `${a.name}: ${toHit(a)};${a.damage || ''}${a.notes ? `\n${a.notes}` : ''}`).join('\n\n') },
       ...Object.entries(d.personality || {}).map(([title, text]) => ({ title: title[0].toUpperCase() + title.slice(1), text })),
       ...(d.features || []).map(f => ({ title: [f.name, f.source].filter(Boolean).join(' · '), text: f.text || 'Recorded on character sheet.' })),
       { title: 'Notes & backstory', text: d.notes },

@@ -17,6 +17,14 @@ export function passivePerception(d, pb) {
   return 10 + skillBonus(d, 'Perception', pb);
 }
 
+/** An attack's to-hit bonus as a number, or null when the sheet records a save DC or other text instead ("DC 15"). */
+export function attackBonus(a) {
+  if (typeof a?.bonus === 'number') return a.bonus;
+  const s = String(a?.bonus ?? '').trim().replace(/^\+/, '');
+  if (!s) return 0;
+  return /^-?\d+$/.test(s) ? Number(s) : null;
+}
+
 export function skillBonus(d, name, pb = profBonus(d.klass?.level)) {
   const ability = SKILLS.find(([n]) => n === name)?.[1];
   const entry = (d.skills || []).find(s => s.key === name);
