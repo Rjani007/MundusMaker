@@ -1673,7 +1673,13 @@ function serveStatic(req, res, pathname) {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
       return res.end('not found');
     }
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream' });
+    // No other page may frame the app: its own requests from inside a frame are
+    // same-origin, so the request guard alone can't stop a page from overlaying
+    // it and borrowing the GM's clicks. Nothing in the app frames itself.
+    res.writeHead(200, {
+      'Content-Type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream',
+      'X-Frame-Options': 'DENY', 'Content-Security-Policy': "frame-ancestors 'none'",
+    });
     res.end(buf);
   });
 }

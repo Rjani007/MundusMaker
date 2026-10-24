@@ -38,8 +38,9 @@ export function boxesHtml(max, used, path, label = '') {
   return out + '</span>';
 }
 
+/** `label` and `title` are plain text: sheet values reach them unchecked. */
 export function rollBtn(payload, label, title) {
-  return `<a href="#" class="sheet-roll" data-sheetroll='${esc(JSON.stringify(payload))}' title="${esc(title || 'Click to roll')}">${label}</a>`;
+  return `<a href="#" class="sheet-roll" data-sheetroll='${esc(JSON.stringify(payload))}' title="${esc(title || 'Click to roll')}">${esc(label)}</a>`;
 }
 
 export function kvHtml(k, v) {

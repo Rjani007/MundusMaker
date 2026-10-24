@@ -198,19 +198,20 @@ export function html(data) {
     skills.map((s) => `<div class="sheet-kv"><span class="sk">${esc(s)}${specBySkill[s] ? ` <span class="muted small">(${esc(specBySkill[s].join(', '))})</span>` : ''}</span><span class="sv">${dotsHtml(d.skills[s] ?? 0, 5, { edit: true, path: `skills.${s}`, label: s })}</span></div>`).join('') +
     '</div>').join('');
 
-  const attrOpts = ALL_ATTRS.map((a) => `<option data-v="${d.attributes[a] ?? 1}">${cap(a)}</option>`).join('');
-  const skillOpts = ALL_SKILLS.map((s) => `<option data-v="${d.skills[s] ?? 0}">${esc(s)}</option>`).join('');
+  const attrOpts = ALL_ATTRS.map((a) => `<option data-v="${esc(d.attributes[a] ?? 1)}">${cap(a)}</option>`).join('');
+  const skillOpts = ALL_SKILLS.map((s) => `<option data-v="${esc(d.skills[s] ?? 0)}">${esc(s)}</option>`).join('');
   const rollbar = `<div class="sheet-rollbar row">` +
     `<select>${attrOpts}</select><span class="muted">+</span><select>${skillOpts}</select>` +
-    `<span class="muted small">hunger ${d.hunger}</span>` +
+    `<span class="muted small">hunger ${esc(d.hunger)}</span>` +
     rollBtn({ kind: 'pool', hunger: d.hunger }, '🎲 Roll pool', 'Roll the selected attribute + skill as a V5 pool with hunger dice') +
     '</div>';
 
   const disciplines = (d.disciplines || []).map((disc) =>
     `<div class="sheet-feature"><strong>${esc(disc.name)}</strong> ${dotsHtml(disc.rating || 0, 5, { label: disc.name })}` +
     (disc.powers || []).map((p) =>
-      `<div class="sheet-power">• <strong>${esc(p.name)}</strong> <span class="muted small">L${p.level}</span>` +
-      (p.wikiUrl ? ` <a class="muted small" href="${esc(p.wikiUrl)}" target="_blank" rel="noopener">reference ↗</a>` : '') +
+      `<div class="sheet-power">• <strong>${esc(p.name)}</strong> <span class="muted small">L${esc(p.level)}</span>` +
+      // typed by the GM or carried in by a backup: only web addresses become links (never javascript:)
+      (/^https?:\/\//i.test(p.wikiUrl || '') ? ` <a class="muted small" href="${esc(p.wikiUrl)}" target="_blank" rel="noopener">reference ↗</a>` : '') +
       (p.desc ? `<div class="sheet-feature-text">${esc(p.desc).replace(/\n/g, '<br>')}</div>` : '') +
       '</div>').join('') +
     '</div>').join('') || '<div class="muted small">No disciplines yet.</div>';
@@ -236,8 +237,8 @@ export function html(data) {
     ${sectionHtml('Attributes', `<div class="sheet-cols">${attrCols}</div>`)}
     ${sectionHtml('Skills', `<div class="sheet-cols">${skillCols}</div>`)}
     ${sectionHtml('Trackers',
-      kvHtml('Health', trackHtml(healthMax(d), d.health.superficial, d.health.aggravated, 'health', 'Health') + ` <span class="muted small">${healthMax(d)}</span>`) +
-      kvHtml('Willpower', trackHtml(willpowerMax(d), d.willpower.superficial, d.willpower.aggravated, 'willpower', 'Willpower') + ` <span class="muted small">${willpowerMax(d)}</span>`) +
+      kvHtml('Health', trackHtml(healthMax(d), d.health.superficial, d.health.aggravated, 'health', 'Health') + ` <span class="muted small">${esc(healthMax(d))}</span>`) +
+      kvHtml('Willpower', trackHtml(willpowerMax(d), d.willpower.superficial, d.willpower.aggravated, 'willpower', 'Willpower') + ` <span class="muted small">${esc(willpowerMax(d))}</span>`) +
       kvHtml('Hunger', dotsHtml(d.hunger, 5, { edit: true, path: 'hunger', label: 'Hunger' })) +
       kvHtml('Humanity', dotsHtml(d.humanity, 10, { edit: true, path: 'humanity', label: 'Humanity' })) +
       kvHtml('Blood potency', dotsHtml(d.bloodPotency, 10, { edit: true, path: 'bloodPotency', label: 'Blood potency' })))}
@@ -245,8 +246,8 @@ export function html(data) {
     ${advantages ? sectionHtml('Advantages & flaws', advantages) : ''}
     ${convictions ? sectionHtml('Convictions & touchstones', convictions) : ''}
     ${xp.total || xp.spent || xp.ledger?.length ? sectionHtml('Experience',
-      `<div class="small"><strong>${Math.max(0, xp.total - xp.spent)} XP available</strong> · ${xp.spent} / ${xp.total} spent</div>` +
-      (lastSpend ? `<div class="muted small">Last: ${esc(lastSpend.label)} · ${lastSpend.cost} XP</div>` : '')) : ''}
+      `<div class="small"><strong>${Math.max(0, xp.total - xp.spent)} XP available</strong> · ${esc(xp.spent)} / ${esc(xp.total)} spent</div>` +
+      (lastSpend ? `<div class="muted small">Last: ${esc(lastSpend.label)} · ${esc(lastSpend.cost)} XP</div>` : '')) : ''}
     ${d.notes ? sectionHtml('Notes', `<div class="small">${esc(d.notes).replace(/\n/g, '<br>')}</div>`) : ''}
     <div class="sheet-attrib muted">Unofficial Dark Pack fan material. Dots are click-editable in GM view.</div>
   </div>`;
