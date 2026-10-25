@@ -5,6 +5,12 @@ Your campaign is a folder of plain text files on your disk. There's no hosted
 service or subscription. The desktop app stays local; optional Docker hosting
 lets your browsers connect to your own NAS using a DM password.
 
+Version **1.9.2** turns Library monsters, spells and items into **handout
+cards**, exports handouts as PNG images (item cards at card size), imports
+**D&D Beyond character sheet PDFs**, and fixes two security problems:
+character sheets and encounters show every stored value as text, and other
+websites can no longer frame the app. See the
+[release notes](docs/1.9.2-release.md).
 Version **1.9.1** adds two map generators: **Terrain world maps** with
 mountain ranges, rain shadows, lakes, optional erosion and terrain brushes,
 and **Modern city maps** with streets that bend along the shore, a railway,
