@@ -2,7 +2,7 @@ name: mundusmaker
 services:
   mundusmaker:
     build: .
-    image: mundusmaker:1.9.2
+    image: mundusmaker:1.9.3
     init: true
     restart: unless-stopped
     ports:
