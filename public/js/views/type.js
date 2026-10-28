@@ -2,7 +2,7 @@
 // table, plus a create box. Reached from the dashboard cards, the sidebar
 // group headings and the type badges — the "manage my Characters" surface.
 
-import { el, helpTip, readSetting, writeSetting } from '../util.js';
+import { el, helpTip, readSetting, writeSetting, compareNames } from '../util.js';
 import { categoryGroups, connectedGroups, relatedEntries } from '../categorycore.js';
 import { state, types, typeOf, visibleEntities, createEntity } from '../state.js';
 import { nameStyleForType, randomName } from '../names.js';
@@ -59,7 +59,7 @@ export function render(container, rawKey) {
   groupSelect.value = grouping;
   const relationSelect = el('select', { 'aria-label': 'Related to entry', onchange: ev => { relatedId = ev.target.value; fillTable(); } },
     el('option', { value: '' }, 'Related to anyone'),
-    visibleEntities().slice().sort((a, b) => a.name.localeCompare(b.name)).map(e => el('option', { value: e.id }, e.name)));
+    visibleEntities().slice().sort((a, b) => compareNames(a.name, b.name)).map(e => el('option', { value: e.id }, e.name)));
   const jump = el('select', { 'aria-label': 'Switch category', onchange: ev => { location.hash = `#/t/${encodeURIComponent(ev.target.value)}`; } },
     categoryGroups(known, visibleEntities()).map(([k, t]) => el('option', { value: k }, t.plural || t.label)));
   jump.value = key;
@@ -69,11 +69,11 @@ export function render(container, rawKey) {
     const related = relatedId ? new Set(relatedEntries(visibleEntities(), relatedId, state.gm).map(x => x.entry.id)) : null;
     return ents.filter(e => (!related || related.has(e.id)) && (!query || [e.name, ...(e.tags || []), ...Object.values(e.fields || {})].join(' ').toLowerCase().includes(query))).sort((a, b) => {
       const av = cellValue(a, sortKey), bv = cellValue(b, sortKey);
-      if (!av && !bv) return a.name.localeCompare(b.name);
+      if (!av && !bv) return compareNames(a.name, b.name);
       if (!av) return 1;  // blanks sink to the bottom in both directions
       if (!bv) return -1;
       const c = av.localeCompare(bv, undefined, { numeric: true, sensitivity: 'base' });
-      return (c || a.name.localeCompare(b.name)) * sortDir;
+      return (c || compareNames(a.name, b.name)) * sortDir;
     });
   }
 

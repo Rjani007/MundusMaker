@@ -157,7 +157,11 @@ input:focus, textarea:focus, select:focus { outline: 1px solid var(--accent); }
   padding: 4px 12px; border-radius: 20px; border: 1px solid var(--line);
   font-size: 13px; user-select: none;
 }
-.gm-toggle input { display: none; }
+/* hidden from sight but not from the keyboard or screen readers: the visible
+   words come from CSS, so the input carries its own aria-label */
+.gm-toggle { position: relative; }
+.gm-toggle input { position: absolute; width: 1px; height: 1px; margin: 0; opacity: 0; pointer-events: none; }
+.gm-toggle:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 3px; }
 .gm-toggle .gm-label::before { content: "👁 "; }
 .gm-toggle.gm-on { border-color: var(--secret-border); background: var(--secret); }
 .gm-toggle.gm-on .gm-label::after { content: "GM view — secrets visible"; }
@@ -176,8 +180,11 @@ input:focus, textarea:focus, select:focus { outline: 1px solid var(--accent); }
 
 /* ---------- sidebar ---------- */
 .side-search { width: 100%; margin-bottom: 10px; }
-.side-new { display: flex; gap: 6px; margin-bottom: 14px; }
-.side-new input { flex: 1; min-width: 0; }
+/* the name gets a row of its own: beside the type picker and two buttons it
+   was squeezed to ~30px in the 270px sidebar */
+.side-new { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.side-new input { flex: 1 1 100%; min-width: 0; }
+.side-new select { flex: 1; min-width: 0; }
 .side-group { margin-bottom: 6px; }
 .side-group-head {
   display: flex; align-items: center; gap: 6px; cursor: pointer;

@@ -1,6 +1,6 @@
 // App shell: router, sidebar, world switcher, GM/player toggle.
 
-import { el, toast, rollDice, readSetting, writeSetting, downloadBlob } from './util.js';
+import { el, toast, rollDice, readSetting, writeSetting, downloadBlob, compareNames } from './util.js';
 import {
   init, on, state, setGm, types, typeOf, visibleEntities, createEntity,
   selectWorld, refreshWorlds, saveState, flushSaves, saveFailure, unsavedDraft, requireSaved,
@@ -130,8 +130,8 @@ function buildSidebar() {
   } }, el('option', { value: '' }, 'Jump to category…'),
   categoryGroups(types(), visibleEntities()).map(([key, t]) => el('option', { value: key }, t.plural || t.label)));
 
-  const newName = el('input', { placeholder: 'New entry…' });
-  const newType = el('select', {},
+  const newName = el('input', { placeholder: 'New entry…', 'aria-label': 'Name of a new entry' });
+  const newType = el('select', { 'aria-label': 'Category of the new entry' },
     Object.entries(types()).map(([key, t]) => el('option', { value: key }, t.label)));
   const create = async () => {
     if (!newName.value.trim()) return;
@@ -204,7 +204,7 @@ function renderSidebarList() {
       related.length > 12 ? el('a', { href: '#/graph', class: 'small' }, `All ${related.length} connections →`) : null));
   }
   for (const [key, t] of sidebarGroups(ents)) {
-    const group = ents.filter((e) => (e.type || '') === key).sort((a, b) => a.name.localeCompare(b.name));
+    const group = ents.filter((e) => (e.type || '') === key).sort((a, b) => compareNames(a.name, b.name));
     if (!group.length) continue;
     const isCollapsed = collapsed.has(key) && !search;
     const label = t.plural || t.label || key || 'Untyped';

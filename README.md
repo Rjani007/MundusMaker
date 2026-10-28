@@ -11,23 +11,15 @@ cards**, exports handouts as PNG images (item cards at card size), imports
 character sheets and encounters show every stored value as text, and other
 websites can no longer frame the app. See the
 [release notes](docs/1.9.2-release.md).
-Version **1.9.1** adds two map generators: **Terrain world maps** with
-mountain ranges, rain shadows, lakes, optional erosion and terrain brushes,
-and **Modern city maps** with streets that bend along the shore, a railway,
-big parks and towers. See the [release notes](docs/1.9.1-release.md).
-Version **1.9.0** starts without a console window (a tray icon on Windows;
-Quit sits at the top right of the app), exports a player wiki, adds session
-prep tools and keyboard-friendly character sheets, and fills the publishers'
-own character sheets: the free D&D 2024 and Call of Cthulhu sheets download
-from the publishers when you ask, and Vampire sheets open in a layout
-arranged like Renegade's V5 sheet.
-Version **1.8.1** fixes the Mac app's `NSNull count` startup error and adds
-[Docker / NAS hosting](docs/docker.md). See the [patch notes](docs/1.8.1-release.md).
-Version **1.8.0** brings new world geography, detailed linked provinces, towns
-with streets and working districts, safer map editing, and a printable handout
-workshop. See the [release notes](docs/1.8.0-release.md). Character creation,
-level advancement, system sheets, custom categories and DM Screen references
-from [1.7.0](docs/1.7.0-release.md) remain included.
+
+Earlier releases: [1.9.1](docs/1.9.1-release.md) added Terrain world maps and
+Modern city maps; [1.9.0](docs/1.9.0-release.md) runs without a console
+window, exports a player wiki and fills the publishers' own character sheets;
+[1.8.1](docs/1.8.1-release.md) fixed the Mac startup error and added
+[Docker / NAS hosting](docs/docker.md); [1.8.0](docs/1.8.0-release.md) brought
+new world geography, linked provinces and the handout workshop; and
+[1.7.0](docs/1.7.0-release.md) brought character creation, level advancement,
+custom categories and DM Screen references.
 
 The reason it exists: I wanted a campaign wiki where GM secrets are part of the
 design instead of an afterthought. Any paragraph, relationship, or map marker
@@ -47,8 +39,8 @@ your computer automatically. No separate Node installation is needed.
 
 **Windows:** double-click `Start-MundusMaker.bat`. Your browser opens by itself.
 MundusMaker runs in the background with an icon in the Windows tray, so closing
-the browser doesn't stop it. Quit it from that icon or from Settings; saves in
-progress finish first. `MundusMaker-Console.bat` runs it in a window that shows
+the browser doesn't stop it. Quit it with ⏻ Quit at the top right of the app
+or from that icon; saves in progress finish first. `MundusMaker-Console.bat` runs it in a window that shows
 every message, for troubleshooting. Requires Windows 10 or later on x64.
 
 **Mac:** move **MundusMaker.app** to Applications and double-click it.
@@ -71,7 +63,7 @@ may still apply.
 
 **Linux:** run `start-mundusmaker.sh`; it selects Intel/AMD x64 or ARM64
 automatically and starts MundusMaker in the background, so the terminal can be
-closed. Quit it from Settings. `--install-desktop` adds an applications-menu
+closed. Quit it with ⏻ Quit at the top right of the app. `--install-desktop` adds an applications-menu
 entry; `--foreground` keeps it in the terminal. The ZIP preserves executable permissions for the script and
 runtimes. Requires glibc 2.28+ and kernel 4.18+. **README-FIRST.html** includes
 startup and upgrade instructions for every system.

@@ -17,7 +17,7 @@ import { api } from './api.js';
 import { writeSystemSheet } from './sheets/sheetpdf.js';
 import { withSkillBases } from './sheets/cocskills.js';
 import { writeFamiliarSheet, sheetLayoutFor } from './sheets/familiar.js';
-import { readSetting } from './util.js';
+import { readSetting, compareNames } from './util.js';
 
 async function prepareSheet(block) {
   if (block.system !== 'coc7') return block;
@@ -85,7 +85,7 @@ export async function buildPdf(opts) {
   const groups = typeGroups(all);
   const labelOf = new Map(groups.map(([key, t]) => [key, t.label]));
   const included = (e) => (opts.gm || !e.gmOnly) && opts.typeKeys.has(typeKeyOf(e));
-  const ents = all.filter(included).sort((a, b) => a.name.localeCompare(b.name));
+  const ents = all.filter(included).sort((a, b) => compareNames(a.name, b.name));
   const characterSheets = [];
   const preparedSheets = new Map();
   for (const e of ents) for (const b of e.blocks || []) {
@@ -171,8 +171,12 @@ export async function buildPdf(opts) {
     writeLines(lines, size, style, color, opts2);
   }
 
-  function sectionHeading(text, color) {
-    ensure(64);
+  // Headings never end a page alone. A section heading (40pt tall) reserves
+  // `keepWith`, the room its first entry needs, and the "GM SECRET" and
+  // in-entry heading lines reserve KEEP_NEXT for the first lines that follow.
+  const KEEP_NEXT = 30;
+  function sectionHeading(text, color, keepWith = 0) {
+    ensure(Math.max(64, 40 + keepWith));
     y += 10;
     doc.setFillColor(...color);
     doc.rect(M - 8, y - 16, CW + 16, 26, 'F');
@@ -270,20 +274,50 @@ export async function buildPdf(opts) {
     y += 4;
   }
 
+  function secretLabel(secretStyle, keepWith = KEEP_NEXT) {
+    ensure(14 + keepWith);
+    writeLines(['GM SECRET'], 7, 'bold', [138, 95, 194], secretStyle);
+  }
+
   // ---------- entities by type ----------
+  const imgW = 92;
+  const portraitH = (e) => {
+    const img = portraits.get(e.id);
+    return img ? Math.min(130, Math.round(imgW * (img.height / img.width))) : 0;
+  };
+  // skip headings whose whole section is empty (fresh template scaffolds).
+  // The GM edition prints map key notes in the map's key instead (1.9).
+  const printableOf = (e) => {
+    const keyNotes = opts.gm && opts.includeMaps && hasKeys(e.map) ? keyBlockIds(e.map) : new Set();
+    return printableBlocks(e, opts.gm).filter((b) => !keyNotes.has(b.id));
+  };
+  // the first map image's printed height, from the kind's size (no render)
+  const firstMapH = (map) => {
+    const [W, H] = MAP_KINDS[map.kind]?.size(map) || [0, 0];
+    return W && H ? H * Math.min(CW / W, 330 / H) : 0;
+  };
+  // An entry's name, meta line and first fact (or its portrait) start
+  // together. When nothing but its map follows the facts, the first map image
+  // comes along too, or the heading is left alone at the foot of a page.
+  const entryHeadRoom = (e) => {
+    const room = Math.max(70, portraitH(e) + 40);
+    const mapNext = opts.includeMaps && e.map && !printableOf(e).length
+      && !(opts.includeRelations && visibleRelations(e, { gm: opts.gm, byId: state.entities, included }).length);
+    return mapNext ? room + firstMapH(e.map) + 16 : room;
+  };
+
   for (const [typeKey, t] of groups) {
     if (!opts.typeKeys.has(typeKey)) continue;
     const group = ents.filter((e) => typeKeyOf(e) === typeKey);
     if (!group.length) continue;
-    sectionHeading(t.plural || t.label, hexToRgb(t.color));
+    sectionHeading(t.plural || t.label, hexToRgb(t.color), entryHeadRoom(group[0]));
 
     for (const e of group) {
       const img = portraits.get(e.id);
       let imgBottom = -1, imgPageNum = -1;
-      const imgW = 92;
-      const imgH = img ? Math.min(130, Math.round(imgW * (img.height / img.width))) : 0;
+      const imgH = portraitH(e);
       const headMaxW = img ? CW - imgW - 14 : CW;
-      ensure(Math.max(70, imgH + 40));
+      ensure(entryHeadRoom(e));
       y += 8;
 
       if (img) {
@@ -325,52 +359,37 @@ export async function buildPdf(opts) {
       // body text flows below the portrait, never through it
       if (imgBottom >= 0 && doc.getNumberOfPages() === imgPageNum) y = Math.max(y, imgBottom + 10);
 
-      // skip headings whose whole section is empty (fresh template scaffolds).
-      // The GM edition prints map key notes in the map's key instead (1.9).
-      const keyNotes = opts.gm && opts.includeMaps && hasKeys(e.map) ? keyBlockIds(e.map) : new Set();
-      const printable = printableBlocks(e, opts.gm).filter((b) => !keyNotes.has(b.id));
+      const printable = printableOf(e);
 
       for (const b of printable) {
         const secretStyle = b.secret && opts.gm ? { bg: [240, 232, 250], bar: [138, 95, 194] } : {};
         if (b.kind === 'statblock') {
-          if (b.secret && opts.gm) {
-            ensure(14);
-            writeLines(['GM SECRET'], 7, 'bold', [138, 95, 194], secretStyle);
-          }
+          if (b.secret && opts.gm) secretLabel(secretStyle);
           writeStatblock(b.stat, e.name, secretStyle);
           continue;
         }
         if (b.kind === 'encounter') {
-          if (b.secret && opts.gm) {
-            ensure(14);
-            writeLines(['GM SECRET'], 7, 'bold', [138, 95, 194], secretStyle);
-          }
+          if (b.secret && opts.gm) secretLabel(secretStyle);
           writeEncounter(b, secretStyle);
           continue;
         }
         if (b.kind === 'sheet') {
-          if (b.secret && opts.gm) {
-            ensure(14);
-            writeLines(['GM SECRET'], 7, 'bold', [138, 95, 194], secretStyle);
-          }
+          if (b.secret && opts.gm) secretLabel(secretStyle);
           writeSheet(b, e.name, secretStyle, e.gmOnly);
           continue;
         }
         if (b.kind === 'table') {
-          if (b.secret && opts.gm) {
-            ensure(14);
-            writeLines(['GM SECRET'], 7, 'bold', [138, 95, 194], secretStyle);
-          }
+          if (b.secret && opts.gm) secretLabel(secretStyle);
           writeRandomTable(b, secretStyle);
           continue;
         }
         const text = mdToPlain(b.text).trim();
         if (!text) continue;
-        if (b.secret && opts.gm) {
-          ensure(14);
-          writeLines(['GM SECRET'], 7, 'bold', [138, 95, 194], secretStyle);
-        }
+        // a heading line (17pt) plus the start of its section
+        const headingRoom = b.kind === 'heading' ? 4 + 17 + KEEP_NEXT : KEEP_NEXT;
+        if (b.secret && opts.gm) secretLabel(secretStyle, headingRoom);
         if (b.kind === 'heading') {
+          ensure(headingRoom);
           y += 4;
           para(text, 12.5, 'bold', [40, 34, 60], { font: 'times', ...secretStyle });
         } else if (b.kind === 'quote') {
@@ -522,7 +541,7 @@ export async function buildPdf(opts) {
     /** Age band / "Every year" heading — one shape, so the two cannot drift. */
     function bandHeading(text) {
       y += 10;
-      ensure(26);
+      ensure(17 + 2 + 44); // the heading line and the first row (timelineRow's tallest)
       para(text, 12.5, 'bold', [90, 74, 140], { font: 'times' });
       y += 2;
     }

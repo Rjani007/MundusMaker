@@ -48,7 +48,7 @@ export function folderBackupCard() {
       el('div', { class: 'row', style: 'margin-top:6px' }, every, el('label', { class: 'small' }, 'Keep ', keep, ' backups'), save, now,
         s.dir ? el('button', { class: 'ghost small', onclick: async () => { await api.setFolderBackup({ dir: '' }); toast('Second-folder backups are off. Existing backups stay in the folder.'); refresh(); } }, 'Turn off') : null),
       el('p', { class: 'muted small' }, s.last ? `Last backup: ${when(s.last)}.` : s.dir ? 'No backup yet. The first one runs within a few minutes, or use Back up now.' : ''),
-      info.lastError ? el('p', { class: 'notice warn' }, `The last backup failed (${when(info.lastError.at)}): ${info.lastError.message}`) : null);
+      info.lastError ? el('p', { class: 'notice warn' }, `The last backup failed (${when(info.lastError.at)}): ${info.lastError.message}`) : '');
     if (info.backups.length) {
       const list = el('details', {}, el('summary', {}, `Backups in this folder (${info.backups.length})`));
       for (const b of info.backups) {

@@ -1,7 +1,7 @@
 // World dashboard: name/description, stats, recent entries, world management.
 // Backup/restore and the data-folder card moved to #/settings in 0.10.
 
-import { el, toast, readSetting, writeSetting } from '../util.js';
+import { el, toast, readSetting, writeSetting, compareNames } from '../util.js';
 import { state, types, typeOf, visibleEntities, scheduleWorldSave, createEntity, refreshWorlds } from '../state.js';
 import { snippetFor } from '../render.js';
 import { api } from '../api.js';
@@ -80,7 +80,7 @@ export function render(container) {
       .filter((entry) => isRecurring(entry.date))
       .map((entry) => ({ entry, days: daysUntilAnnual(today, entry.date, cal) }))
       .filter((x) => Number.isFinite(x.days))
-      .sort((a, b) => a.days - b.days || a.entry.name.localeCompare(b.entry.name))[0];
+      .sort((a, b) => a.days - b.days || compareNames(a.entry.name, b.entry.name))[0];
     clockWrap.innerHTML = '';
     clockWrap.append(el('div', { class: 'row', style: 'align-items:center' },
       el('div', { style: 'flex:1;min-width:0' },

@@ -139,3 +139,12 @@ test('container does not adopt another backend or leave its own backend running 
   await assert.rejects(fetch(`http://localhost:${backend}/api/status`));
   assert.equal(await (await fetch(`http://localhost:${occupied}`)).text(), 'unrelated server');
 });
+
+test('compose tags the image with the package version', () => {
+  const root = path.join(__dirname, '..');
+  const { version } = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+  const images = fs.readFileSync(path.join(root, 'compose.yaml'), 'utf8').split(/\r?\n/)
+    .map((line) => line.trim()).filter((line) => line.startsWith('image:'));
+  assert.deepEqual(images, [`image: mundusmaker:${version}`],
+    'compose.yaml names an image version other than package.json; bump both together');
+});

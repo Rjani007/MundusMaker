@@ -9,6 +9,7 @@ import { mdToPlain, WIKILINK } from './markdown.js';
 import { computeEncounter } from './encounter.js';
 import { projectHandout, localAsset } from './handouts/handoutcore.js';
 import { tableRows } from './randomtable.js';
+import { compareNames } from './util.js';
 
 /** The key an entity is grouped under (missing/blank types share one group). */
 export const typeKeyOf = (e) => e.type || '';
@@ -127,7 +128,7 @@ export function timelineGroups(list, cal) {
   const dated = list.filter((e) => isHistoric(e.date))
     .sort((a, b) => cmpKey(histSortKey(a.date, cal), histSortKey(b.date, cal)));
   const annual = list.filter((e) => isRecurring(e.date))
-    .sort((a, b) => cmpKey(slotSortKey(a.date, cal), slotSortKey(b.date, cal)) || a.name.localeCompare(b.name));
+    .sort((a, b) => cmpKey(slotSortKey(a.date, cal), slotSortKey(b.date, cal)) || compareNames(a.name, b.name));
   return { dated, annual, bands: hasAges(cal) ? ageBands(dated, cal, (e) => e.date) : null };
 }
 
@@ -175,7 +176,7 @@ export function projectPlayerWorld({ world, worldId, entities, typeKeys = null, 
   const typeDef = new Map(groups);
   const included = (e) => entityVisible(e, gm) && (!typeKeys || typeKeys.has(typeKeyOf(e)));
   const shown = all.filter(included)
-    .sort((a, b) => a.name.localeCompare(b.name) || typeKeyOf(a).localeCompare(typeKeyOf(b)) || (a.id < b.id ? -1 : 1));
+    .sort((a, b) => compareNames(a.name, b.name) || typeKeyOf(a).localeCompare(typeKeyOf(b)) || (a.id < b.id ? -1 : 1));
   const resolve = nameResolver(all);
   const cal = world.calendar || {};
   const needs = new Map();
@@ -253,7 +254,7 @@ export function projectPlayerWorld({ world, worldId, entities, typeKeys = null, 
     }
   }
   for (const entry of entries.values()) {
-    entry.backlinks.sort((a, b) => entries.get(a.ref).name.localeCompare(entries.get(b.ref).name));
+    entry.backlinks.sort((a, b) => compareNames(entries.get(a.ref).name, entries.get(b.ref).name));
     entry.search = searchText(entry, entries);
   }
 

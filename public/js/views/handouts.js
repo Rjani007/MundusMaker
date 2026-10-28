@@ -1,4 +1,4 @@
-import { el, uid, toast, slugify, downloadBlob, readSetting, writeSetting } from '../util.js';
+import { el, uid, toast, slugify, downloadBlob, readSetting, writeSetting, compareNames } from '../util.js';
 import { state, bus, visibleEntities, newEntity, saveEntity, scheduleSave, getEntity, requireSaved } from '../state.js';
 import { api } from '../api.js';
 import { HANDOUT_KINDS, PAGE_SIZES, ROLES, initializeHandout, presentation } from '../handouts/handoutcore.js';
@@ -83,7 +83,7 @@ export function render(container,id) {
     // A packet can belong to a Session entry (1.9): an ordered list of handout
     // IDs in session.handoutPacket, so it survives navigation and reloads.
     // Editing a handout never touches it. Without a session it lasts this visit.
-    const sessionsList=()=>visibleEntities().filter(e=>e.type==='session').sort((a,b)=>(b.updated||'').localeCompare(a.updated||'')||a.name.localeCompare(b.name));
+    const sessionsList=()=>visibleEntities().filter(e=>e.type==='session').sort((a,b)=>(b.updated||'').localeCompare(a.updated||'')||compareNames(a.name, b.name));
     let packetSession='';try{packetSession=readSetting(`packet.${wid}`)||'';}catch{}
     if(!getEntity(packetSession))packetSession='';
     const loadPacket=()=>{selected.splice(0,selected.length,...(getEntity(packetSession)?.handoutPacket||[]).filter(pid=>getEntity(pid)));};
@@ -91,14 +91,14 @@ export function render(container,id) {
     loadPacket();
     function refreshPacket(){
       const sessionPick=select({'':'This visit only',...Object.fromEntries(sessionsList().map(s=>[s.id,s.name]))},packetSession,v=>{packetSession=v;try{writeSetting(`packet.${wid}`,v);}catch{}loadPacket();refresh();refreshPacket();},'Session this packet belongs to');
-      packet.replaceChildren(el('h3',{},'Your handout packet'),state.gm?field('Packet for',sessionPick):null,el('p',{class:'muted small'},packetSession?'Saved with the session. Select entries below; this order is used for both PDF pages and page images.':'Select entries below. This order is used for both PDF pages and page images. Choose a session to keep the packet.'));
+      packet.replaceChildren(el('h3',{},'Your handout packet'),state.gm?field('Packet for',sessionPick):'',el('p',{class:'muted small'},packetSession?'Saved with the session. Select entries below; this order is used for both PDF pages and page images.':'Select entries below. This order is used for both PDF pages and page images. Choose a session to keep the packet.'));
       selected.forEach((id,i)=>{const e=getEntity(id);if(!e||(!state.gm&&e.gmOnly))return;const move=delta=>{const j=i+delta;if(j<0||j>=selected.length)return;[selected[i],selected[j]]=[selected[j],selected[i]];persistPacket();refreshPacket();};
         packet.append(el('div',{class:'handout-packet-row'},el('span',{},`${i+1}. ${e.name}`),el('button',{type:'button',class:'ghost small',disabled:i===0,'aria-label':`Move ${e.name} earlier`,onclick:()=>move(-1)},'↑'),el('button',{type:'button',class:'ghost small',disabled:i===selected.length-1,'aria-label':`Move ${e.name} later`,onclick:()=>move(1)},'↓')));
       });
       packet.append(exportOptions(),el('div',{class:'row'},el('button',{class:'primary',disabled:!selected.length,onclick:()=>exportEntries([...selected],'pdf')},'Export packet PDF'),el('button',{disabled:!selected.length,onclick:()=>exportEntries([...selected],'png')},'Export packet images'),cancel),status);
     }
     function refresh(){
-      if(!current())return;const entries=visibleEntities().filter(e=>(e.handout||e.type==='handout')&&e.name.toLowerCase().includes(search.value.toLowerCase())).sort((a,b)=>a.name.localeCompare(b.name));cards.replaceChildren();
+      if(!current())return;const entries=visibleEntities().filter(e=>(e.handout||e.type==='handout')&&e.name.toLowerCase().includes(search.value.toLowerCase())).sort((a,b)=>compareNames(a.name, b.name));cards.replaceChildren();
       if(!entries.length)cards.append(el('p',{class:'muted'},'Your handouts will appear here.'));
       for(const e of entries){const p=presentation(e),def=HANDOUT_KINDS[p.kind];cards.append(el('article',{class:'handout-library-card'},el('span',{class:'handout-card-mark','aria-hidden':'true'},def.icon),el('h3',{},el('a',{href:`#/handouts/${encodeURIComponent(e.id)}`},e.name)),el('p',{class:'muted small'},`${e.gmOnly?'GM-only · ':''}${def.label}`),el('label',{},el('input',{type:'checkbox',checked:selected.includes(e.id),onchange:ev=>{if(ev.target.checked){if(!selected.includes(e.id))selected.push(e.id);}else{const i=selected.indexOf(e.id);if(i>=0)selected.splice(i,1);}persistPacket();refreshPacket();}}),' Include in packet')));}
     }
@@ -139,7 +139,7 @@ export function render(container,id) {
     editor.append(el('details',{class:'handout-section'},el('summary',{},'Illustration / letter seal'),el('p',{class:'muted small'},'Use a local image. Its proportions are preserved. Letters place it below the signature.'),imageInput,el('div',{class:'row'},el('button',{class:'small',onclick:()=>imageInput.click()},'Choose image'),el('button',{class:'ghost small',onclick:()=>{if(!editCurrent())return;entity.image=null;imageStatus.textContent='No illustration or seal';save();}},'Clear image'),imageStatus)));
     const sourcePanel=el('details',{class:'handout-section'},el('summary',{},'Linked campaign material'));
     function sourceControls(){
-      while(sourcePanel.children.length>1)sourcePanel.lastChild.remove();const h=entity.handout||{},sources=visibleEntities().filter(e=>e.id!==id).sort((a,b)=>a.name.localeCompare(b.name));
+      while(sourcePanel.children.length>1)sourcePanel.lastChild.remove();const h=entity.handout||{},sources=visibleEntities().filter(e=>e.id!==id).sort((a,b)=>compareNames(a.name, b.name));
       sourcePanel.append(el('p',{class:'muted small'},'Choose the properties and text to include. A hidden, secret or deleted source is omitted from player output.'),field('Source entry',select({'':'No source',...Object.fromEntries(sources.map(e=>[e.id,`${e.gmOnly?'GM-only · ':''}${e.name}`]))},h.sourceId||'',v=>{
         if(!editCurrent())return;entity.handout??={kind:'letter',slots:{}};entity.handout.sourceId=v;entity.handout.sourceFields=[];entity.handout.sourceBlocks=[];
         if(v&&!entity.relations.some(r=>r.to===v))entity.relations.push({to:v,label:'Source',secret:false});save();sourceControls();
@@ -152,7 +152,7 @@ export function render(container,id) {
     if(p.kind==='mapfragment'){
       // only the map's ID and a crop are stored; the preview and every export
       // draw the player map fresh, so later map edits show up here
-      const maps=visibleEntities().filter(e=>e.map).sort((a,b)=>a.name.localeCompare(b.name));
+      const maps=visibleEntities().filter(e=>e.map).sort((a,b)=>compareNames(a.name, b.name));
       const frag=()=>entity.handout.map||{},crop=()=>({x:0,y:0,w:1,h:1,...(frag().crop||{})});
       const setMap=patch=>{if(!editCurrent())return;entity.handout.map={...frag(),...patch};save();};
       const slider=(label,key)=>field(label,el('input',{type:'range',min:0,max:100,step:1,value:Math.round(crop()[key]*100),oninput:ev=>setMap({crop:{...crop(),[key]:Number(ev.target.value)/100}})}));
