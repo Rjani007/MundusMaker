@@ -5,14 +5,15 @@ Your campaign is a folder of plain text files on your disk. There's no hosted
 service or subscription. The desktop app stays local; optional Docker hosting
 lets your browsers connect to your own NAS using a DM password.
 
-Version **1.9.2** turns Library monsters, spells and items into **handout
-cards**, exports handouts as PNG images (item cards at card size), imports
-**D&D Beyond character sheet PDFs**, and fixes two security problems:
-character sheets and encounters show every stored value as text, and other
-websites can no longer frame the app. See the
-[release notes](docs/1.9.2-release.md).
+Version **1.9.3** is a polish release: no more stray "null" text, a
+full-width New entry box, names that sort the way you read them (Session 2
+before Session 10), world PDFs that keep headings with what follows them, and
+a GM view switch you can reach from the keyboard. See the
+[release notes](docs/1.9.3-release.md).
 
-Earlier releases: [1.9.1](docs/1.9.1-release.md) added Terrain world maps and
+Earlier releases: [1.9.2](docs/1.9.2-release.md) added handout cards from the
+Library, handout images and D&D Beyond character sheet import, and fixed two
+security problems; [1.9.1](docs/1.9.1-release.md) added Terrain world maps and
 Modern city maps; [1.9.0](docs/1.9.0-release.md) runs without a console
 window, exports a player wiki and fills the publishers' own character sheets;
 [1.8.1](docs/1.8.1-release.md) fixed the Mac startup error and added
