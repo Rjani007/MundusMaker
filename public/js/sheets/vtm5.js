@@ -387,7 +387,7 @@ export function editor(block, save) {
       ledger.length ? el('div', { class: 'card', style: 'margin-top:8px' },
         el('div', { class: 'small muted' }, 'Recent XP ledger'),
         ledger.map((entry) => el('div', { class: 'small' },
-          `${entry.label} · ${entry.cost} XP`))) : null);
+          `${entry.label} · ${entry.cost} XP`))) : '');
     rebuildTarget();
   }
   redrawXpAssistant();

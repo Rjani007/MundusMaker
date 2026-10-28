@@ -7,7 +7,7 @@
 // any year comparison; they are ordered by slot (the position of their month or
 // special day in the year) with slotSortKey instead.
 
-import { el } from '../util.js';
+import { el, compareNames } from '../util.js';
 import { state, types, typeOf, visibleEntities } from '../state.js';
 import { snippetFor, formatWorldDate } from '../render.js';
 import { isHistoric, isRecurring, histSortKey, slotSortKey, cmpKey, formatYear, hasAges, ageBands } from '../calendar.js';
@@ -26,7 +26,7 @@ export function render(container) {
   }
   function annual() {
     return ticked().filter((e) => isRecurring(e.date))
-      .sort((a, b) => cmpKey(slotSortKey(a.date, cal), slotSortKey(b.date, cal)) || a.name.localeCompare(b.name));
+      .sort((a, b) => cmpKey(slotSortKey(a.date, cal), slotSortKey(b.date, cal)) || compareNames(a.name, b.name));
   }
 
   const onTimeline = (d) => isHistoric(d) || isRecurring(d);

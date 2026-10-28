@@ -2,7 +2,7 @@
 // secrets and editable statblocks, timeline date, typed relations, backlinks,
 // and an attached map. QoL: [[link]] autocomplete, rename updates mentions.
 
-import { el, uid, esc, toast, debounce, helpTip, slugify, readSetting, writeSetting, downloadBlob } from '../util.js';
+import { el, uid, esc, toast, debounce, helpTip, slugify, readSetting, writeSetting, downloadBlob, compareNames } from '../util.js';
 
 const sheetLayout = (system) => sheetLayoutFor(system, readSetting);
 import { buildCharacterPdf } from '../pdf.js';
@@ -815,7 +815,7 @@ export function render(container, id) {
 
     const candidates = () => visibleEntities()
       .filter((x) => x.blocks?.some((bl) => bl.kind === 'statblock') || ['creature', 'npc'].includes(x.type))
-      .sort((a, b2) => a.name.localeCompare(b2.name));
+      .sort((a, b2) => compareNames(a.name, b2.name));
 
     const rowsWrap = el('div', {});
     function refreshRows() {
@@ -925,7 +925,7 @@ export function render(container, id) {
       const starts = (x) => x.name.toLowerCase().startsWith(q) ? 0 : 1;
       const cands = visibleEntities()
         .filter((x) => x.id !== e.id && x.name.toLowerCase().includes(q))
-        .sort((a, b) => starts(a) - starts(b) || a.name.localeCompare(b.name))
+        .sort((a, b) => starts(a) - starts(b) || compareNames(a.name, b.name))
         .slice(0, 8);
       if (!cands.length) return closeAc();
       acItems = cands;
@@ -1380,7 +1380,7 @@ export function render(container, id) {
     }
     const options = () => visibleEntities()
       .filter((x) => x.id !== e.id)
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .sort((a, b) => compareNames(a.name, b.name));
     (e.relations ??= []).forEach((r, i) => {
       relWrap.append(el('div', { class: 'rel-row' },
         el('input', {
@@ -1482,7 +1482,7 @@ export function render(container, id) {
         el('a', { href: `#/e/${encodeURIComponent(h.entity.id)}` }, h.entity.name),
         el('span', { class: 'muted small' }, `…${h.snippet}…`),
         el('button', { class: 'ghost small', onclick: () => linkHits([h]) }, 'Link'))),
-      plan.hits.length > 1 ? el('button', { class: 'small', style: 'margin-top:6px', onclick: () => linkHits(plan.hits) }, 'Link all…') : null);
+      plan.hits.length > 1 ? el('button', { class: 'small', style: 'margin-top:6px', onclick: () => linkHits(plan.hits) }, 'Link all…') : '');
   }
   refreshUnlinked();
   refreshBacklinks();

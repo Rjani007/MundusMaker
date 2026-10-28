@@ -49,6 +49,14 @@ export function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+// Entry names sort the way people read them: "Session 2" before "Session 10".
+// Case still breaks ties, as plain localeCompare did, so lists whose order is
+// printed (PDF, wiki) never fall back to load order.
+const nameCollator = new Intl.Collator(undefined, { numeric: true });
+export function compareNames(a, b) {
+  return nameCollator.compare(String(a ?? ''), String(b ?? ''));
+}
+
 export function slugify(name) {
   const s = String(name).toLowerCase().normalize('NFKD')
     .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);

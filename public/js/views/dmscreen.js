@@ -1,4 +1,4 @@
-import { el, uid, toast, rollDice } from '../util.js';
+import { el, uid, toast, rollDice, compareNames } from '../util.js';
 import { partyPanel } from '../party.js';
 import { state, getEntity, visibleEntities, typeOf, newEntity, saveEntity, scheduleSave, scheduleWorldSave } from '../state.js';
 import { mdToHtml } from '../render.js';
@@ -37,7 +37,7 @@ export function render(container) {
     const selected = choices.value, query = search.value.trim().toLowerCase();
     const entries = visibleEntities().filter((e) => !pins().includes(e.id)
       && [e.name, ...(e.tags || [])].join(' ').toLowerCase().includes(query))
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .sort((a, b) => compareNames(a.name, b.name));
     choices.replaceChildren(...entries.slice(0, 200).map((e) => el('option', { value: e.id }, `${e.name} · ${typeOf(e).label}`)));
     if (entries.slice(0, 200).some((e) => e.id === selected)) choices.value = selected;
     pinButton.disabled = !entries.length;

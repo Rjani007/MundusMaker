@@ -242,7 +242,7 @@ export function editor(block, save) {
         : el('p', { class: 'muted small' }, 'No skills are marked yet.'),
       roll, status,
       lastRows?.length ? el('div', { class: 'card', style: 'margin-top:8px' },
-        el('div', { class: 'small muted' }, 'Previous phase'), lastRows) : null);
+        el('div', { class: 'small muted' }, 'Previous phase'), lastRows) : '');
   }
   redrawDevelopment();
   wrap.append(development);

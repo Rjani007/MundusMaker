@@ -1,4 +1,4 @@
-import { el, uid, toast, readSetting, writeSetting } from '../util.js';
+import { el, uid, toast, readSetting, writeSetting, compareNames } from '../util.js';
 import { state, getEntity, visibleEntities, newEntity, saveEntity } from '../state.js';
 import { sessionTracker } from '../sessiontracker.js';
 import { combatantFromEntity } from '../trackercore.js';
@@ -13,7 +13,7 @@ export function render(container, requestedId = '') {
   const page = el('div', { class: 'page wide session-page encounter-page' });
   const current = () => state.gm && state.worldId === worldId && page.isConnected;
   const sessions = visibleEntities().filter((e) => e.type === 'session')
-    .sort((a, b) => (b.updated || '').localeCompare(a.updated || '') || a.name.localeCompare(b.name));
+    .sort((a, b) => (b.updated || '').localeCompare(a.updated || '') || compareNames(a.name, b.name));
   let remembered = '';
   try { remembered = readSetting(`encounter.${worldId}`) || ''; } catch { /* private browser storage */ }
   const selected = requestedId || (sessions.some((e) => e.id === remembered) ? remembered : sessions[0]?.id);
@@ -75,7 +75,7 @@ export function render(container, requestedId = '') {
     const chosen = choices.value, query = search.value.trim().toLowerCase();
     const entries = visibleEntities().filter((e) => (['character', 'npc', 'creature'].includes(e.type)
       || e.blocks?.some((b) => ['statblock', 'sheet'].includes(b.kind))) && e.name.toLowerCase().includes(query))
-      .sort((a, b) => a.name.localeCompare(b.name)).slice(0, 200);
+      .sort((a, b) => compareNames(a.name, b.name)).slice(0, 200);
     choices.replaceChildren(...entries.map((e) => el('option', { value: e.id }, e.name)));
     if (entries.some((e) => e.id === chosen)) choices.value = chosen;
     if (!entries.length) choices.append(el('option', { value: '' }, 'No matching entries'));

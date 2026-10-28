@@ -1,3 +1,5 @@
+import { compareNames } from './util.js';
+
 // Categories use the world's existing types. Relationships are derived from
 // visible entities on every render; no cached names or extra secrecy flags.
 export function categoryKey(label, known) {
@@ -29,7 +31,7 @@ export function relatedEntries(entities, id, gm) {
     const other = e.id === id ? byId.get(r.to) : r.to === id ? e : null;
     if (other && other.id !== id) found.set(other.id, { entry: other, label: r.label || 'Related' });
   }
-  return [...found.values()].sort((a, b) => a.entry.name.localeCompare(b.entry.name));
+  return [...found.values()].sort((a, b) => compareNames(a.entry.name, b.entry.name));
 }
 
 export function connectedGroups(entities, members, gm) {
@@ -49,12 +51,12 @@ export function connectedGroups(entities, members, gm) {
       const next = queue[i]; component.push(byId.get(next));
       for (const neighbor of edges.get(next)) if (!visited.has(neighbor)) { visited.add(neighbor); queue.push(neighbor); }
     }
-    const items = component.filter(e => wanted.has(e.id)).sort((a, b) => a.name.localeCompare(b.name));
+    const items = component.filter(e => wanted.has(e.id)).sort((a, b) => compareNames(a.name, b.name));
     if (items.length === 1 && component.length === 1) { alone.push(...items); continue; }
-    const hub = component.filter(e => !wanted.has(e.id)).sort((a, b) => edges.get(b.id).size - edges.get(a.id).size || a.name.localeCompare(b.name))[0];
+    const hub = component.filter(e => !wanted.has(e.id)).sort((a, b) => edges.get(b.id).size - edges.get(a.id).size || compareNames(a.name, b.name))[0];
     groups.push({ label: hub?.name || items.slice(0, 2).map(e => e.name).join(' & '), items });
   }
-  groups.sort((a, b) => a.label.localeCompare(b.label));
-  if (alone.length) groups.push({ label: 'No connections yet', items: alone.sort((a, b) => a.name.localeCompare(b.name)) });
+  groups.sort((a, b) => compareNames(a.label, b.label));
+  if (alone.length) groups.push({ label: 'No connections yet', items: alone.sort((a, b) => compareNames(a.name, b.name)) });
   return groups;
 }

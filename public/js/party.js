@@ -4,7 +4,7 @@
 // a level-up or an edited sheet shows at once. Tracker damage never changes a
 // sheet (1.6), so the panel shows the sheet's own numbers. GM view only.
 
-import { el, toast } from './util.js';
+import { el, toast, compareNames } from './util.js';
 import { state, getEntity, scheduleWorldSave } from './state.js';
 import { partyStats } from './partycore.js';
 
@@ -39,7 +39,7 @@ export function partyPanel({ current = () => true } = {}) {
     wrap.append(table);
     const candidates = [...state.entities.values()]
       .filter((e) => !ids().includes(e.id) && (e.blocks || []).some((b) => b.kind === 'sheet'))
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .sort((a, b) => compareNames(a.name, b.name));
     if (candidates.length) {
       const pick = el('select', { 'aria-label': 'Character to add to the party' }, candidates.map((e) => el('option', { value: e.id }, e.name)));
       wrap.append(el('div', { class: 'row', style: 'margin-top:8px' }, pick,

@@ -3,7 +3,7 @@
 // The rules themselves live in revealcore.js. GM-only throughout: callers
 // only offer these controls in GM view, and nothing here reaches an export.
 
-import { el, uid, readSetting, toast } from './util.js';
+import { el, uid, readSetting, toast, compareNames } from './util.js';
 import { state, getEntity, scheduleSave } from './state.js';
 import { mdToPlain } from './markdown.js';
 import { applyReveal, locate, revealStatus, undoReveal, OVERLAY_LISTS } from './revealcore.js';
@@ -13,7 +13,7 @@ const BLOCK_NOUNS = { text: 'text block', heading: 'heading', quote: 'quote', st
 /** Session entries, most recently updated first. */
 export function sessionEntries() {
   return [...state.entities.values()].filter((e) => e.type === 'session')
-    .sort((a, b) => (b.updated || '').localeCompare(a.updated || '') || a.name.localeCompare(b.name));
+    .sort((a, b) => (b.updated || '').localeCompare(a.updated || '') || compareNames(a.name, b.name));
 }
 
 /** The session last chosen in the Encounter view, else the latest one. */

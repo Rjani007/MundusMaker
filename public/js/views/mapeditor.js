@@ -4,7 +4,7 @@
 // — this file renders them generically and never branches on map.kind.
 //   all kinds: draggable markers/stamps/labels/paths with GM-secret flags
 
-import { el, toast, debounce, downloadBlob, clamp, uid } from '../util.js';
+import { el, toast, debounce, downloadBlob, clamp, uid, compareNames } from '../util.js';
 import {
   state, getEntity, visibleEntities, scheduleSave, saveEntity, flushSaves, requireSaved, newEntity, types,
 } from '../state.js';
@@ -32,6 +32,14 @@ import { mapKeyPanel } from './mapkeypanel.js';
 import { populatePanel } from './populatepanel.js';
 import { canPopulate } from '../maps/populate.js';
 import { journeyPanel } from './journeypanel.js';
+
+// Spoken names for the marker, stamp and path palettes in mapcore.js; an
+// unlisted color falls back to its hex code.
+const SWATCH_NAMES = {
+  '#e0524a': 'red', '#e0a72c': 'amber', '#4a9e6f': 'green', '#4a86e0': 'blue', '#9b59d0': 'purple', '#e8e4f0': 'white',
+  '#c9b184': 'sand', '#7d5138': 'brown', '#9c3f2e': 'brick red', '#8b8fa8': 'slate grey', '#5f7f42': 'moss green', '#4a86b8': 'steel blue',
+  '#5c88a8': 'river blue', '#8a2f2f': 'dark red', '#3a2a18': 'dark brown', '#4a3a28': 'stone brown',
+};
 
 export function render(container, id) {
   const e = getEntity(id);
@@ -990,13 +998,9 @@ export function render(container, id) {
     paramRow('Shape', el('select', { onchange: (ev) => { markerOpts.shape = ev.target.value; } },
       MARKER_SHAPES.map((s) => el('option', { value: s }, s)))),
     paramRow('Color', el('div', { class: 'row', style: 'gap:4px' },
-      MARKER_COLORS.map((c) => el('button', {
-        class: 'legend-swatch', style: `background:${c};width:20px;height:20px;padding:0;border:2px solid transparent`,
-        onclick: (ev) => {
-          markerOpts.color = c;
-          markerOptsRow.querySelectorAll('.legend-swatch').forEach((b) => b.style.borderColor = 'transparent');
-          ev.target.style.borderColor = '#fff';
-        },
+      MARKER_COLORS.map((c) => colorSwatch(c, markerOpts.color === c, (ev) => {
+        markerOpts.color = c;
+        markSwatch(markerOptsRow, ev.currentTarget);
       })))),
     paramRow('🔒 Secret', el('input', {
       type: 'checkbox', title: 'Secret markers are only visible in GM view and GM exports (traps, hidden doors, ambushes…)',
@@ -1007,22 +1011,35 @@ export function render(container, id) {
     paramRow('Size', el('select', { onchange: (ev) => { labelSize = Number(ev.target.value); } },
       [[16, 'Small'], [24, 'Medium'], [34, 'Large'], [48, 'Huge (region)']].map(([v, l]) => el('option', { value: v, selected: v === 24 }, l)))));
 
+  // A swatch is only a color square, so it carries its name for screen
+  // readers and hover, and aria-pressed says which one is picked.
+  function colorSwatch(c, picked, onclick) {
+    const name = SWATCH_NAMES[c.toLowerCase()] || c;
+    return el('button', {
+      class: 'legend-swatch', title: name, 'aria-label': `Color: ${name}`, 'aria-pressed': picked ? 'true' : 'false',
+      style: `background:${c};width:20px;height:20px;padding:0;border:2px solid ${picked ? '#fff' : 'transparent'}`,
+      onclick,
+    });
+  }
+  function markSwatch(wrap, picked) {
+    wrap.querySelectorAll('.legend-swatch').forEach((b) => {
+      b.style.borderColor = b === picked ? '#fff' : 'transparent';
+      b.setAttribute('aria-pressed', b === picked ? 'true' : 'false');
+    });
+  }
+
   function swatchRow(colors, get, set) {
     const wrap = el('div', { class: 'row', style: 'gap:4px' },
       el('button', {
-        class: 'ghost small', title: 'Use the default color', style: 'padding:0 6px',
-        onclick: (ev) => {
+        class: 'ghost small', title: 'Use the default color', 'aria-label': 'Use the default color', style: 'padding:0 6px',
+        onclick: () => {
           set('');
-          wrap.querySelectorAll('.legend-swatch').forEach((b) => b.style.borderColor = 'transparent');
+          markSwatch(wrap, null);
         },
       }, '↺'),
-      colors.map((c) => el('button', {
-        class: 'legend-swatch', style: `background:${c};width:20px;height:20px;padding:0;border:2px solid ${get() === c ? '#fff' : 'transparent'}`,
-        onclick: (ev) => {
-          set(c);
-          wrap.querySelectorAll('.legend-swatch').forEach((b) => b.style.borderColor = 'transparent');
-          ev.target.style.borderColor = '#fff';
-        },
+      colors.map((c) => colorSwatch(c, get() === c, (ev) => {
+        set(c);
+        markSwatch(wrap, ev.currentTarget);
       })));
     return wrap;
   }
@@ -1061,7 +1078,7 @@ export function render(container, id) {
     const shown = (list) => (list || []).filter((o) => !overlayHidden(o) && onLevel(o));
     const linkables = visibleEntities()
       .filter((x) => x.id !== e.id)
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .sort((a, b) => compareNames(a.name, b.name));
     const linkSelect = (obj) => el('select', {
       title: 'Link to an entry. Double-click the item on the map to open it. Linked items appear in that entry’s backlinks and in the PDF map key.',
       disabled: readOnly,
@@ -1180,7 +1197,7 @@ export function render(container, id) {
       const drill = drillKindOf(site);
       const repairTargets = broken ? [...state.entities.values()]
         .filter((candidate) => candidate.id !== e.id && candidate.map?.kind === drill)
-        .sort((a, b) => a.name.localeCompare(b.name)) : [];
+        .sort((a, b) => compareNames(a.name, b.name)) : [];
       if (!state.gm) {
         return el('div', { class: 'mk-row' },
           el('span', { style: 'flex:1;font-size:12.5px' }, site.name),
@@ -1416,7 +1433,7 @@ export function render(container, id) {
       el('span', { class: 'spacer' }),
       el('span', { class: 'type-badge' }, kind.label)),
     readOnly ? el('div', { class: 'notice', style: 'margin-bottom:10px' }, '👁 Player preview is read-only. Secret markers are hidden.') : el('span'),
-    readOnly?null:el('div',{class:'tool-row'},undoButton,redoButton),layerControls,
+    readOnly ? el('span') : el('div', { class: 'tool-row' }, undoButton, redoButton), layerControls,
     el('h3', {}, 'Generator'),
     el('div', { class: 'param-row' },
       el('label', {}, 'Seed'), seedInput,
