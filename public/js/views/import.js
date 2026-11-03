@@ -5,7 +5,7 @@
 // entry + converters in importers.js. Cards with bespoke interaction (the
 // bestiary browser, old-install migration, backup restore) render themselves.
 
-import { el, uid, toast } from '../util.js';
+import { el, uid, toast, slugify } from '../util.js';
 import { state, types, newEntity, saveEntity, findByName, refreshWorlds, requireSaved } from '../state.js';
 import {
   parseFrontmatter, mdToBlocks, parseCsv, monsterToStat, loadBundledBestiary,
@@ -16,6 +16,7 @@ import { api } from '../api.js';
 import { readPdf, readForm } from '../sheets/pdfform.js';
 import { characterFromForm } from '../sheets/dndpdfimport.js';
 import { SHEET_SYSTEMS } from '../sheets/sheetcore.js';
+import { readCharacterFile, portraitParts } from '../sheets/charfile.js';
 
 const IMG_EXT = /\.(png|jpe?g|webp|gif|svg)$/i;
 
@@ -399,8 +400,77 @@ function dndPdfImporter() {
   };
 }
 
+// ---------- character file (MundusMaker, or an online table such as Elysium) ----------
+
+function characterFileImporter() {
+  let staged = null; // { parsed, nameInput, gmOnly }
+  return {
+    id: 'character-file',
+    title: 'Character file (.character.json)',
+    desc: () => el('p', { class: 'muted small' },
+      'A sheet saved with “⇩ Character file” on a character in any MundusMaker world, or downloaded from an online table such as Elysium after a session. ',
+      'It becomes one entry with a playable sheet, and its portrait when the file has one. Nothing is saved until you press Import.'),
+    pick: { kind: 'file', accept: '.json,application/json' },
+    typeDefault: 'character',
+    async stage(files) {
+      staged = null;
+      let parsed;
+      try {
+        parsed = readCharacterFile(JSON.parse(await files[0].text()), SHEET_SYSTEMS);
+      } catch (err) {
+        return { summary: err instanceof SyntaxError ? 'That file isn’t valid JSON, so it can’t be a character file.' : err.message, ready: false };
+      }
+      const sys = SHEET_SYSTEMS[parsed.system];
+      let about = '';
+      try { about = sys.summary?.(parsed.data) || ''; } catch { /* a summary is only a nicety */ }
+      const nameInput = el('input', { value: parsed.name, placeholder: 'Character name', style: 'flex:1;min-width:min(14em,100%)' });
+      const clash = el('div', { class: 'small', style: 'margin-top:4px' });
+      const checkName = () => {
+        const name = nameInput.value.trim();
+        clash.textContent = !name ? 'The file has no character name. Type one before importing.'
+          : findByName(name) ? `An entry called “${name}” already exists. Import asks before making a second one.` : '';
+      };
+      nameInput.addEventListener('input', checkName);
+      checkName();
+      const gmOnly = el('input', { type: 'checkbox' });
+      staged = { parsed, nameInput, gmOnly };
+      return {
+        summary: `A ${sys.label} character${about ? ` (${about})` : ''}. Check the name, then import.`,
+        preview: el('div', { class: 'notice', style: 'margin-top:10px' },
+          el('div', { class: 'row' }, el('label', { class: 'small' }, 'Name'), nameInput,
+            el('label', { class: 'small' }, gmOnly, '🔒 GM-only character')),
+          clash,
+          parsed.portrait ? el('p', { class: 'small', style: 'margin-top:6px' }, 'The portrait comes along.') : ''),
+        ready: true,
+      };
+    },
+    async commit({ typeKey }) {
+      const { parsed, nameInput, gmOnly } = staged;
+      const name = nameInput.value.trim();
+      if (!name) { nameInput.focus(); return { keep: true, done: 'Type a name for the character first.' }; }
+      if (findByName(name) && !confirm(`An entry called “${name}” already exists.\n\nImport this character as a second entry with the same name? Cancel to change the name first.`)) {
+        nameInput.focus();
+        return { keep: true, done: 'Nothing was imported. Change the name, then press Import again.' };
+      }
+      const e = newEntity(name, typeKey);
+      e.gmOnly = gmOnly.checked;
+      e.blocks = [{ id: uid(), kind: 'sheet', system: parsed.system, data: parsed.data, text: '', secret: false }, ...e.blocks];
+      const portrait = portraitParts(parsed.portrait);
+      let note = '';
+      if (portrait) {
+        // the server checks the bytes really are that kind of picture
+        try { e.image = (await api.uploadAsset(`${slugify(name)}.${portrait.ext}`, portrait.base64)).file; } catch { note = ' Its portrait could not be stored.'; }
+      }
+      await saveEntity(e);
+      staged = null;
+      location.hash = `#/e/${e.id}`;
+      return { done: `Imported ${name}.${note}` };
+    },
+  };
+}
+
 // Registry — stage() parses and previews, commit() writes entities.
-const IMPORTERS = [markdownImporter, csvImporter, worldAnvilImporter, foundryImporter, dndPdfImporter];
+const IMPORTERS = [markdownImporter, csvImporter, worldAnvilImporter, foundryImporter, dndPdfImporter, characterFileImporter];
 
 // ---------- generic card over a registry entry ----------
 
