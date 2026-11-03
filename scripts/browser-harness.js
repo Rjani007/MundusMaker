@@ -133,8 +133,9 @@ function connect(url) {
 
 
 /**
- * Start MundusMaker on dataDir and a headless browser whose profile lives in
- * temp, open the app and return a small driver. close() stops both.
+ * Start MundusMaker on dataDir (the sample world, when the folder is empty) and
+ * a headless browser whose profile lives in temp, open the app and return a
+ * small driver. close() stops both.
  * `launch` swaps the server for another entry point (the phone runtime's
  * mobile/shared/devhost.js): { script, args(port), ready: RegExp, url(port, line) }.
  */
@@ -152,7 +153,7 @@ async function startSession(temp, dataDir, launch = null) {
   };
   try {
     const port = await freePort();
-    const server = spawn(process.execPath, launch ? [launch.script, ...launch.args(port)] : ['server.js', dataDir, String(port), '--no-open'],
+    const server = spawn(process.execPath, launch ? [launch.script, ...launch.args(port)] : ['server.js', dataDir, String(port), '--no-open', '--sample'],
       { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
     children.push(server);
     const readyLine = await waitForLine(server.stdout, launch ? launch.ready : /serving on/, 'The MundusMaker test server');

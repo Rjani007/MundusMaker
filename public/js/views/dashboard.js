@@ -10,12 +10,14 @@ import { advanceDate, daysUntilAnnual, formatDate, isRecurring } from '../calend
 import { nameStyleForType, randomName } from '../names.js';
 
 // One cheap scan per app load, and only while the user still has nothing but
-// the sample world — an upgrader's first boot is exactly when it helps.
+// an empty world (or an older build's sample world): an upgrader's first boot
+// is exactly when it helps.
 let scannedThisLoad = false;
 
 function maybeOfferMigration(container) {
   if (scannedThisLoad || readSetting('migrateDismissed')) return;
-  if (state.worlds.length !== 1 || state.worlds[0]?.id !== 'the-sundered-reach') return;
+  const only = state.worlds.length === 1 ? state.worlds[0] : null;
+  if (!only || (only.entities && only.id !== 'the-sundered-reach')) return;
   scannedThisLoad = true;
   api.scanInstalls().then((found) => {
     if (!found.length || !container.isConnected) return;
@@ -155,10 +157,18 @@ export function render(container) {
       await switchTo(id);
     };
     newName.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') create(); });
+    const addSample = async () => {
+      const { id } = await api.addSampleWorld();
+      await refreshWorlds();
+      await switchTo(id);
+    };
     worldsWrap.append(el('div', { class: 'row', style: 'margin-top:10px' },
       newName,
       el('button', { class: 'ghost', title: 'Roll a nation-style world name', onclick: () => { newName.value = randomName('nation'); newName.focus(); } }, '🎲'),
-      el('button', { onclick: create }, '+ Create world')));
+      el('button', { onclick: create }, '+ Create world')),
+    el('div', { class: 'row small', style: 'margin-top:8px;align-items:center' },
+      el('span', { class: 'muted' }, 'Want an example to explore?'),
+      el('button', { class: 'ghost small', title: 'Adds The Sundered Reach, a small example world', onclick: addSample }, 'Add the sample world')));
   }
   refreshWorldList();
 
@@ -205,7 +215,7 @@ export function render(container) {
           // "empty" is a lie when the entries exist but are all GM-only
           state.entities.size
             ? '👁 Every entry here is GM-only. Switch to GM view in the top bar to see them.'
-            : ['Nothing here yet. Name your first entry above — or ',
+            : ['Nothing here yet. Name your first entry above, or ',
                el('a', { href: '#/import' }, 'import notes you already have'), '.']),
     calendarCard,
     el('div', { class: 'card' },

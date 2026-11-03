@@ -9,7 +9,7 @@
  *
  *   node mobile/shared/devhost.js [dataDir] [--port N] [--no-session]
  *
- * dataDir defaults to tmp/mobile-data (seeded from sample/ on first start).
+ * dataDir defaults to tmp/mobile-data (an empty world on first start, as on a phone).
  * Open the printed URL: it sets the session cookie and loads the app.
  * --no-session skips the cookie, for the Claude preview pane only, which can
  * open nothing but the bare origin.

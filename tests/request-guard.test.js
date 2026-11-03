@@ -65,7 +65,7 @@ test('state-changing routes refuse cross-site, rebinding and non-JSON requests; 
   const port = await freePort();
   const env = { ...process.env, MUNDUSMAKER_CONFIG_DIR: config };
   for (const name of ['MUNDUSMAKER_DATA', 'TOMEWEAVER_DATA', 'LOREWEAVE_DATA', 'PORT']) delete env[name];
-  const child = spawn(process.execPath, ['server.js', data, String(port), '--no-open'], { cwd: path.resolve(__dirname, '..'), env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+  const child = spawn(process.execPath, ['server.js', data, String(port), '--no-open', '--sample'], { cwd: path.resolve(__dirname, '..'), env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
   let logs = '';
   child.stdout.on('data', (chunk) => { logs += chunk; });
   child.stderr.on('data', (chunk) => { logs += chunk; });
@@ -111,6 +111,7 @@ test('state-changing routes refuse cross-site, rebinding and non-JSON requests; 
     ['POST', '/api/folder-backup/restore', { name: 'x', worldId: WID }],
     ['POST', '/api/recovery/restore', { confirm: true, kind: 'snapshot', worldId: WID, stamp: snapshot.stamp }],
     ['POST', '/api/worlds', { name: 'Planted world' }],
+    ['POST', '/api/worlds/sample', {}],
     ['DELETE', `/api/worlds/${WID}`, {}],
     ['POST', '/api/library', { name: 'Planted pack', data: { spell: [{ name: 'Planted', level: 0 }] } }],
     ['POST', '/api/library/download-5etools', { confirmUse: false }],
@@ -230,7 +231,7 @@ test('uploads accept raster images only, assets are never served as active conte
   const port = await freePort();
   const env = { ...process.env, MUNDUSMAKER_CONFIG_DIR: tmp };
   for (const name of ['MUNDUSMAKER_DATA', 'TOMEWEAVER_DATA', 'LOREWEAVE_DATA', 'PORT']) delete env[name];
-  const child = spawn(process.execPath, ['server.js', data, String(port), '--no-open'], { cwd: path.resolve(__dirname, '..'), env, stdio: 'ignore', windowsHide: true });
+  const child = spawn(process.execPath, ['server.js', data, String(port), '--no-open', '--sample'], { cwd: path.resolve(__dirname, '..'), env, stdio: 'ignore', windowsHide: true });
   t.after(async () => {
     if (child.exitCode === null) { child.kill(); await once(child, 'exit'); }
     assert.ok(path.basename(tmp).startsWith('mundusmaker-guard-'));

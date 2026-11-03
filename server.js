@@ -45,7 +45,7 @@ const portArg = args.find((a) => /^\d+$/.test(a));
 // The app has been renamed (Loreweave → TomeWeaver → MundusMaker), so older
 // config filenames and env var names stay honoured. This is not cosmetic: if
 // the config read silently yields {}, DATA_DIR falls back to ./data, the app
-// finds no worlds, seeds a fresh sample world, and an upgrading user cannot
+// finds no worlds, creates a fresh empty one, and an upgrading user cannot
 // tell that apart from having lost their entire campaign. It hits folder-sync
 // users hardest — they are the ones who have a config file at all.
 //
@@ -78,6 +78,9 @@ const WORLDS_DIR = path.join(DATA_DIR, 'worlds');
 const PORT = Number(portArg || process.env.PORT || config.port || 4870);
 const NO_OPEN = flags.includes('--no-open')
   || !!envAny('MUNDUSMAKER_NO_OPEN', 'TOMEWEAVER_NO_OPEN', 'LOREWEAVE_NO_OPEN');
+// An empty data folder normally starts with a blank world; tests and demos
+// ask for the sample world instead.
+const SEED_SAMPLE = flags.includes('--sample');
 const CONTAINER = process.env.MUNDUSMAKER_CONTAINER === '1';
 // The phone app (mobile/) runs this same server inside the app on the device.
 // Its runtime names the deployment; the app opens and closes it, and the data
@@ -259,7 +262,27 @@ function createWorld(name) {
   return wid;
 }
 
-function bootstrap() {
+/** The sample world, copied in as a new world. Returns its id. */
+function addSampleWorld() {
+  const wid = uniqueWorldId('The Sundered Reach');
+  copyDirSync(SAMPLE_DIR, path.join(WORLDS_DIR, wid));
+  fs.mkdirSync(path.join(WORLDS_DIR, wid, 'exports'), { recursive: true });
+  return wid;
+}
+
+/** A data folder without worlds gets one: a blank world the GM renames, or the sample with --sample. */
+function addFirstWorld() {
+  if (listWorldIds().length) return;
+  if (SEED_SAMPLE && fs.existsSync(path.join(SAMPLE_DIR, 'world.json'))) {
+    console.log('[mundusmaker] first run: seeding the sample world "The Sundered Reach"');
+    addSampleWorld();
+  } else {
+    console.log('[mundusmaker] first run: created an empty world, "My World"');
+    createWorld('My World');
+  }
+}
+
+function bootstrap({ scanFirst = false } = {}) {
   fs.mkdirSync(WORLDS_DIR, { recursive: true });
   recoverTransactions(DATA_DIR); // rollback interrupted restores BEFORE seeding or snapshots
 
@@ -285,15 +308,9 @@ function bootstrap() {
   // when worlds from an older install beside this one are brought over
   const fresh = !listWorldIds().length && !upgrade.hasLedger(DATA_DIR);
 
-  // first run: seed the sample world
-  if (!listWorldIds().length) {
-    if (fs.existsSync(SAMPLE_DIR)) {
-      console.log('[mundusmaker] first run — seeding the sample world "The Sundered Reach"');
-      copyDirSync(SAMPLE_DIR, path.join(WORLDS_DIR, 'the-sundered-reach'));
-    } else {
-      createWorld('My World');
-    }
-  }
+  // A first start that looks for older installs makes its first world only
+  // if none came over (server.listen), so an upgrade adds no empty world.
+  if (!(fresh && scanFirst)) addFirstWorld();
 
   for (const wid of listWorldIds()) {
     fs.mkdirSync(path.join(WORLDS_DIR, wid, 'entities'), { recursive: true });
@@ -1261,6 +1278,10 @@ async function handleApi(req, res, pathname) {
       return sendJson(res, 200, { ok: true, id: wid });
     }
   }
+  if (pathname === '/api/worlds/sample' && method === 'POST') {
+    if (!fs.existsSync(path.join(SAMPLE_DIR, 'world.json'))) return sendJson(res, 404, { error: 'this copy of MundusMaker has no sample world' });
+    return sendJson(res, 200, { ok: true, id: addSampleWorld() });
+  }
 
   const worldsMatch = pathname.match(/^\/api\/worlds\/([^/]+)$/);
   if (worldsMatch && method === 'DELETE') {
@@ -1835,24 +1856,25 @@ server.on('error', (err) => {
 });
 
 server.listen(PORT, '127.0.0.1', () => {
-  const { fresh } = bootstrap();
+  // Only a data folder the app chose itself (default or config file) is filled
+  // from an older install. One named on the command line or in the environment
+  // is a deliberate choice, and is how tests and scratch previews run.
+  const scanOlder = !dataDirArg && !DATA_DIR_ENV && !CONTAINER;
+  const { fresh } = bootstrap({ scanFirst: scanOlder });
   if (!folderBackupUnavailable()) {
     // scheduled second-folder backups: checked shortly after start, then every 15 minutes
     const tick = () => { if (folderBackup.isDue(config.secondBackup)) { try { const r = runFolderBackup(); console.log(`[mundusmaker] backed up ${r.worlds} world(s) to ${config.secondBackup.dir}`); } catch (err) { console.error(`[mundusmaker] second-folder backup failed: ${err.message}`); } } };
     setTimeout(tick, 60 * 1000).unref();
     setInterval(tick, 15 * 60 * 1000).unref();
   }
-  // Only a data folder the app chose itself (default or config file) is filled
-  // from an older install. One named on the command line or in the environment
-  // is a deliberate choice, and is how tests and scratch previews run.
-  const chosenByApp = !dataDirArg && !DATA_DIR_ENV;
-  const firstStart = fresh && chosenByApp && !CONTAINER
+  const firstStart = fresh && scanOlder
     ? upgrade.firstStart(upgradeCtx()).then((result) => {
       if (result.result === 'copied') console.log(`[mundusmaker] brought over ${result.copied.length} world(s) from ${result.from}; that folder was not changed.`);
       else if (result.result === 'choice') console.log('[mundusmaker] older MundusMaker folders found; the app will ask what to bring over.');
     }).catch((err) => console.error(`[mundusmaker] could not check for older installs: ${err.message}`))
     : Promise.resolve();
   firstStart.then(() => {
+    addFirstWorld();
     markReady();
     if (!CONTAINER) { lastTabSeen = Date.now(); scheduleAutoStop(autoStopMinutes() ? 250 : 30000); }
     const url = `http://localhost:${PORT}`;

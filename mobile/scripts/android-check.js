@@ -83,7 +83,14 @@ async function main() {
 
   const status = await evaluate("fetch('/api/status').then((r) => r.json())");
   check(status.deployment === 'mobile' && status.platform === 'android', `server.js runs in the app (deployment ${status.deployment}, platform ${status.platform}, ${status.version})`);
-  check(await evaluate("document.querySelector('#worldSelect').textContent.includes('Sundered Reach')"), 'the sample world is listed');
+  check(await evaluate("document.querySelectorAll('#worldSelect option').length > 1"), 'the world list is shown');
+  // a fresh install starts with an empty world; the checks below edit the sample world
+  const sampleWorld = await evaluate(`(async () => {
+    const has = async () => (await (await fetch('/api/worlds')).json()).some((w) => w.id === 'the-sundered-reach');
+    if (!(await has())) await fetch('/api/worlds/sample', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    return has();
+  })()`);
+  check(sampleWorld, 'the sample world is there to test with (Add the sample world)');
   check(await evaluate("typeof window.mundusShell?.save === 'function' && !document.querySelector('#quitBtn:not([hidden])')"), 'the shell is present and the desktop Quit button is hidden');
   check(await evaluate('document.documentElement.scrollWidth <= innerWidth'), 'nothing scrolls sideways at phone width');
 

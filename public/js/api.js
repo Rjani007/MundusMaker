@@ -71,6 +71,7 @@ export const api = {
   // world management
   listWorlds: () => req('GET', '/api/worlds'),
   createWorld: (name) => req('POST', '/api/worlds', { name }),
+  addSampleWorld: () => req('POST', '/api/worlds/sample', {}),
   deleteWorld: (id) => req('DELETE', `/api/worlds/${encodeURIComponent(id)}`),
   linkIntegrity: () => req('GET', '/api/integrity/links'),
 

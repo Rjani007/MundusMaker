@@ -111,7 +111,7 @@ test('the server backs up on request and restores a world as a copy', { timeout:
   for (const dir of ['scripts', 'sample']) fs.cpSync(path.join(ROOT, dir), path.join(app, dir), { recursive: true });
   fs.mkdirSync(path.join(app, 'public'), { recursive: true });
   const target = path.join(root, 'usb');
-  let server = await startServer(app);
+  let server = await startServer(app, ['--sample']);
   servers.push(server);
   assert.equal((await server.api('/api/folder-backup')).body.available, true);
   assert.equal((await server.api('/api/folder-backup', { dir: path.join(app, 'data', 'inside') })).status, 400);

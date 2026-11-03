@@ -4,9 +4,9 @@
  * The phone runtime in real Chromium: starts mobile/shared/devhost.js on a
  * temporary data folder, opens the app in headless Edge or Chrome (the same
  * engine as Android's WebView) and checks that server.js runs in the worker:
- * the sample world loads, a save round-trips with its revision, an uploaded
- * image displays, Save hands a file to the host, and everything survives a
- * reload.
+ * a first start makes an empty world, the sample world can be added, a save
+ * round-trips with its revision, an uploaded image displays, Save hands a file
+ * to the host, and everything survives a reload.
  *
  *   node mobile/scripts/runtime-check.js [--png out.png]
  *
@@ -51,8 +51,10 @@ async function main() {
     check(await evaluate('typeof window.mundusShell?.save === "function"'), 'the shell announced itself (window.mundusShell)');
     const status = await evaluate("fetch('/api/status').then((r) => r.json())");
     check(status.deployment === 'mobile' && status.platform === 'devhost', `server.js runs in the worker (deployment ${status.deployment}, platform ${status.platform})`);
-    check(await evaluate("document.querySelector('#worldSelect').textContent.includes('Sundered Reach')"), 'the sample world was seeded and listed');
-    check(await evaluate("document.querySelectorAll('#sidebar a').length > 5"), 'the sidebar lists entries');
+    check(await evaluate("document.querySelector('#worldSelect').textContent.includes('My World')"), 'a first start makes an empty world, My World');
+    check(await evaluate("document.querySelector('.ent-title')?.value === 'My World'"), 'the dashboard opens on it');
+    const sample = await evaluate("fetch('/api/worlds/sample', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((r) => r.json())");
+    check(sample.id === 'the-sundered-reach', `Add the sample world copies it in (${sample.id})`);
 
     // a save the way api.js makes it: read, then PUT with If-Match
     const saved = await evaluate(`(async () => {

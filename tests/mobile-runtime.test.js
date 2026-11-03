@@ -80,7 +80,7 @@ test('path behaves like path.posix', () => {
 
 // ---------- the real server.js on the runtime ----------
 
-function bootServer({ fetch: hostFetch } = {}) {
+function bootServer({ fetch: hostFetch, sample = false } = {}) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mundusmaker-mobile-'));
   for (const d of ['data', 'config', 'tmp']) fs.mkdirSync(path.join(tmp, d));
   const ops = createFsOps({
@@ -111,7 +111,7 @@ function bootServer({ fetch: hostFetch } = {}) {
   const runtime = context.MundusNode.create({
     host,
     appRoot: '/app',
-    argv: ['/data', '--no-open'],
+    argv: ['/data', '--no-open', ...(sample ? ['--sample'] : [])],
     env: { MUNDUSMAKER_DEPLOYMENT: 'mobile', MUNDUSMAKER_CONFIG_DIR: '/config' },
     platform: 'android',
     tmpDir: '/tmp',
@@ -154,9 +154,10 @@ test('server.js boots on the runtime and serves the app the way the phone uses i
   assert.equal(status.restartNeeded, false);
 
   const worlds = (await s.request('GET', '/api/worlds')).json();
-  const wid = 'the-sundered-reach';
-  assert.ok(JSON.stringify(worlds).includes(wid), 'the sample world was seeded from the bundle');
-  assert.ok(fs.readdirSync(path.join(s.dataDir, '.snapshots', wid)).length >= 1, 'the daily snapshot ran');
+  assert.deepEqual(worlds.map((w) => w.name), ['My World'], 'a first start makes one empty world');
+  assert.ok(fs.readdirSync(path.join(s.dataDir, '.snapshots', worlds[0].id)).length >= 1, 'the daily snapshot ran');
+  const wid = (await s.request('POST', '/api/worlds/sample', { body: {} })).json().id;
+  assert.equal(wid, 'the-sundered-reach', 'the sample world is copied in from the bundle');
 
   // the static pages work through server.js too (the hosts serve them directly)
   const index = await s.request('GET', '/');
@@ -323,7 +324,7 @@ test('the file host keeps the runtime inside the app\'s folders', () => {
 });
 
 test('a folder listing is read in one batch, and a write is never answered with old bytes', async (t) => {
-  const s = bootServer();
+  const s = bootServer({ sample: true });
   t.after(s.cleanup);
   await s.listening;
   for (const k of Object.keys(s.counts)) delete s.counts[k];

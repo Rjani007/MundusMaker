@@ -29,12 +29,13 @@ test('installed configuration survives restart and respects custom and legacy da
   let running = await start();
   assert.equal(running.status.dataDir, path.join(support, 'data'));
   assert.equal(running.status.configPath, path.join(support, 'mundusmaker.config.json'));
-  const oldWorld = path.join(support, 'data/worlds/the-sundered-reach/world.json');
+  const wid = (await (await fetch(running.base + '/api/worlds')).json())[0].id;
+  const oldWorld = path.join(support, `data/worlds/${wid}/world.json`);
   const original = fs.readFileSync(oldWorld);
   const response = await fetch(running.base + '/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dataDir: moved, copyData: true }) });
   assert.equal(response.status, 200);
   assert.deepEqual(fs.readFileSync(oldWorld), original);
-  assert.deepEqual(fs.readFileSync(path.join(moved, 'worlds/the-sundered-reach/world.json')), original);
+  assert.deepEqual(fs.readFileSync(path.join(moved, `worlds/${wid}/world.json`)), original);
   await stop(); running = await start();
   assert.equal(running.status.dataDir, moved); assert.equal(running.status.configuredVia, 'mundusmaker.config.json');
   await stop();

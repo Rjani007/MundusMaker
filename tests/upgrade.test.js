@@ -107,7 +107,7 @@ test('the first start copies worlds from the one older install beside it, once',
   const before = treeHash(old.dir);
 
   let server = await start(app);
-  assert.deepEqual(await worldNames(server.api), ['Blackwater', 'The Sundered Reach'], 'the untouched old sample is not copied again');
+  assert.deepEqual(await worldNames(server.api), ['Blackwater'], 'the untouched old sample is not copied, and no empty world is added');
   let status = (await server.api('/api/upgrade')).body;
   assert.equal(status.notice.from.version, '1.7.0');
   assert.deepEqual(status.notice.copied.map((w) => w.name), ['Blackwater']);
@@ -121,7 +121,7 @@ test('the first start copies worlds from the one older install beside it, once',
 
   // a second start is not a first start: nothing more is copied
   server = await start(app);
-  assert.deepEqual(await worldNames(server.api), ['Blackwater', 'The Sundered Reach']);
+  assert.deepEqual(await worldNames(server.api), ['Blackwater']);
   assert.equal((await server.api('/api/upgrade/dismiss', { what: 'notice' })).status, 200);
   assert.equal((await server.api('/api/upgrade')).body.notice, null);
 
@@ -133,7 +133,7 @@ test('the first start copies worlds from the one older install beside it, once',
   copy = (await server.api('/api/upgrade/copy', { path: old.dir, worldIds: ['blackwater'] })).body;
   assert.equal(copy.copied.length, 1);
   assert.match(copy.copied[0].name, /^Blackwater \(copied again \d{4}-\d{2}-\d{2}\)$/);
-  assert.equal((await worldNames(server.api)).length, 3, 'nothing was merged or overwritten');
+  assert.equal((await worldNames(server.api)).length, 2, 'nothing was merged or overwritten');
 });
 
 test('ambiguous, synced or still-running older installs wait for the GM', { timeout: 60000 }, async (t) => {
@@ -147,7 +147,7 @@ test('ambiguous, synced or still-running older installs wait for the GM', { time
   makeOld(path.join(parent, 'MundusMaker-1.7.0'), { version: '1.7.0' });
   const app = path.join(parent, 'MundusMaker-new'); copyApp(app);
   let server = await start(app);
-  assert.deepEqual(await worldNames(server.api), ['The Sundered Reach']);
+  assert.deepEqual(await worldNames(server.api), ['My World']);
   let choice = (await server.api('/api/upgrade')).body.choice;
   assert.equal(choice.candidates.length, 2);
   const picked = choice.candidates.find((c) => c.version === '1.7.0');
@@ -162,7 +162,7 @@ test('ambiguous, synced or still-running older installs wait for the GM', { time
   makeOld(path.join(parent2, 'MundusMaker-1.7.0'), { dataDir: path.join(parent, 'Dropbox', 'campaigns') });
   const app2 = path.join(parent2, 'MundusMaker-new'); copyApp(app2);
   server = await start(app2);
-  assert.deepEqual(await worldNames(server.api), ['The Sundered Reach']);
+  assert.deepEqual(await worldNames(server.api), ['My World']);
   choice = (await server.api('/api/upgrade')).body.choice;
   assert.equal(choice.candidates[0].external, true);
   assert.equal(choice.candidates[0].dataDir, path.join(parent, 'Dropbox', 'campaigns'));
@@ -175,7 +175,7 @@ test('ambiguous, synced or still-running older installs wait for the GM', { time
   fake.listen(fakePort, '127.0.0.1'); await once(fake, 'listening');
   const app3 = path.join(parent3, 'MundusMaker-new'); copyApp(app3);
   server = await start(app3);
-  assert.deepEqual(await worldNames(server.api), ['The Sundered Reach']);
+  assert.deepEqual(await worldNames(server.api), ['My World']);
   const candidate = (await server.api('/api/upgrade')).body.choice.candidates[0];
   assert.deepEqual(candidate.running, { port: fakePort, version: '1.7.0', canQuit: false });
   assert.equal((await server.api('/api/upgrade/quit-old', { path: candidate.path })).status, 409, 'a pre-1.9 copy is quit by the GM');
