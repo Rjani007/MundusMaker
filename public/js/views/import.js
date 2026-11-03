@@ -13,8 +13,9 @@ import {
 } from '../importers.js';
 import { crFromStat } from '../encounter.js';
 import { api } from '../api.js';
-import { readPdf, readForm } from '../sheets/pdfform.js';
+import { readPdf, readForm, pageImages } from '../sheets/pdfform.js';
 import { characterFromForm } from '../sheets/dndpdfimport.js';
+import { characterFromForm as vtmFromForm, recognizeLayout as vtmLayout } from '../sheets/vtmpdfimport.js';
 import { SHEET_SYSTEMS } from '../sheets/sheetcore.js';
 import { readCharacterFile, portraitParts } from '../sheets/charfile.js';
 
@@ -400,6 +401,76 @@ function dndPdfImporter() {
   };
 }
 
+// ---------- V5 character sheet PDF (the official sheet, or Progeny's PDF) ----------
+
+function vtmPdfImporter() {
+  let staged = null; // { result, nameInput, gmOnly }
+  const bullets = (items) => el('ul', { class: 'small', style: 'margin:4px 0 8px;padding-left:20px' }, items.map((t) => el('li', {}, t)));
+  return {
+    id: 'vtm5-pdf',
+    title: 'V5 character sheet PDF (official sheet or Progeny)',
+    desc: () => el('p', { class: 'muted small' },
+      'Pick a filled-in copy of the official fillable V5 character sheet, or the PDF from Progeny’s “Download PDF”. ',
+      'It becomes one character with a playable V5 sheet, filled from the PDF’s form fields. ',
+      'You see what comes across before anything is saved. The PDF itself is read here in your browser and not kept.'),
+    pick: { kind: 'file', accept: '.pdf,application/pdf' },
+    typeDefault: 'character',
+    async stage(files) {
+      staged = null;
+      let result;
+      try {
+        const doc = await readPdf(new Uint8Array(await files[0].arrayBuffer()));
+        const form = await readForm(doc);
+        // Progeny marks Humanity with pictures drawn on the page rather than in the form
+        result = vtmFromForm(form, vtmLayout(form)?.id === 'progeny' ? await pageImages(doc) : []);
+      } catch (err) {
+        if (/encryption/i.test(err.message)) return { summary: 'This PDF is protected with encryption, so MundusMaker can’t read its fields. Save a copy without a password and pick that one.', ready: false };
+        return { summary: err.message, ready: false };
+      }
+      const { report } = result;
+      const nameInput = el('input', { value: result.name, placeholder: 'Character name', style: 'flex:1;min-width:min(14em,100%)' });
+      const clash = el('div', { class: 'small', style: 'margin-top:4px' });
+      const checkName = () => {
+        const name = nameInput.value.trim();
+        clash.textContent = !name ? 'The sheet has no character name. Type one before importing.'
+          : findByName(name) ? `An entry called “${name}” already exists. Import asks before making a second one.` : '';
+      };
+      nameInput.addEventListener('input', checkName);
+      checkName();
+      const gmOnly = el('input', { type: 'checkbox' });
+      staged = { result, nameInput, gmOnly };
+      return {
+        summary: `Read as ${report.layout}. Check what comes across, then import.`,
+        preview: el('div', { class: 'notice', style: 'margin-top:10px' },
+          el('div', { class: 'row' }, el('label', { class: 'small' }, 'Name'), nameInput,
+            el('label', { class: 'small' }, gmOnly, '🔒 GM-only character')),
+          clash,
+          el('div', { class: 'small', style: 'margin-top:8px' }, el('strong', {}, 'Will be imported')),
+          bullets(report.imported),
+          report.warnings.length ? [el('div', { class: 'small' }, el('strong', {}, 'Worth checking')), bullets(report.warnings)] : null),
+        ready: true,
+      };
+    },
+    async commit({ typeKey }) {
+      const { result, nameInput, gmOnly } = staged;
+      const name = nameInput.value.trim();
+      if (!name) { nameInput.focus(); return { keep: true, done: 'Type a name for the character first.' }; }
+      if (findByName(name) && !confirm(`An entry called “${name}” already exists.\n\nImport this character as a second entry with the same name? Cancel to change the name first.`)) {
+        nameInput.focus();
+        return { keep: true, done: 'Nothing was imported. Change the name, then press Import again.' };
+      }
+      const e = newEntity(name, typeKey);
+      e.gmOnly = gmOnly.checked;
+      e.tags = [String(result.data.clan || '').toLowerCase()].filter(Boolean);
+      e.blocks = [{ id: uid(), kind: 'sheet', system: 'vtm5', data: { ...SHEET_SYSTEMS.vtm5.defaults(), ...result.data }, text: '', secret: false }, ...e.blocks];
+      await saveEntity(e);
+      staged = null;
+      location.hash = `#/e/${e.id}`;
+      return { done: `Imported ${name}.` };
+    },
+  };
+}
+
 // ---------- character file (MundusMaker, or an online table such as Elysium) ----------
 
 function characterFileImporter() {
@@ -470,7 +541,7 @@ function characterFileImporter() {
 }
 
 // Registry — stage() parses and previews, commit() writes entities.
-const IMPORTERS = [markdownImporter, csvImporter, worldAnvilImporter, foundryImporter, dndPdfImporter, characterFileImporter];
+const IMPORTERS = [markdownImporter, csvImporter, worldAnvilImporter, foundryImporter, dndPdfImporter, vtmPdfImporter, characterFileImporter];
 
 // ---------- generic card over a registry entry ----------
 
