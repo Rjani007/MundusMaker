@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<title>Player wiki</title>
+<link rel="icon" href="../icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../css/site.css">
+</head>
+<!-- No Content-Security-Policy here: the wiki frame is a srcdoc document, which
+     would inherit it on top of its own stricter one (viewer.js). -->
+<body class="viewer">
+<p id="status" class="status">Loading the wiki…</p>
+<iframe id="wiki" title="Player wiki" sandbox="allow-scripts" referrerpolicy="no-referrer" hidden></iframe>
+<script type="module" src="../js/viewer.js"></script>
+</body>
+</html>

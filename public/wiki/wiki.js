@@ -94,7 +94,8 @@
     else if (ev.key === 'Enter') {
       var links = box.querySelectorAll('a');
       var pick = links[active >= 0 ? active : 0];
-      if (pick) window.location.href = pick.getAttribute('href');
+      // a click, not a location change, so the online viewer can catch it
+      if (pick) pick.click();
     } else if (ev.key === 'Escape') { input.value = ''; show(); input.blur(); }
   });
   document.addEventListener('click', function (ev) {

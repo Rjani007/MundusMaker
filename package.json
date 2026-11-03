@@ -20,6 +20,8 @@
     "test:package": "node --test tests/package.test.js tests/unix-launchers.test.js tests/installed-config.test.js tests/macos-launcher.test.js",
     "test:container": "node --test tests/container.test.js",
     "test:mobile": "node --test tests/mobile-runtime.test.js && node mobile/scripts/runtime-check.js",
+    "site": "node scripts/serve-site.js",
+    "test:site-db": "node --test tests/site-db/wikis.test.js",
     "android:check": "node mobile/scripts/android-check.js",
     "icons": "node scripts/build-icons.js",
     "vendor": "node scripts/vendor.js",

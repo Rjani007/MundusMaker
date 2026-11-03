@@ -20,3 +20,5 @@ tmp/
 AGENTS.md
 CLAUDE.md
 session_handoff.md
+# The website build copies the offline search here (docs/website.md)
+site/wiki/search.js

@@ -58,7 +58,10 @@ password gets full GM access.
   timeline, holidays and a campaign clock.
 - **Handouts.** Letters, books, scrolls, notices and item cards as PDF or PNG.
 - **Sharing.** A player or GM PDF of the whole world, or a player wiki that
-  opens offline. A safety check looks for secrets that could slip through.
+  opens offline. You can also put the player wiki online on the
+  [MundusMaker website](https://rjani007.github.io/MundusMaker/) and send
+  your players one link. A safety check looks for secrets that could slip
+  through.
 - **Import.** Obsidian or Markdown folders, CSV, World Anvil, Foundry VTT,
   5e.tools files, D&D Beyond and V5 sheet PDFs, character files and backups.
 
@@ -120,6 +123,7 @@ Add `--sample` to start an empty data folder with the sample world.
 | `npm run package` | the universal download, with bundled Node runtimes |
 | `npm run bestiary`, `npm run srd52` | rebuild the bundled SRD data |
 | `npm run 5etools` | fetch 5etools data without the app |
+| `npm run site` | the website in `site/`, on a local Supabase stack ([website notes](docs/website.md)) |
 
 Release notes and design notes are in the `docs` folder of the source
 repository.

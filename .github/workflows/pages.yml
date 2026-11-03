@@ -1,0 +1,51 @@
+# Publishes site/ (the MundusMaker website and its player wiki viewer) to
+# GitHub Pages when the site changes on main, after the site's tests pass.
+# One-time setup: repository Settings -> Pages -> Source: GitHub Actions
+# (docs/website.md).
+name: Publish the website
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'public/wiki/wiki.js'
+      - 'tests/site.test.js'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test tests/site.test.js
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      # the viewer runs the offline wiki's own search, from this version of MundusMaker
+      - run: cp public/wiki/wiki.js site/wiki/search.js
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4

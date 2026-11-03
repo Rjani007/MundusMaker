@@ -1,0 +1,86 @@
+/* The MundusMaker website: the app's dark palette, nothing to download. */
+:root {
+  --bg: #17141f;
+  --bg2: #201b2c;
+  --panel: #241f31;
+  --border: #3a3250;
+  --text: #e8e4f0;
+  --muted: #9c94b0;
+  --accent: #b48cf2;
+  --danger: #ef7d7d;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+a { color: var(--accent); }
+.page { max-width: 720px; margin: 0 auto; padding: 32px 16px 64px; }
+h1 { font-size: 30px; line-height: 1.2; margin: 8px 0 10px; }
+h1.brand { display: flex; align-items: center; gap: 12px; font-size: 36px; }
+h2 { font-size: 19px; margin: 0 0 12px; }
+.lead { font-size: 18px; }
+.muted { color: var(--muted); }
+.small { font-size: 14px; }
+.crumb { margin: 0; }
+.crumb a { color: var(--muted); text-decoration: none; }
+.points { padding-left: 20px; }
+.points li { margin: 6px 0; }
+.steps li { margin: 4px 0; }
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 18px;
+  margin: 18px 0;
+}
+label { display: block; margin: 12px 0 4px; color: var(--muted); font-size: 14px; }
+input[type=email], input[type=password], input[type=text] {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg2);
+  color: var(--text);
+  font: inherit;
+}
+button, .button {
+  display: inline-block;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg2);
+  color: var(--text);
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+button.primary, .button.primary { background: var(--accent); border-color: var(--accent); color: #17141f; font-weight: 600; }
+button.danger { color: var(--danger); }
+button.link { padding: 0; border: 0; background: none; color: var(--accent); text-decoration: underline; }
+button:disabled { opacity: 0.5; cursor: default; }
+:is(button, .button, input):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
+
+/* a file picker that looks like a button */
+.file { display: inline-block; margin: 0; color: var(--text); font-size: inherit; }
+.file input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.file input:focus-visible + .button { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.msg { margin: 12px 0 0; overflow-wrap: anywhere; }
+.msg.error { color: var(--danger); }
+.linkbox input { flex: 1; min-width: 0; }
+.who { color: var(--muted); }
+ul.wikis { margin: 0; padding: 0; list-style: none; }
+ul.wikis li { padding: 12px 0; border-top: 1px solid var(--border); overflow-wrap: anywhere; }
+ul.wikis li:first-child { border-top: 0; }
+ul.wikis .row { margin-top: 8px; }
+
+/* the wiki viewer fills the window */
+body.viewer { overflow: hidden; }
+.viewer iframe { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; }
+.viewer .status { max-width: 560px; margin: 20vh auto 0; padding: 0 16px; text-align: center; color: var(--muted); }
