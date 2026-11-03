@@ -40,12 +40,11 @@ ZIP to the website, the same way character files travel to Elysium.
 1. **GitHub Pages:** in the repository, Settings → Pages → Build and deployment
    → Source: **GitHub Actions**. Then Actions → Publish the website → Run
    workflow. After that, every push that changes `site/` publishes it.
-2. **Its own Supabase organization (recommended):** MundusMaker's project is in
-   the same organization as Elysium, and the free plan's limits (5 GB of egress
-   a month, 1 GB of storage) are shared across an organization. Going over
-   restricts every project in it. In the dashboard, project Settings → General
-   → Transfer project moves it to a new organization; the ref, URL and key stay
-   the same.
+2. **Its own Supabase organization:** the free plan's limits (5 GB of egress a
+   month, 1 GB of storage) are shared across an organization, and going over
+   restricts every project in it. So the project has an organization of its
+   own, Mundusmaker - web, apart from Elysium's. Project Settings → General →
+   Transfer project moved it there; the ref, URL and key stayed the same.
 3. **Sign-in** is already set the way the site expects: the Email provider on
    and Confirm email off (the built-in mailer only reaches the project's own
    team). Once your GMs have accounts, you can stop new ones in Authentication
@@ -77,7 +76,8 @@ npx supabase stop
 
 ## Keeping an eye on it
 
-- Organization → Usage in the Supabase dashboard shows egress and storage.
+- The Usage page of the Mundusmaker - web organization shows egress and
+  storage.
 - A free project that goes unused for a week is paused, and published wikis
   don't load until someone presses Restore in the dashboard. Nothing is lost.
 - Unpublish removes a wiki's files first, then its row. If a GM's account is
