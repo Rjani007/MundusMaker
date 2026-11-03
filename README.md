@@ -10,14 +10,16 @@ leave the secrets out.
 
 ## Install
 
-Download `MundusMaker-x.y.z.zip` and unzip the whole folder. The same download
-works on Windows, Mac and Linux, and Node.js is included.
+Download `MundusMaker-x.y.z.zip` from the
+[latest release](https://github.com/Rjani007/MundusMaker/releases/latest)
+(not the Source code files) and unzip the whole folder. The same download works
+on Windows, Mac and Linux, and Node.js is included.
 
 - **Windows 10 or later (x64):** double-click `Start-MundusMaker.bat`. Your
   browser opens and MundusMaker keeps running in the tray.
   `MundusMaker-Console.bat` runs it in a window instead, for troubleshooting.
 - **Mac (macOS 13.5 or later):** move `MundusMaker.app` to Applications and
-  open it. Test builds are unsigned, so macOS may ask you to allow it once
+  open it. The app is unsigned, so macOS may ask you to allow it once
   under **Privacy & Security → Open Anyway**
   ([Apple's steps](https://support.apple.com/en-us/102445)).
 - **Linux (x64 or ARM64, glibc 2.28 and kernel 4.18 or later):** run

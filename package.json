@@ -1,8 +1,12 @@
 {
   "name": "mundusmaker",
-  "version": "1.9.3",
+  "version": "1.10.0",
   "description": "A free, open-source, fully local worldbuilding wiki for GMs — typed entities, backlinks, graph view, timelines, per-block secrets, player-safe PDF export, and procedural map generators. No cloud, no accounts, no AI.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Rjani007/MundusMaker.git"
+  },
   "type": "commonjs",
   "main": "server.js",
   "scripts": {

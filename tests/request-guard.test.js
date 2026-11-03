@@ -197,10 +197,8 @@ test('state-changing routes refuse cross-site, rebinding and non-JSON requests; 
   result = await app('POST', '/api/library/download-5etools', { confirmUse: false });
   assert.equal(result.status, 400, 'the downloader still asks for consent before any network use');
   assert.match(result.text, /confirmUse/);
-  // with no repository in package.json the update check answers without any request
-  result = await app('POST', '/api/update-check', { confirm: true });
-  assert.equal(result.status, 200, result.text);
-  assert.equal(JSON.parse(result.text).configured, false);
+  // package.json names the GitHub repository, so a confirmed check would go
+  // online; tests/updates.test.js covers that with a fake fetch
   result = await app('POST', '/api/update-check', {});
   assert.equal(result.status, 400, 'the update check runs only when asked');
   // publisher sheet downloads: only on request, only sheets from the fixed table
