@@ -8,63 +8,8 @@ const assert = require('node:assert/strict');
 const { jsPDF } = require('../public/vendor/jspdf.umd.min.js');
 const load = require('./module-loader');
 
-// ---------- a synthetic fillable PDF ----------
-
-// PDF text string: literal for plain ASCII, UTF-16BE hex otherwise
-const pdfString = (s) => (/^[\x20-\x7e\n]*$/.test(s)
-  ? `(${s.replace(/[\\()]/g, (c) => `\\${c}`).replace(/\n/g, '\\n')})`
-  : `<FEFF${[...s].map((c) => c.charCodeAt(0).toString(16).padStart(4, '0')).join('')}>`);
-
-/**
- * fields: [{ name, type: 'text'|'checkbox'|'pushbutton', value, on, asOnly }].
- * Dotted names become a field tree ("Text105.0" is kid "0" of "Text105"), as
- * in real sheets. `asOnly` ticks a box through its widget's /AS and leaves /V
- * unset; `on` names its on-state (default Yes). `listed: false` leaves the
- * widgets on the page with no AcroForm, as D&D Beyond's export does;
- * `acroForm: false` drops both, like a flattened or printed PDF.
- */
-function formPdf(fields, { acroForm = true, listed = acroForm } = {}) {
-  const objs = {
-    1: null, 2: '<< /Type /Pages /Kids [4 0 R] /Count 1 >>',
-    3: '<< /Type /XObject /Subtype /Form /BBox [0 0 10 10] /Length 0 >>\nstream\n\nendstream',
-  };
-  let next = 5;
-  const roots = [], annots = [], nodes = new Map();
-  const node = (path) => {
-    if (nodes.has(path)) return nodes.get(path);
-    const parts = path.split('.'), parent = parts.length > 1 ? node(parts.slice(0, -1).join('.')) : null;
-    const n = { num: next++, partial: parts[parts.length - 1], parent, kids: [] };
-    if (parent) parent.kids.push(n); else roots.push(n);
-    nodes.set(path, n);
-    return n;
-  };
-  fields.forEach((f, i) => {
-    const n = node(f.name);
-    const rect = `/Rect [${20 + (i % 10) * 50} ${20 + Math.floor(i / 10) % 70 * 10} ${60 + (i % 10) * 50} ${28 + Math.floor(i / 10) % 70 * 10}]`;
-    if (f.type === 'checkbox') {
-      const on = !!f.value, state = f.on || 'Yes';
-      n.body = `/FT /Btn ${on && !f.asOnly ? `/V /${state}` : f.asOnly ? '' : '/V /Off'} /AS ${on ? `/${state}` : '/Off'} /AP << /N << /${state} 3 0 R /Off 3 0 R >> >>`;
-    } else if (f.type === 'pushbutton') n.body = '/FT /Btn /Ff 65536';
-    else n.body = `/FT /Tx ${f.value ? `/V ${pdfString(String(f.value))}` : ''} /DA (/Helv 0 Tf 0 g)`;
-    n.body += ` ${rect} /Subtype /Widget /Type /Annot /P 4 0 R`;
-    annots.push(n.num);
-  });
-  for (const n of nodes.values()) {
-    const kids = n.kids.length ? ` /Kids [${n.kids.map((k) => `${k.num} 0 R`).join(' ')}]` : '';
-    objs[n.num] = `<< /T ${pdfString(n.partial)}${n.parent ? ` /Parent ${n.parent.num} 0 R` : ''}${kids} ${n.body || ''} >>`;
-  }
-  objs[1] = `<< /Type /Catalog /Pages 2 0 R${listed ? ` /AcroForm << /Fields [${roots.map((r) => `${r.num} 0 R`).join(' ')}] /DA (/Helv 0 Tf 0 g) >>` : ''} >>`;
-  objs[4] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]${acroForm ? ` /Annots [${annots.map((a) => `${a} 0 R`).join(' ')}]` : ''} >>`;
-  let out = '%PDF-1.7\n%\xe2\xe3\xcf\xd3\n';
-  const offsets = {};
-  const size = Math.max(...Object.keys(objs).map(Number)) + 1;
-  for (let num = 1; num < size; num++) { if (objs[num] == null) continue; offsets[num] = Buffer.byteLength(out, 'latin1'); out += `${num} 0 obj\n${objs[num]}\nendobj\n`; }
-  const xref = Buffer.byteLength(out, 'latin1');
-  out += `xref\n0 ${size}\n0000000000 65535 f\r\n`;
-  for (let num = 1; num < size; num++) out += offsets[num] != null ? `${String(offsets[num]).padStart(10, '0')} 00000 n\r\n` : '0000000000 00000 f\r\n';
-  out += `trailer\n<< /Size ${size} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
-  return new Uint8Array(Buffer.from(out, 'latin1'));
-}
+// every PDF here is built from field names by the shared helper
+const { formPdf } = require('./formpdf');
 
 async function formOf(bytes) {
   const { readPdf, readForm } = await load('sheets/pdfform.js');

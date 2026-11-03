@@ -7,7 +7,9 @@
 //
 // Pure module (no DOM): Uint8Array in, Uint8Array out. Compressed streams use
 // the platform's DecompressionStream, which browsers and Node 18+ provide.
-// Encrypted PDFs are refused with a plain explanation.
+// Encrypted PDFs are refused with a plain explanation. Elysium (../elysium,
+// site/js/pdfform.js) carries a reader-only copy, including each widget's
+// caption and drawing and pageImages(); fix a parsing bug in both.
 
 // ---------- object model ----------
 
@@ -474,6 +476,9 @@ export async function readForm(doc) {
     for (const k of kids) { const kd = await doc.resolve(k); (isDict(kd) && kd.has('T') ? fieldKids : widgetKids).push(k); }
     for (const k of fieldKids) await walk(k, name, own, depth + 1);
     if (fieldKids.length && !widgetKids.length) return;
+    const ft = nameOf(own.FT), ff = Number(own.Ff || 0);
+    const type = ft === 'Tx' ? 'text' : ft === 'Ch' ? 'choice' : ft === 'Sig' ? 'signature'
+      : ft === 'Btn' ? (ff & FLAG.pushbutton ? 'pushbutton' : ff & FLAG.radio ? 'radio' : 'checkbox') : 'unknown';
     const widgetRefs = widgetKids.length ? widgetKids.filter((k) => k instanceof Ref) : node.has('Rect') ? [ref] : [];
     const widgets = [];
     for (const wref of widgetRefs) {
@@ -486,12 +491,15 @@ export async function readForm(doc) {
       let page = annotPage.get(wref.num);
       if (page == null && w.get('P') instanceof Ref) page = pages.findIndex((p) => p.ref instanceof Ref && p.ref.num === w.get('P').num);
       const mk = await doc.resolve(w.get('MK'));
+      // a push button's own drawing is all that a filler which sets no caption leaves behind
+      const drawn = type === 'pushbutton' && normal instanceof Stream ? latin1(await decodeStream(normal).catch(() => new Uint8Array(0))).slice(0, 4000) : '';
       // `state` is the widget's own /AS: some producers tick a box there and leave the field's /V unset
-      widgets.push({ ref: wref, rect: [Math.min(rect[0], rect[2]), Math.min(rect[1], rect[3]), Math.max(rect[0], rect[2]), Math.max(rect[1], rect[3])], page: page ?? -1, onStates, rotate: isDict(mk) ? Number(mk.get('R') || 0) : 0, state: nameOf(await doc.resolve(w.get('AS'))) });
+      widgets.push({
+        ref: wref, rect: [Math.min(rect[0], rect[2]), Math.min(rect[1], rect[3]), Math.max(rect[0], rect[2]), Math.max(rect[1], rect[3])], page: page ?? -1, onStates,
+        rotate: isDict(mk) ? Number(mk.get('R') || 0) : 0, state: nameOf(await doc.resolve(w.get('AS'))),
+        caption: isDict(mk) ? strText(await doc.resolve(mk.get('CA'))) : '', drawn,
+      });
     }
-    const ft = nameOf(own.FT), ff = Number(own.Ff || 0);
-    const type = ft === 'Tx' ? 'text' : ft === 'Ch' ? 'choice' : ft === 'Sig' ? 'signature'
-      : ft === 'Btn' ? (ff & FLAG.pushbutton ? 'pushbutton' : ff & FLAG.radio ? 'radio' : 'checkbox') : 'unknown';
     fields.push({
       ref, name: name || `(unnamed ${ref.num})`, type, flags: ff,
       readOnly: !!(ff & FLAG.readOnly), multiline: !!(ff & FLAG.multiline), comb: !!(ff & FLAG.comb),
@@ -524,6 +532,71 @@ export async function readForm(doc) {
     unlisted: fields.length - listed,
     xfa: !!acro?.get('XFA'),
   };
+}
+
+// ---------- pictures drawn on the pages ----------
+
+// [a b c d e f] matrices: m applied first, then n
+const multiply = (m, n) => [m[0] * n[0] + m[1] * n[2], m[0] * n[1] + m[1] * n[3], m[2] * n[0] + m[3] * n[2], m[2] * n[1] + m[3] * n[3],
+  m[4] * n[0] + m[5] * n[2] + n[4], m[4] * n[1] + m[5] * n[3] + n[5]];
+
+async function resourcesOf(doc, node) {
+  for (let depth = 0; isDict(node) && depth < 16; depth++) {
+    const r = await doc.resolve(node.get('Resources'));
+    if (isDict(r)) return r;
+    node = await doc.resolve(node.get('Parent'));
+  }
+  return null;
+}
+
+/**
+ * Where images are drawn on the pages: [{ page, rect: [x0, y0, x1, y1] }] in page space,
+ * the same space as widget rects. Progeny's PDF export marks Humanity by drawing a tick
+ * picture over each box. Follows only q, Q, cm and Do in the page content.
+ */
+export async function pageImages(doc) {
+  const out = [];
+  for (const [page, p] of (await pageList(doc)).entries()) {
+    const xobjects = await doc.resolve((await resourcesOf(doc, p.node))?.get('XObject'));
+    let contents = await doc.resolve(p.node.get('Contents'));
+    contents = Array.isArray(contents) ? contents : contents ? [contents] : [];
+    let ctm = [1, 0, 0, 1, 0, 0];
+    const stack = [];
+    for (const ref of contents) {
+      const s = await doc.resolve(ref);
+      if (!(s instanceof Stream)) continue;
+      let data;
+      try { data = await decodeStream(s); } catch { continue; }
+      const lx = new Lexer(data, 0);
+      const operands = [];
+      try {
+        for (;;) {
+          lx.skip();
+          if (lx.pos >= data.length) break;
+          const t = lx.object();
+          if (!(t instanceof Keyword)) { operands.push(t); continue; }
+          if (t.word === 'q') stack.push(ctm);
+          else if (t.word === 'Q') ctm = stack.pop() || [1, 0, 0, 1, 0, 0];
+          else if (t.word === 'cm' && operands.length >= 6 && operands.slice(-6).every((v) => typeof v === 'number')) ctm = multiply(operands.slice(-6), ctm);
+          else if (t.word === 'Do' && operands[operands.length - 1] instanceof Name) {
+            const x = isDict(xobjects) ? await doc.resolve(xobjects.get(operands[operands.length - 1].name)) : null;
+            if (x instanceof Stream && nameOf(x.dict.get('Subtype')) === 'Image') {
+              // the image fills the unit square, carried to the page by the current matrix
+              const xs = [ctm[4], ctm[0] + ctm[4], ctm[2] + ctm[4], ctm[0] + ctm[2] + ctm[4]];
+              const ys = [ctm[5], ctm[1] + ctm[5], ctm[3] + ctm[5], ctm[1] + ctm[3] + ctm[5]];
+              out.push({ page, rect: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] });
+            }
+          } else if (t.word === 'ID') {
+            // an inline image's bytes run to the next "EI"
+            const end = indexOf(data, 'EI', lx.pos);
+            lx.pos = end < 0 ? data.length : end + 2;
+          }
+          operands.length = 0;
+        }
+      } catch { /* drawing this reader can't follow: keep what was found */ }
+    }
+  }
+  return out;
 }
 
 // ---------- appearances ----------
