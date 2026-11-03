@@ -15,3 +15,8 @@ logs/
 tmp/
 .audit-artifacts/
 .audit-data/
+# Agent and contributor notes stay on this computer
+.claude/
+AGENTS.md
+CLAUDE.md
+session_handoff.md
