@@ -23,6 +23,7 @@ import { SHEET_SYSTEMS, handleSheetClick, handleSheetKey } from '../sheets/sheet
 import { familiarHtml, FAMILIAR_SYSTEMS, sheetLayoutFor } from '../sheets/familiar.js';
 import { withSkillBases } from '../sheets/cocskills.js';
 import { KEY_HINT } from '../sheets/sheetaria.js';
+import { characterFile, characterFileName, PORTRAIT_LIMIT } from '../sheets/charfile.js';
 import { defaultRandomTable, randomTableHtml, rollRandomTable, tableRows } from '../randomtable.js';
 import { nameStyleForType, randomName } from '../names.js';
 import { syncLinkedSiteNames } from '../maps/crossscale.js';
@@ -1148,6 +1149,27 @@ export function render(container, id) {
     return btn;
   }
 
+  // Only the sheet goes into the file (sheets/charfile.js), plus the portrait when it is small.
+  async function downloadCharacterFile(entity, block) {
+    let portrait = null;
+    if (entity.image) {
+      try {
+        const res = await fetch(api.assetUrl(state.worldId, entity.image));
+        const blob = res.ok ? await res.blob() : null;
+        if (blob && blob.size <= PORTRAIT_LIMIT && /^image\/(png|jpeg|webp|gif)$/.test(blob.type)) {
+          portrait = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result));
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(blob);
+          });
+        }
+      } catch { /* the sheet still goes out without its portrait */ }
+    }
+    const file = characterFile(entity, block, { portrait });
+    downloadBlob(new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' }), characterFileName(entity.name));
+  }
+
   function refreshBlocks() {
     blocksWrap.innerHTML = '';
     const keyNoteIds = keyBlockIds(e.map);
@@ -1192,6 +1214,10 @@ export function render(container, id) {
             class: 'small', title: 'Fill your own copy of the publisher’s fillable character sheet with this character',
             onclick: () => import('./officialsheet.js').then((m) => m.openOfficialSheet({ entity: e, block: b })).catch((err) => toast(err.message)),
           }, '📄 Official sheet…') : null,
+          state.gm || (!e.gmOnly && !b.secret) ? el('button', {
+            class: 'small', title: 'Download this sheet as a character file: for another world, a backup, or an online table such as Elysium',
+            onclick: () => downloadCharacterFile(e, b).catch((err) => toast(err.message)),
+          }, '⇩ Character file') : null,
           state.gm && b.system === 'dnd2024' ? el('button', { class: 'primary small', onclick: () => {
             if (!state.gm) return; openEditor(b, node); const panel = node.querySelector('[data-advance]'); if (panel) { panel.open = true; panel.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
           } }, 'Level up…') : null));
