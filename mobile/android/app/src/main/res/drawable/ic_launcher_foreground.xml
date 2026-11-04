@@ -1,12 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The MundusMaker mark (scripts/build-icons.js: two worlds joined by a route),
-     its 32-unit disc scaled to the 72dp an adaptive icon shows: x' = 54 + (x - 16) * 72 / 28. -->
+<!-- The MundusMaker mark for the adaptive launcher icon (scripts/build-icons.js writes it from MARK: npm run icons). -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path android:fillColor="#E0724A" android:pathData="M30.857,46.286 a10.286,10.286 0 1,0 20.572,0 a10.286,10.286 0 1,0 -20.572,0 Z" />
-    <path android:fillColor="#4A9E6F" android:pathData="M56.571,61.714 a10.286,10.286 0 1,0 20.572,0 a10.286,10.286 0 1,0 -20.572,0 Z" />
-    <path android:strokeColor="#CBBFE0" android:strokeWidth="5.143" android:strokeLineCap="round" android:pathData="M46.286,54 L61.714,56.571" />
+    <path android:fillColor="#3D6B8F" android:pathData="M32.4,54 a21.6,21.6 0 1,0 43.2,0 a21.6,21.6 0 1,0 -43.2,0 Z" />
+    <path android:fillColor="#5DB87E" android:pathData="M38.4 48Q45.6 37.2 55.2 43.2Q61.2 48 55.2 54Q48 58.8 42 55.2Q37.2 52.8 38.4 48Z" />
+    <path android:fillColor="#5DB87E" android:pathData="M57.6 63.6Q63.6 58.8 68.4 63.6Q70.8 68.4 64.8 70.8Q58.8 72 57.6 63.6Z" />
+    <path android:fillColor="#CBBFE0" android:pathData="M54 21.6L57.12 50.88L86.4 54L57.12 57.12L54 86.4L50.88 57.12L21.6 54L50.88 50.88Z" />
+    <path android:fillColor="#E0724A" android:pathData="M54 21.6L57.12 50.88L50.88 50.88Z" />
+    <path android:fillColor="#2C2438" android:pathData="M51.12,54 a2.88,2.88 0 1,0 5.76,0 a2.88,2.88 0 1,0 -5.76,0 Z" />
 </vector>

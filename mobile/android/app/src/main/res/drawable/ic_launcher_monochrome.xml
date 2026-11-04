@@ -1,11 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Themed-icon version of ic_launcher_foreground: the launcher tints it. -->
+<!-- Themed-icon version of ic_launcher_foreground: the launcher tints it (scripts/build-icons.js writes it from MARK: npm run icons). -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path android:fillColor="#FFFFFFFF" android:pathData="M30.857,46.286 a10.286,10.286 0 1,0 20.572,0 a10.286,10.286 0 1,0 -20.572,0 Z" />
-    <path android:fillColor="#FFFFFFFF" android:pathData="M56.571,61.714 a10.286,10.286 0 1,0 20.572,0 a10.286,10.286 0 1,0 -20.572,0 Z" />
-    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="5.143" android:strokeLineCap="round" android:pathData="M46.286,54 L61.714,56.571" />
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="2.88" android:pathData="M33.84,54 a20.16,20.16 0 1,0 40.32,0 a20.16,20.16 0 1,0 -40.32,0 Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M38.4 48Q45.6 37.2 55.2 43.2Q61.2 48 55.2 54Q48 58.8 42 55.2Q37.2 52.8 38.4 48Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M57.6 63.6Q63.6 58.8 68.4 63.6Q70.8 68.4 64.8 70.8Q58.8 72 57.6 63.6Z" />
+    <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd" android:pathData="M54 21.6L57.12 50.88L86.4 54L57.12 57.12L54 86.4L50.88 57.12L21.6 54L50.88 50.88Z M51.12,54 a2.88,2.88 0 1,0 5.76,0 a2.88,2.88 0 1,0 -5.76,0 Z" />
 </vector>
