@@ -393,6 +393,14 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+# The publisher-sheet relay for the app in the browser (docs/website.md). It
+# checks the GM's sign-in itself (sheet_relay_allow), so the gateway lets the
+# browser's CORS preflight through without a token.
+[functions.sheet-download]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/sheet-download/index.js"
+
 [analytics]
 enabled = false
 port = 56427

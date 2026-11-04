@@ -19,6 +19,8 @@ on:
       - 'mobile/shared/runtime/**'
       - 'tests/site.test.js'
       - 'tests/web-*.test.js'
+      - 'tests/sheet-relay.test.js'
+      - 'supabase/functions/**'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -39,7 +41,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: node --test tests/site.test.js tests/web-memfs.test.js tests/web-runtime.test.js tests/web-sync.test.js
+      - run: node --test tests/site.test.js tests/web-memfs.test.js tests/web-runtime.test.js tests/web-sync.test.js tests/sheet-relay.test.js tests/sheetdownload.test.js
 
   deploy:
     needs: test

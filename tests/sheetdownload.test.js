@@ -71,3 +71,12 @@ test('a publisher that never answers times out with a plain message', async () =
   const hang = (url, opts) => new Promise((resolve, reject) => opts.signal.addEventListener('abort', () => reject(new Error('aborted'))));
   await assert.rejects(downloadSheet('coc7-chaosium-1920s', { fetchImpl: hang, timeoutMs: 50 }), /took too long/);
 });
+
+test('a refusal from the website relay says why, and a lost connection says so', async () => {
+  // web/engine.js rejects with `why` when the website's relay refuses a sheet
+  const refused = async () => { throw Object.assign(new Error('the download helper: limit'), { why: 'you have downloaded publisher sheets many times today; try again tomorrow' }); };
+  await assert.rejects(downloadSheet('coc7-chaosium-1920s', { fetchImpl: refused }),
+    /Chaosium's sheet could not be downloaded \(you have downloaded publisher sheets many times today; try again tomorrow\)\./);
+  const offline = async () => { throw new TypeError('fetch failed'); };
+  await assert.rejects(downloadSheet('coc7-chaosium-1920s', { fetchImpl: offline }), /\(no connection\)/);
+});

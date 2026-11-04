@@ -89,10 +89,18 @@ website to a domain of its own (see Hosting) is the cleaner separation.
 
 ### What the browser can't do
 
-- Downloads the server makes for the GM (5etools packs, publisher sheets)
-  work only from sites that let other web pages download from them. GitHub's
-  do; the publishers' sheet PDFs usually don't, and the dialog then says to
-  download the file and pick it instead.
+- Downloads the server makes for the GM work only from sites that let other
+  web pages download from them. GitHub's do, so the 5etools downloader works.
+  The publishers' sheet servers don't (Chaosium's sends no permission, D&D
+  Beyond's allows only dndbeyond.com), so "Get it from…" in the Official sheet
+  dialog goes through the site's relay instead: the Edge Function
+  `supabase/functions/sheet-download` fetches one sheet from the fixed list in
+  `scripts/sheetdownload.js` for a signed-in GM and passes it straight back.
+  It keeps no copy, because the publishers allow their sheets for personal use
+  only, which is also why the site can't simply host them for everyone. Each
+  GM may fetch 20 sheets a day (`sheet_relay_allow()`), and each download
+  counts toward the project's outgoing traffic (the Call of Cthulhu sheet is
+  about 1.6 MB).
 - Check for updates is hidden: the website always runs its newest version, and
   a tab that is open during an update offers to reload.
 - Library packs and official sheet templates stay in the browser they were
@@ -104,14 +112,22 @@ website to a domain of its own (see Hosting) is the cleaner separation.
 
 ## How the backend works
 
-- **Supabase project** MundusMaker, ref `zrophtozeecslvsecndo`. Two migrations:
+- **Supabase project** MundusMaker, ref `zrophtozeecslvsecndo`. Three migrations
+  and one Edge Function:
   - `supabase/migrations/20261103200000_player_wikis.sql` makes the `wikis`
     table (one row per published wiki, owned by its GM) and the public `wikis`
     bucket;
   - `supabase/migrations/20261104120000_world_sync.sql` makes `sync_files` (one
     row per synced file), `sync_heads` (each GM's latest revision), the private
     `sync` bucket (objects named `<user id>/<sha256>`) and `sync_commit()`,
-    the only way rows change.
+    the only way rows change;
+  - `supabase/migrations/20261104150000_sheet_relay.sql` makes
+    `sheet_relay_allow()`, the relay's sign-in check and daily allowance;
+  - `supabase/functions/sheet-download` is the relay itself: `relay.mjs` (the
+    handler, tested in Node by `tests/sheet-relay.test.js`) and `index.js`
+    (its Deno entry). `supabase/config.toml` turns the gateway's token check
+    off for it, so the browser's CORS preflight gets through; the function
+    checks the sign-in itself.
 - **Wiki limits:** each GM may have 3 wikis and 20 MB in all, and one file may
   be 3 MB. `wiki_limits()` in the migration and `LIMITS` in
   `site/js/wikifile.js` must match; `tests/site.test.js` checks that.
@@ -138,9 +154,11 @@ website to a domain of its own (see Hosting) is the cleaner separation.
    publishes both. The workflow runs `node scripts/stage-web.js site/app`,
    which copies `public/`, `web/`, the runtime and what `server.js` needs into
    `site/app/` (git-ignored).
-2. **The sync tables:** apply the world sync migration to the hosted project
-   before the app goes live (see Changing the database). Without it the app
-   still opens, but every sync fails.
+2. **The sync tables and the relay:** apply the migrations to the hosted
+   project before the app goes live (see Changing the database), and deploy
+   the relay with `npx supabase functions deploy sheet-download
+   --project-ref zrophtozeecslvsecndo`. Without the migrations the app still
+   opens, but every sync fails; without the relay, "Get it from…" fails.
 3. **Its own Supabase organization:** the free plan's limits (5 GB of egress a
    month, 1 GB of storage) are shared across an organization, and going over
    restricts every project in it. So the project has an organization of its
@@ -171,6 +189,7 @@ local test accounts).
 ```sh
 npx supabase start        # Docker; ports 56420-56429, beside Elysium's
 npm run site              # http://localhost:4895, talking to the local stack
+npx supabase functions serve sheet-download   # the sheet relay, for "Get it from…"
 npm run test:site-db      # the database rules, against the local stack
 npx supabase stop
 ```

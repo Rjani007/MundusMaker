@@ -178,6 +178,38 @@ importScripts('node.js', 'memfs.js', 'store.js', 'sync.js', 'cloud.js');
   // browser's CORS rules apply, so only sites that allow it can answer
   const SAFE_HEADERS = new Set(['accept', 'accept-language', 'content-language', 'content-type']);
   const followed = new Map(); // a redirect the browser followed, for server.js's next hop
+  /**
+   * A publisher's sheet through the website's relay (supabase/functions/
+   * sheet-download): the answer as host.fetch gives it, or null for a file the
+   * relay doesn't fetch. Its refusals carry `why`, which scripts/sheetdownload.js
+   * shows in its message.
+   */
+  async function viaRelay(meta) {
+    const gone = (why) => Object.assign(new Error(`the download helper: ${why}`), { code: 'ECONNREFUSED', why });
+    for (let attempt = 0; ; attempt++) {
+      let res;
+      try {
+        const { token } = await getToken(attempt > 0);
+        res = await nativeFetch(`${C.cloud.url}/functions/v1/sheet-download`, {
+          method: 'POST', credentials: 'omit', cache: 'no-store',
+          headers: { apikey: C.cloud.key, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: meta.url }),
+        });
+      } catch (err) {
+        throw gone(err && err.kind === 'auth' ? 'your sign-in expired; sign in again' : 'no connection');
+      }
+      if (res.status === 200) {
+        const bytes = new Uint8Array(await res.arrayBuffer());
+        return { meta: { status: 200, statusText: 'OK', url: meta.url, headers: [['content-type', 'application/pdf'], ['content-length', String(bytes.length)]] }, body: bytes };
+      }
+      let answer = {};
+      try { answer = await res.json(); } catch { /* not JSON */ }
+      if (res.status === 401 && attempt === 0) continue; // a fresh token, once
+      if (answer.code === 'unknown-file') return null;
+      throw gone(typeof answer.error === 'string' && answer.error ? answer.error : `the download helper answered ${res.status}`);
+    }
+  }
+
   async function outbound(meta, body) {
     if (!/^https:\/\//i.test(meta.url)) throw Object.assign(new Error('only https downloads are allowed'), { code: 'EINVAL' });
     const kept = followed.get(meta.url);
@@ -194,8 +226,15 @@ importScripts('node.js', 'memfs.js', 'store.js', 'sync.js', 'cloud.js');
       });
     } catch {
       cancel(timer);
+      // Publishers' servers don't let other websites read their sheets, so the
+      // site's relay fetches the ones it knows for a signed-in GM.
+      if (C.cloud && (meta.method || 'GET') === 'GET') {
+        const relayed = await viaRelay(meta);
+        if (relayed) return relayed;
+      }
       const host = (() => { try { return new URL(meta.url).host; } catch { return 'that site'; } })();
-      throw Object.assign(new Error(`your browser could not reach ${host}. The site may not let web pages download from it; download the file yourself instead`), { code: 'ECONNREFUSED' });
+      throw Object.assign(new Error(`your browser could not reach ${host}. The site may not let web pages download from it; download the file yourself instead`),
+        { code: 'ECONNREFUSED', why: `${host} doesn't let websites download from it` });
     }
     const bytes = new Uint8Array(await res.arrayBuffer());
     cancel(timer);

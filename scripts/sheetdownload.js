@@ -48,7 +48,8 @@ async function downloadSheet(id, { fetchImpl = fetch, timeoutMs = 30000, maxByte
       try {
         res = await fetchImpl(url, { redirect: 'manual', signal: controller.signal, headers: { Accept: 'application/pdf', 'User-Agent': `MundusMaker/${version || 'app'}` } });
       } catch (err) {
-        throw failed(controller.signal.aborted ? 'it took too long' : 'no connection');
+        // the website's engine (web/engine.js) says why its relay refused; elsewhere it's the network
+        throw failed(controller.signal.aborted ? 'it took too long' : (err && typeof err.why === 'string' && err.why) || 'no connection');
       }
       if (![301, 302, 303, 307, 308].includes(res.status)) break;
       const next = res.headers.get('location');
