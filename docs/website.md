@@ -61,7 +61,19 @@ of the release works the same way, from maps to PDF export.
 What GMs see: a ☁ badge beside Saved (Synced, Syncing, Offline, Storage
 full…), an account panel in Settings (sign out, optionally removing the
 browser's copy, and how much of the allowance is used), and a bar when changes
-from another browser arrive. The app opens offline from the browser's copy,
+from another browser arrive.
+
+**Persistent storage:** after sign-in the page asks the browser to keep its
+copy even when disk space runs low (`navigator.storage.persist()`). Chrome and
+Edge decide by themselves, mostly by how much the site is used or whether it
+is installed; Firefox asks the person. Without it a browser may clear the copy
+under storage pressure, and Safari clears sites nobody has visited for about a
+week. A cleared copy comes back from the account at the next sign-in, like a
+new device, and can't delete anything there: its sync records go with it.
+Only unsynced changes and what stays in that one browser are lost. Settings
+says which it is, and offers "Ask the browser again" when the browser hasn't
+agreed. The permission belongs to the whole rjani007.github.io address, so it
+also covers Elysium. The app opens offline from the browser's copy,
 except the first time on a new device, which has to fetch the worlds first.
 
 **Limits:** each GM may keep 100 MB in their account, 20 MB per file and

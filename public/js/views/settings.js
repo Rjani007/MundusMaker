@@ -85,8 +85,28 @@ function webAccountPanel(web) {
   web.usage().then((u) => {
     if (u && u.limits) usage.textContent = `Your account holds ${megabytes(u.bytes)} of ${megabytes(u.limits.bytes)} in ${u.files} file${u.files === 1 ? '' : 's'}.`;
   });
+  // A browser that hasn't promised to keep its copy may clear it when space runs low.
+  const kept = el('div', { class: 'small', style: 'margin-top:8px' });
+  const showKept = (yes) => {
+    if (yes === null || yes === undefined) { kept.replaceChildren(); return; } // this browser can't say
+    kept.replaceChildren(yes
+      ? el('span', { class: 'muted' }, '✓ This browser has agreed to keep its copy of your worlds, even when space runs low.')
+      : el('div', { class: 'notice warn' },
+        '⚠ This browser may clear its copy of your worlds when space runs low, and Safari also clears sites you haven’t visited for about a week. ',
+        'Everything that synced stays in your account; only changes that haven’t synced yet, and the things kept just in this browser, would be lost. ',
+        el('button', {
+          class: 'small', style: 'margin-top:6px',
+          onclick: async () => {
+            const yesNow = await web.storage.persist();
+            showKept(yesNow);
+            toast(yesNow ? 'This browser will keep your worlds, even when space runs low.'
+              : 'The browser said no. Installing MundusMaker from the address bar, or allowing storage in this site’s settings, can change that.', 8000);
+          },
+        }, 'Ask the browser again')));
+  };
+  if (web.storage) web.storage.persisted().then(showKept);
   const panel = el('div', {},
-    line, usage,
+    line, usage, kept,
     el('p', { class: 'muted small', style: 'margin:10px 0 6px' },
       'Each world’s entries and pictures go to your account, so they open in any browser you sign in to. ',
       'History, exports, the trash and library packs stay in the browser that made them. ',

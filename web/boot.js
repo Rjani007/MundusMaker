@@ -343,6 +343,13 @@ window.mundusWeb = {
   },
   signOut,
   releases: RELEASES,
+  // Whether this browser promised to keep its copy when space runs low
+  // (persistent storage): true, false, or null when it can't say. Sign-in asks
+  // once; Settings asks again on a click, which browsers that ask people need.
+  storage: {
+    persisted: () => (navigator.storage?.persisted ? navigator.storage.persisted().catch(() => null) : Promise.resolve(null)),
+    persist: () => (navigator.storage?.persist ? navigator.storage.persist().catch(() => false) : Promise.resolve(false)),
+  },
 };
 
 function loadApp() {
