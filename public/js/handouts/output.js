@@ -10,7 +10,7 @@ const abort = signal => { if (signal?.aborted) throw new DOMException('Cancelled
 const breathe = () => new Promise(resolve => setTimeout(resolve, 0));
 export async function loadHandoutFonts() {
   if (!fontData) fontData = Promise.all(Object.entries(FONTS).flatMap(([family, names]) => names.map(async (name, i) => {
-    const response = await fetch(`/vendor/fonts/${name}.ttf`); if (!response.ok) throw Error('The bundled handout fonts are missing. Extract the complete MundusMaker archive.');
+    const response = await fetch(`vendor/fonts/${name}.ttf`); if (!response.ok) throw Error('The bundled handout fonts are missing. Extract the complete MundusMaker archive.');
     const bytes = await response.arrayBuffer(); let binary = '';
     const view = new Uint8Array(bytes); for (let j = 0; j < view.length; j += 8192) binary += String.fromCharCode(...view.subarray(j, j + 8192));
     const face = new FontFace(`Handout-${family}`, bytes, { weight: i === 1 ? '700' : '400', style: i === 2 ? 'italic' : 'normal' });

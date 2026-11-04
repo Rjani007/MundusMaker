@@ -1,0 +1,28 @@
+/* MundusMaker on the website: the sign-in screen and what boot.js adds
+   around the app. Colours come from app.css, loaded first. */
+body:not(.mm-ready) #app { display: none; }
+body:not(.mm-ready) { background: var(--bg); }
+
+.web-gate {
+  min-height: 100vh; min-height: 100dvh; box-sizing: border-box;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px 16px; background: var(--bg); color: var(--text);
+}
+.web-gate-card {
+  width: 100%; max-width: 440px; box-sizing: border-box;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 24px;
+}
+.web-gate-brand { display: flex; align-items: center; gap: 12px; margin: 0 0 12px; font-size: 26px; }
+.web-gate-card h2 { font-size: 18px; margin: 18px 0 6px; }
+.web-gate-card .lead { margin: 0 0 6px; color: var(--muted); }
+.web-gate-card label { display: block; margin: 12px 0 4px; font-size: 13px; color: var(--muted); }
+.web-gate-card input { width: 100%; box-sizing: border-box; }
+.web-gate-card .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 16px; }
+.web-gate-card .msg { margin: 12px 0 0; min-height: 1.4em; overflow-wrap: anywhere; }
+.web-gate-card .msg.error { color: var(--danger); }
+.web-gate-card .small { font-size: 13px; }
+.web-gate-card button.linkish { background: none; border: 0; padding: 0; color: var(--link); text-decoration: underline; cursor: pointer; }
+.web-gate-foot { margin: 22px 0 0; font-size: 13px; color: var(--muted); }
+.web-gate-foot a { color: var(--muted); }
+
+.web-bar[data-kind="storage"] { border-bottom-color: var(--danger); }

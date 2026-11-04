@@ -86,6 +86,9 @@ const CONTAINER = process.env.MUNDUSMAKER_CONTAINER === '1';
 // Its runtime names the deployment; the app opens and closes it, and the data
 // folder lives inside the app, so the desktop's lifecycle and folder tools are off.
 const MOBILE = !CONTAINER && process.env.MUNDUSMAKER_DEPLOYMENT === 'mobile';
+// The website (web/) runs it the same way in a browser tab, its folders kept
+// in the browser and synced through the GM's account (docs/website.md).
+const WEB = !CONTAINER && process.env.MUNDUSMAKER_DEPLOYMENT === 'web';
 const PKG = (() => {
   try { return JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')); } catch { return {}; }
 })();
@@ -196,6 +199,7 @@ let folderBackupError = null;
 function folderBackupUnavailable() {
   if (CONTAINER) return 'Docker hosts back up their /data volume instead.';
   if (MOBILE) return 'On a phone or tablet, use Download backup on this page and keep the file somewhere safe; the app cannot write to a second folder yet.';
+  if (WEB) return 'On the website, your worlds are kept in this browser and in your account. Use Download backup on this page for a copy of your own.';
   if (dataDirArg || DATA_DIR_ENV) return 'Second-folder backups run only for the data folder MundusMaker chose itself, not one given on the command line.';
   return null;
 }
@@ -838,7 +842,8 @@ function syncCopyOf(file, entity) {
   const rest = stem.slice(entity.id.length);
   if (!/^[\s._(-]/.test(rest)) return null;
   try { validateEntity(entity); } catch { return null; }
-  const tool = /conflicted copy/i.test(rest) ? 'Dropbox or Nextcloud' : /^\.sync-conflict-/i.test(rest) ? 'Syncthing' : null;
+  const tool = /conflicted copy/i.test(rest) ? 'Dropbox or Nextcloud' : /^\.sync-conflict-/i.test(rest) ? 'Syncthing'
+    : /mundusmaker sync copy/i.test(rest) ? 'your account’s sync' : null;
   return { id: entity.id, name: entity.name, tool };
 }
 
@@ -1130,7 +1135,7 @@ async function handleApi(req, res, pathname) {
       app: 'mundusmaker',
       version: VERSION,
       platform: process.platform,
-      deployment: CONTAINER ? 'container' : MOBILE ? 'mobile' : 'desktop',
+      deployment: CONTAINER ? 'container' : MOBILE ? 'mobile' : WEB ? 'web' : 'desktop',
       dataDir: DATA_DIR,
       configPath: CONFIG_PATH,
       // report the file that actually won, not the one we'd prefer — otherwise
@@ -1141,7 +1146,7 @@ async function handleApi(req, res, pathname) {
       updates: { configured: !!updates.feedFor(PKG) },
       // the app's files changed since this process started (see loadedCode);
       // on a phone they change only with an app update, which restarts the app
-      restartNeeded: !MOBILE && codeChangedSinceStart(),
+      restartNeeded: !MOBILE && !WEB && codeChangedSinceStart(),
       // lets the tray tell its own server from another copy holding the port
       pid: process.pid,
       // minutes after the last tab closes before stopping; 0 = keep running
@@ -1169,6 +1174,7 @@ async function handleApi(req, res, pathname) {
   if (pathname === '/api/quit' && method === 'POST') {
     if (CONTAINER) return sendJson(res, 409, { error: 'Docker manages this server. Stop it with Docker instead.' });
     if (MOBILE) return sendJson(res, 409, { error: 'On this device MundusMaker closes like any other app.' });
+    if (WEB) return sendJson(res, 409, { error: 'On the website, MundusMaker stops when you close its tab.' });
     sendJson(res, 200, { ok: true, stopping: true });
     setImmediate(() => gracefulQuit('Quit was chosen'));
     return;
@@ -1182,6 +1188,7 @@ async function handleApi(req, res, pathname) {
   if (pathname === '/api/auto-stop' && method === 'POST') {
     if (CONTAINER) return sendJson(res, 409, { error: 'Docker manages this server. Stop it with Docker instead.' });
     if (MOBILE) return sendJson(res, 409, { error: 'On this device MundusMaker closes like any other app.' });
+    if (WEB) return sendJson(res, 409, { error: 'On the website, MundusMaker stops when you close its tab.' });
     const body = JSON.parse((await readBody(req, 4 * 1024)).toString('utf8') || '{}');
     const minutes = Number(body.minutes);
     if (!AUTO_STOP_CHOICES.includes(minutes)) return sendJson(res, 400, { error: `minutes must be one of ${AUTO_STOP_CHOICES.join(', ')}` });
@@ -1196,6 +1203,7 @@ async function handleApi(req, res, pathname) {
   if (pathname === '/api/config' && method === 'POST') {
     if (CONTAINER) return sendJson(res, 409, { error: 'Container storage is managed by the /data volume. Change its mount in Docker, not a browser folder path.' });
     if (MOBILE) return sendJson(res, 409, { error: 'The app keeps its worlds inside itself on this device. Move a world with a backup instead.' });
+    if (WEB) return sendJson(res, 409, { error: 'On the website, your worlds are kept in this browser and your account. Move a world with a backup instead.' });
     const body = JSON.parse((await readBody(req, 64 * 1024)).toString('utf8'));
     const target = path.resolve(String(body.dataDir || '').trim());
     if (!target || target === ROOT) return sendJson(res, 400, { error: 'invalid folder path' });
@@ -1396,7 +1404,7 @@ async function handleApi(req, res, pathname) {
   }
 
   // --- migration from older installs (Loreweave / TomeWeaver / MundusMaker) ---
-  if (MOBILE && ['/api/scan-installs', '/api/scan-path', '/api/migrate-install'].includes(pathname)) {
+  if ((MOBILE || WEB) && ['/api/scan-installs', '/api/scan-path', '/api/migrate-install'].includes(pathname)) {
     return sendJson(res, 409, { error: 'There are no older installs beside the app on this device. Bring worlds over with a backup instead.' });
   }
   if (pathname === '/api/scan-installs' && method === 'GET') {
@@ -1420,12 +1428,12 @@ async function handleApi(req, res, pathname) {
 
   // --- first-start upgrade from an older install beside this one ---
   if (pathname === '/api/upgrade' && method === 'GET') {
-    if (CONTAINER || MOBILE) return sendJson(res, 200, { notice: null, choice: null });
+    if (CONTAINER || MOBILE || WEB) return sendJson(res, 200, { notice: null, choice: null });
     return sendJson(res, 200, await upgrade.upgradeStatus(upgradeCtx()));
   }
   if (pathname === '/api/upgrade/copy' && method === 'POST') {
     if (CONTAINER) return sendJson(res, 409, { error: 'Docker manages this server’s data volume.' });
-    if (MOBILE) return sendJson(res, 409, { error: 'There are no older installs beside the app on this device.' });
+    if (MOBILE || WEB) return sendJson(res, 409, { error: 'There are no older installs beside the app on this device.' });
     const body = JSON.parse((await readBody(req, 64 * 1024)).toString('utf8'));
     const install = detectInstallData(body.path);
     if (!install) return sendJson(res, 400, { error: 'That MundusMaker folder no longer has worlds to copy.' });
@@ -1439,7 +1447,7 @@ async function handleApi(req, res, pathname) {
     return sendJson(res, 200, { ok: true });
   }
   if (pathname === '/api/upgrade/quit-old' && method === 'POST') {
-    if (MOBILE) return sendJson(res, 409, { error: 'There are no older installs beside the app on this device.' });
+    if (MOBILE || WEB) return sendJson(res, 409, { error: 'There are no older installs beside the app on this device.' });
     // only a 1.9+ copy has a Quit route; older ones are quit by the GM
     const body = JSON.parse((await readBody(req, 64 * 1024)).toString('utf8'));
     const candidate = (await upgrade.candidatesFor(upgradeCtx())).find((c) => samePath(c.path, String(body.path || '')));
@@ -1882,6 +1890,7 @@ server.listen(PORT, '127.0.0.1', () => {
     console.log(`[mundusmaker] worlds stored in ${WORLDS_DIR}`);
     console.log(CONTAINER ? '[mundusmaker] internal server ready; use Docker to stop this instance.'
       : MOBILE ? '[mundusmaker] running inside the app.'
+      : WEB ? '[mundusmaker] running in this browser tab.'
       : LOG_FILE ? '[mundusmaker] running in the background. Quit it with Quit at the top right of the app, or from the MundusMaker tray or menu-bar icon.'
         : '[mundusmaker] keep this window open while you use MundusMaker. Press Ctrl+C to stop.');
     if (!NO_OPEN) openBrowser(url);

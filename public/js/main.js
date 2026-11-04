@@ -378,12 +378,12 @@ function wireGmToggle() {
 
 // Launchers start MundusMaker without a window, so the top bar shows how to
 // stop it and says when the running copy is older than its files on disk.
-// Docker owns a container's lifecycle, and the phone app (mobile/) lives and
-// dies with its own window, so neither gets them.
+// Docker owns a container's lifecycle, and the phone app (mobile/) and the
+// website (web/) live and die with their own window or tab, so none gets them.
 async function wireRunning() {
   let status;
   try { status = await api.status(); } catch { return; }
-  if (status.deployment === 'container' || status.deployment === 'mobile') return;
+  if (status.deployment === 'container' || status.deployment === 'mobile' || status.deployment === 'web') return;
   const quitBtn = document.getElementById('quitBtn');
   quitBtn.hidden = false;
   quitBtn.addEventListener('click', () => quitMundusMaker());
@@ -419,6 +419,30 @@ async function wireRunning() {
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && Date.now() - beaten > 10000) beat(); });
 }
 
+// On the website the GM's worlds also travel through their account
+// (web/boot.js sets window.mundusWeb); this is its state beside Saved.
+const SYNC_LABELS = {
+  idle: 'Synced', syncing: 'Syncing…', pending: 'Waiting', offline: 'Offline',
+  auth: 'Sign in again', full: 'Storage full', server: 'Sync stopped', refused: 'Sync stopped',
+};
+function wireWebSync() {
+  const web = window.mundusWeb;
+  if (!web || document.getElementById('syncBtn')) return;
+  const label = el('span', { class: 'sync-label' });
+  const btn = el('a', { id: 'syncBtn', class: 'sync-btn', href: '#/settings' }, '☁ ', label);
+  document.getElementById('saveBtn').after(btn);
+  const show = (s) => {
+    btn.className = `sync-btn ${s.state}`;
+    label.textContent = SYNC_LABELS[s.state] || SYNC_LABELS.server;
+    btn.setAttribute('aria-label', `Account sync: ${label.textContent}`);
+    btn.title = s.message || (s.state === 'idle'
+      ? `Your worlds are saved in this browser and in your account${s.lastSync ? ` (last synced ${new Date(s.lastSync).toLocaleTimeString()})` : ''}.`
+      : 'Your worlds are saved in this browser; changes go to your account as soon as they can.');
+  };
+  web.onStatus(show);
+  show(web.status());
+}
+
 async function boot() {
   viewEl.innerHTML = '<div class="page"><p class="muted">Loading worlds…</p></div>';
   try {
@@ -435,13 +459,16 @@ async function boot() {
     viewEl.append(el('div', { class: 'page' },
       el('div', { class: 'notice warn' },
         'Could not load your worlds from the local server (', err.message, '). ',
-        window.mundusShell
+        window.mundusWeb
+          ? 'Reload the page; your worlds are kept in this browser and in your account.'
+          : window.mundusShell
           ? 'Close the app and open it again; your worlds are not affected.'
           : 'Make sure you started MundusMaker (double-click Start-MundusMaker, or run node server.js) and are opening it via that server.')));
     return;
   }
   document.title = `${state.world.name || 'MundusMaker'} · MundusMaker`;
   wireRunning();
+  wireWebSync();
   buildSidebar();
   wireDrawer();
   wireGmToggle();

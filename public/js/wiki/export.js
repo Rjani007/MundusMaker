@@ -138,7 +138,7 @@ export async function buildPlayerWiki({ typeKeys, include = {}, roomNumbers = fa
     await breathe();
   }
 
-  const [css, js] = await Promise.all(['/wiki/wiki.css', '/wiki/wiki.js'].map(async (url) => {
+  const [css, js] = await Promise.all(['wiki/wiki.css', 'wiki/wiki.js'].map(async (url) => {
     const response = await fetch(url);
     if (!response.ok) throw new Error('The wiki template files are missing. Extract the complete MundusMaker archive.');
     return response.text();

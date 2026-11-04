@@ -18,7 +18,7 @@ let cached = null;
 export const loadedData = () => cached;
 export async function loadData() {
   if (!cached) {
-    const res = await fetch('/systems/coc7.json');
+    const res = await fetch('systems/coc7.json');
     if (!res.ok) throw new Error('systems/coc7.json missing');
     cached = await res.json();
   }

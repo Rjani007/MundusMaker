@@ -68,9 +68,51 @@ function updateMessage(result, status) {
       el('div', { style: 'white-space:pre-wrap;margin-top:4px' }, release.notes)) : null)];
 }
 
+const megabytes = (n) => `${(Number(n || 0) / 1048576).toFixed(n >= 10 * 1048576 ? 0 : 1)} MB`;
+
+// MundusMaker on the website (web/boot.js sets window.mundusWeb): the GM's
+// account, what syncs, and signing out. Returns [panel, stop listening].
+function webAccountPanel(web) {
+  const line = el('div', { class: 'small' });
+  const usage = el('div', { class: 'muted small', style: 'margin-top:6px' });
+  const forget = el('input', { type: 'checkbox' });
+  const show = (s) => line.replaceChildren('Signed in as ', el('strong', {}, web.user?.email || 'you'), '. ',
+    s.state === 'idle'
+      ? `Your worlds are saved in this browser and in your account${s.lastSync ? `, last synced ${new Date(s.lastSync).toLocaleString()}` : ''}.`
+      : s.message || 'Your worlds are saved in this browser; changes go to your account as soon as they can.');
+  const off = web.onStatus(show);
+  show(web.status());
+  web.usage().then((u) => {
+    if (u && u.limits) usage.textContent = `Your account holds ${megabytes(u.bytes)} of ${megabytes(u.limits.bytes)} in ${u.files} file${u.files === 1 ? '' : 's'}.`;
+  });
+  const panel = el('div', {},
+    line, usage,
+    el('p', { class: 'muted small', style: 'margin:10px 0 6px' },
+      'Each world’s entries and pictures go to your account, so they open in any browser you sign in to. ',
+      'History, exports, the trash and library packs stay in the browser that made them. ',
+      'If the same entry changes in two browsers before they sync, both versions are kept: the entry shows the other one as a copy to compare.'),
+    el('div', { class: 'row', style: 'gap:8px;flex-wrap:wrap;align-items:center' },
+      el('button', { onclick: () => { web.syncNow(); toast('Syncing with your account…'); } }, '⟳ Sync now'),
+      el('button', {
+        onclick: async () => {
+          try { await requireSaved(); } catch (err) { toast(err.message, 6000); return; }
+          const s = web.status();
+          if (forget.checked && (s.pending || s.state !== 'idle')
+            && !confirm('Some changes have not reached your account yet. Remove this browser’s copy anyway? Those changes would be lost.')) return;
+          await web.signOut({ forget: forget.checked });
+        },
+      }, 'Sign out'),
+      el('label', { class: 'small', style: 'display:flex;align-items:center;gap:6px' }, forget, 'Also remove my worlds from this browser')),
+    el('p', { class: 'muted small', style: 'margin:8px 0 0' },
+      'Signing out keeps this browser’s copy for the next time you sign in, unless you tick the box; your account keeps everything that synced.'));
+  return [panel, off];
+}
+
 export function render(container) {
   // ---------- data folder & sync ----------
   const syncWrap = el('div', {}, el('span', { class: 'muted small' }, 'Loading…'));
+  const syncTitle = el('h3', {}, 'Data folder & sync');
+  let stopAccount = null;
   const aboutWrap = el('div', {}, el('span', { class: 'muted small' }, 'Loading…'));
 
   const recoveryWrap = el('div', {}, el('span', { class: 'muted small' }, 'Loading...'));
@@ -132,7 +174,7 @@ export function render(container) {
         el('code', {}, 'mundusmaker.config.json'), ' next to the app, or use the box below). Only edit on one device at a time and let syncing finish before opening another. MundusMaker detects file changes already on disk and preserves conflicting drafts in the data folder’s .conflicts folder.'),
       el('div', { class: 'row' }, pathInput, moveBtn),
       syncNote);
-    runCard.hidden = status.deployment === 'container' || status.deployment === 'mobile';
+    runCard.hidden = status.deployment === 'container' || status.deployment === 'mobile' || status.deployment === 'web';
     autoStopShown = Number(status.autoStop) || 0;
     // a value written into the config file by hand still shows as itself
     if (![...autoStop.options].some((o) => Number(o.value) === autoStopShown)) autoStop.append(el('option', { value: String(autoStopShown) }, `Stop after ${after(autoStopShown)}`));
@@ -149,6 +191,11 @@ export function render(container) {
         el('div', { class: 'small' }, 'Your worlds are stored inside the MundusMaker app on this device, where other apps cannot read them.'),
         el('p', { class: 'muted small' }, 'To move a world between this device and a computer, use Download backup below (tick Include images), send the file over, then Import → Restore a backup on the other side. Edit on one device at a time.'),
         el('p', { class: 'muted small' }, 'Uninstalling the app removes its worlds unless you choose to keep the app’s data, so keep a recent backup somewhere safe.'));
+    } else if (status.deployment === 'web' && window.mundusWeb) {
+      syncTitle.textContent = 'Your account & sync';
+      const [panel, off] = webAccountPanel(window.mundusWeb);
+      stopAccount = off;
+      syncWrap.replaceChildren(panel);
     }
 
     // Check for updates: the server asks the release feed only on this click
@@ -176,14 +223,19 @@ export function render(container) {
           ? ` — hosted on your ${status.platform} server; your browsers connect to its saved worlds.`
           : status.deployment === 'mobile'
             ? ` — the ${({ android: 'Android', ios: 'iOS' })[status.platform] || status.platform} app; your world data never leaves this device.`
+            : status.deployment === 'web'
+            ? ' — running in your browser; your worlds are kept in this browser and in your account on this website.'
             : ` — running locally on ${status.platform}; your world data never leaves this machine.`)),
       el('div', { class: 'row', style: 'margin-top:6px' },
-        updateButton,
+        // the website always runs its newest version
+        status.deployment === 'web' ? null : updateButton,
         el('button', {
           class: 'ghost small', title: 'Show the three welcome panes again',
           onclick: () => import('./onboarding.js').then((m) => m.showOnboarding()),
         }, '↻ Replay the welcome tour')),
-      el('p', { class: 'muted small', style: 'margin:6px 0 0' }, status.updates?.configured
+      status.deployment === 'web' ? el('p', { class: 'muted small', style: 'margin:6px 0 0' }, 'The website always runs the newest MundusMaker. ',
+        el('a', { href: window.mundusWeb?.releases || 'https://github.com/Rjani007/MundusMaker/releases/latest', target: '_blank', rel: 'noopener noreferrer' }, 'Download it for your computer'),
+        ' to keep worlds in a folder of your own, with no account.') : el('p', { class: 'muted small', style: 'margin:6px 0 0' }, status.updates?.configured
         ? 'Check for updates asks GitHub for the newest release, only when you press it. Nothing about your worlds is sent, and nothing is downloaded or installed.'
         : 'Check for updates will ask the project’s release page for the newest version once MundusMaker is published. Until then it contacts nothing.'),
       updateResult,
@@ -192,12 +244,12 @@ export function render(container) {
       el('ul', { class: 'muted small', style: 'margin:4px 0 0 18px;padding:0' },
         el('li', {}, 'jsPDF — MIT license (vendored, used for the exported books).'),
         el('li', {}, 'DejaVu Serif and Sans 2.37 — offline handout fonts, based on Bitstream Vera with DejaVu and Arev contributions. ',
-          el('a', { href: '/vendor/fonts/LICENSE.txt', target: '_blank', rel: 'noopener' }, 'Font copyright and license'), '.'),
+          el('a', { href: 'vendor/fonts/LICENSE.txt', target: '_blank', rel: 'noopener' }, 'Font copyright and license'), '.'),
         el('li', {}, 'Monster statblocks from the System Reference Document 5.1, D&D 2024 character options from SRD 5.2, and DM Screen reminders adapted from SRD 5.2.1 — by Wizards of the Coast LLC, ',
           'licensed under the Creative Commons Attribution 4.0 International License (CC-BY-4.0).'),
         el('li', {}, 'The optional Library downloader makes an explicit request to the public 5etools source mirror only when you press Download & import. ',
           'It uploads nothing and stores only your selected, locally trimmed pack; use it only for material you are allowed to use.'),
-        el('li', {}, el('img', { src: '/vendor/dark-pack.webp', alt: 'World of Darkness Dark Pack', width: 100, style: 'display:block;margin:12px 0' }),
+        el('li', {}, el('img', { src: 'vendor/dark-pack.webp', alt: 'World of Darkness Dark Pack', width: 100, style: 'display:block;margin:12px 0' }),
           'The Vampire: The Masquerade creator and references are unofficial fan material under the ',
           el('a', { href: 'https://www.paradoxinteractive.com/games/world-of-darkness/community/dark-pack-agreement', target: '_blank', rel: 'noopener' }, 'World of Darkness Dark Pack'), '. ',
           'Portions of the materials are the copyrights and trademarks of Paradox Interactive AB, and are used with permission. All rights reserved. ',
@@ -390,11 +442,12 @@ export function render(container) {
 
   container.append(el('div', { class: 'page' },
     el('h1', {}, 'Settings'),
-    el('div', { class: 'card' }, el('h3', {}, 'Data folder & sync'), syncWrap),
+    el('div', { class: 'card' }, syncTitle, syncWrap),
     el('div', { class: 'card' }, el('h3', {}, 'Backup'), backupCard),
     folderBackupCard(),
     el('div', { class: 'card' }, el('h3', {}, 'Map link check'), integrityWrap),
     el('div', { class: 'card' }, el('h3', {}, 'Trash & snapshots'), recoveryWrap),
     runCard,
     el('div', { class: 'card' }, el('h3', {}, 'About'), aboutWrap)));
+  return () => { if (stopAccount) stopAccount(); };
 }

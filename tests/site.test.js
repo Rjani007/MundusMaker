@@ -91,3 +91,34 @@ test('the offline search follows links by clicking them, so the online viewer ca
   assert.doesNotMatch(search, /location\s*(\.href)?\s*=/);
   assert.match(fs.readFileSync(path.join(ROOT, '.github/workflows/pages.yml'), 'utf8'), /cp public\/wiki\/wiki\.js site\/wiki\/search\.js/);
 });
+
+test('the app in the browser and the account agree on which files travel and how much fits', () => {
+  const { PATH_RE, LIMITS } = require('../web/sync.js');
+  const sql = fs.readFileSync(path.join(ROOT, 'supabase/migrations/20261104120000_world_sync.sql'), 'utf8');
+  const pattern = /p ~ '([^']+)'/.exec(sql)[1];
+  assert.equal(new RegExp(pattern).source, PATH_RE.source, 'sync_path_ok() and web/sync.js PATH_RE');
+  const limits = /jsonb_build_object\('bytes', (\d+) \* 1024 \* 1024, 'fileBytes', (\d+) \* 1024 \* 1024, 'files', (\d+)\)/.exec(sql);
+  assert.deepEqual([LIMITS.bytes, LIMITS.fileBytes, LIMITS.files], [limits[1] * 1048576, limits[2] * 1048576, Number(limits[3])]);
+  assert.ok(sql.includes(`values ('sync', 'sync', false, ${LIMITS.fileBytes},`), 'the bucket takes files as large as the app sends');
+  const policy = new RegExp(pattern);
+  for (const good of ['worlds/vale/world.json', 'worlds/vale/entities/king.json', 'worlds/vale/entities/king (MundusMaker sync copy from Chrome on Windows 2026-11-04 15.32).json', 'worlds/vale/assets/1a2b-map.png']) {
+    assert.ok(policy.test(good), good);
+  }
+  for (const bad of ['worlds/vale/.history/king/1.json', 'worlds/vale/exports/book.pdf', 'worlds/vale/entities/.king.json-1.tmp', 'worlds/../config.json', 'worlds/Vale/world.json', '.trash/x.json', 'worlds/vale/entities/a/b.json']) {
+    assert.ok(!policy.test(bad), bad);
+  }
+  // the website publishes the app with the workflow that tests it
+  const workflow = fs.readFileSync(path.join(ROOT, '.github/workflows/pages.yml'), 'utf8');
+  assert.match(workflow, /node scripts\/stage-web\.js site\/app/);
+  assert.match(workflow, /tests\/web-sync\.test\.js/);
+});
+
+test('every Ko-fi button points at the same page, as a plain link', () => {
+  const places = ['public/index.html', 'site/index.html', 'site/publish/index.html', 'web/boot.js'];
+  const links = places.map((f) => [...fs.readFileSync(path.join(ROOT, f), 'utf8').matchAll(/https:\/\/ko-fi\.com\/[\w-]*/g)].map((m) => m[0]));
+  assert.deepEqual(links.map((l) => l.length), [1, 1, 1, 1], 'one link in each place');
+  assert.equal(new Set(links.flat()).size, 1, links.flat().join(', '));
+  assert.match(links[0][0], /^https:\/\/ko-fi\.com\/[\w-]+$/, 'a real page, not the placeholder');
+  // nothing may load from Ko-fi before a click: no widget script, no remote image
+  for (const f of places) assert.doesNotMatch(fs.readFileSync(path.join(ROOT, f), 'utf8'), /<script[^>]+ko-fi|storage\.ko-fi\.com|ko-fi\.com\/widget/i, f);
+});

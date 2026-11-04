@@ -829,7 +829,7 @@ export function render(container) {
   container.append(el('div', { class: 'page' },
     el('h1', {}, 'Import'),
     // the phone app has no older installs beside it to scan (mobile/)
-    window.mundusShell ? null : migrateCard(),
+    window.mundusShell || window.mundusWeb ? null : migrateCard(),
     ...IMPORTERS.map((make) => importerCard(make())),
     bestiaryCard(),
     restoreCard(),

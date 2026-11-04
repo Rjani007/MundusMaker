@@ -11,7 +11,7 @@ export async function loadSpells() {
   if (spellsCache) return spellsCache;
   const out = [];
   try {
-    const res = await fetch('/srd52/spells.json');
+    const res = await fetch('srd52/spells.json');
     if (res.ok) out.push(...(await res.json()).spells.map((s) => ({ ...normalizeSpell(s), _pack: 'SRD 5.2' })));
   } catch { /* pack-only */ }
   try {
@@ -29,7 +29,7 @@ export async function loadItems() {
   if (itemsCache) return itemsCache;
   const out = [];
   try {
-    const res = await fetch('/srd52/equipment.json');
+    const res = await fetch('srd52/equipment.json');
     if (res.ok) out.push(...(await res.json()).equipment.map((i) => ({ ...normalizeItem(i), _pack: 'SRD 5.2' })));
   } catch { /* pack-only */ }
   try {

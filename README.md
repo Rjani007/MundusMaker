@@ -8,6 +8,11 @@ Any paragraph, relationship or map pin can be secret, and whole entries can be
 GM-only. Player preview shows what your players will see, and player exports
 leave the secrets out.
 
+Rather not install anything? [MundusMaker in your browser](https://rjani007.github.io/MundusMaker/app/)
+is the same app. Sign in with a free account, and your worlds are kept in that
+browser and in your account, so they open on any computer or phone you sign in
+on. The download below needs no account and keeps everything on your computer.
+
 ## Install
 
 Download `MundusMaker-x.y.z.zip` from the

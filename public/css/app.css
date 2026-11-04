@@ -758,6 +758,24 @@ a.type-badge:hover { text-decoration: none; border-color: var(--accent); color: 
 }
 .quit-btn:hover, .quit-btn:focus-visible { color: var(--text); border-color: var(--accent2); background: var(--bg3); }
 .quit-btn[hidden] { display: none; }
+/* a plain link to the maker's Ko-fi page: nothing loads from Ko-fi until it is clicked */
+.kofi-btn {
+  display: flex; align-items: center; gap: 5px; font-size: 13px; line-height: 1; white-space: nowrap;
+  padding: 5px 11px; border-radius: 20px; border: 1px solid var(--accent2);
+  color: var(--text); text-decoration: none;
+}
+.kofi-btn:hover, .kofi-btn:focus-visible { background: var(--bg3); color: var(--text); }
+@media (max-width: 1180px) { .kofi-btn .kofi-label { display: none; } .kofi-btn { padding: 5px 8px; } }
+/* MundusMaker in the browser (web/): the account's sync, beside Saved */
+.sync-btn {
+  display: flex; align-items: center; gap: 5px; font-size: 13px; line-height: 1; white-space: nowrap;
+  padding: 5px 11px; border-radius: 14px; border: 1px solid var(--line); color: var(--muted); text-decoration: none;
+}
+.sync-btn:hover, .sync-btn:focus-visible { background: var(--bg3); color: var(--text); }
+.sync-btn.syncing, .sync-btn.pending { color: var(--accent); border-color: var(--accent); }
+.sync-btn.offline { color: var(--muted); border-style: dashed; }
+.sync-btn.auth, .sync-btn.full, .sync-btn.server, .sync-btn.refused { color: var(--danger); border-color: var(--danger); }
+@media (max-width: 520px) { .sync-btn .sync-label { display: none; } .sync-btn { padding: 5px 9px; } }
 .restart-bar {
   display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; flex: none;
   padding: 8px 18px; font-size: 13px;
@@ -1088,7 +1106,8 @@ a.sheet-roll:hover { color: var(--accent); border-bottom-color: var(--accent); }
   .sidebar-toggle[aria-expanded="true"] { background: var(--bg3); border-color: var(--line); }
   .brand { flex: 1 1 0; min-width: 0; font-size: 18px; letter-spacing: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .topbar-right { display: contents; }
-  .save-btn, .gear-btn, .quit-btn { order: 1; flex: none; }
+  .save-btn, .sync-btn, .kofi-btn, .gear-btn, .quit-btn { order: 1; flex: none; }
+  .sync-btn, .kofi-btn { height: 36px; box-sizing: border-box; }
   .save-btn { min-width: 0; height: 36px; padding: 0 12px; white-space: nowrap; }
   .gear-btn { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 40px; padding: 0; font-size: 18px; }
   .quit-btn { height: 36px; }

@@ -20,7 +20,7 @@ export const tagline = 'The 2024 rules, with the whole SRD in the box.';
 const cache = {};
 async function fetchPack(name) {
   if (!cache[name]) {
-    const res = await fetch(`/srd52/${name}.json`);
+    const res = await fetch(`srd52/${name}.json`);
     if (!res.ok) throw new Error(`srd52/${name}.json is missing. Run npm run srd52.`);
     cache[name] = await res.json();
   }

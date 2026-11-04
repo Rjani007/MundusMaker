@@ -16,8 +16,8 @@ export async function maybeShowOnboarding() {
 /** Always shows: the "replay the tour" path from Settings. */
 export async function showOnboarding() {
   let dataDir = 'the data folder next to the app';
-  let hosted = false, mobile = false;
-  try { const status = await api.status(); dataDir = status.dataDir; hosted = status.deployment === 'container'; mobile = status.deployment === 'mobile'; } catch { /* server info is a nicety, not a gate */ }
+  let hosted = false, mobile = false, web = false;
+  try { const status = await api.status(); dataDir = status.dataDir; hosted = status.deployment === 'container'; mobile = status.deployment === 'mobile'; web = status.deployment === 'web'; } catch { /* server info is a nicety, not a gate */ }
 
   const panes = [
     {
@@ -25,6 +25,7 @@ export async function showOnboarding() {
       body: [
         el('p', {}, hosted
           ? 'A worldbuilding wiki for game masters, on your own server. Open this address on any of your devices.'
+          : web ? 'A worldbuilding wiki for game masters, in your browser. Sign in on any computer or phone to open the same worlds.'
           : `A worldbuilding wiki for game masters. It runs on this ${mobile ? 'device' : 'computer'}. No account, no cloud.`),
         el('p', { class: 'muted' }, 'Rename your world at the top of the dashboard. Want an example? Press Add the sample world under Your worlds.'),
       ],
@@ -43,6 +44,7 @@ export async function showOnboarding() {
         el('p', {}, 'Everything saves as you type. The ✓ in the top bar shows it saved.'),
         // body.append() would print a null, so a missing paragraph is an empty spread
         ...(mobile ? [el('p', { class: 'muted' }, 'Your worlds stay in the app. Settings → Download backup saves a copy. ☰ at the top left opens your entries.')]
+          : web ? [el('p', { class: 'muted' }, 'Your worlds are kept in this browser and in your account; ☁ beside Saved shows the sync. Settings → Download backup saves a copy of your own.')]
           : hosted ? []
           : [el('p', { class: 'muted' }, 'Your worlds are in ', el('code', {}, dataDir), '. Copy that folder to back them up. ',
             'Closing the tab does not stop MundusMaker; quit with ⏻ at the top right.')]),

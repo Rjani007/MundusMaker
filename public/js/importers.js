@@ -89,7 +89,7 @@ let bundled = null;
 /** The ~322 SRD 5.1 monsters shipped with MundusMaker (CC-BY-4.0). Cached. */
 export async function loadBundledBestiary() {
   if (!bundled) {
-    const res = await fetch('/bestiary/srd-bestiary.json');
+    const res = await fetch('bestiary/srd-bestiary.json');
     if (!res.ok) throw new Error('bundled bestiary missing');
     bundled = await res.json();
   }

@@ -15,7 +15,8 @@ import { nameStyleForType, randomName } from '../names.js';
 let scannedThisLoad = false;
 
 function maybeOfferMigration(container) {
-  if (scannedThisLoad || readSetting('migrateDismissed')) return;
+  // the phone app and the website have no installs beside them to scan
+  if (scannedThisLoad || readSetting('migrateDismissed') || window.mundusShell || window.mundusWeb) return;
   const only = state.worlds.length === 1 ? state.worlds[0] : null;
   if (!only || (only.entities && only.id !== 'the-sundered-reach')) return;
   scannedThisLoad = true;

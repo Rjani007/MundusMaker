@@ -68,7 +68,8 @@ async function refresh() {
 async function fresh() {
   if (!session) throw new Error('Please sign in first.');
   if (session.expires_at - 60 < Date.now() / 1000) {
-    try { await refresh(); } catch (err) { keep(null); throw err; }
+    // unreachable is not signed out: only the account refusing the refresh ends the sign-in
+    try { await refresh(); } catch (err) { if (err.status) keep(null); throw err; }
   }
 }
 
@@ -76,13 +77,32 @@ const authed = async (path, options) => { await fresh(); return request(path, op
 
 export const user = () => session?.user || null;
 
-/** The saved sign-in, if it can still be used. */
-export async function restore() {
+/**
+ * The saved sign-in, if it can still be used. With keepOffline, a refresh
+ * that fails only because the account can't be reached keeps the sign-in:
+ * the app in the browser works offline on the worlds this browser has.
+ */
+export async function restore({ keepOffline = false } = {}) {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch { /* none */ }
   if (!saved?.refresh_token) return null;
   session = saved;
-  try { await fresh(); return user(); } catch { keep(null); return null; }
+  try { await fresh(); return user(); } catch (err) {
+    if (keepOffline && !err.status && session) return user();
+    keep(null);
+    return null;
+  }
+}
+
+/** A current access token for the app's engine (web/engine.js), refreshed when asked or near expiry. */
+export async function token({ refresh: force = false } = {}) {
+  if (!session) throw Object.assign(new Error('Please sign in first.'), { status: 401 });
+  if (force) {
+    try { await refresh(); } catch (err) { if (err.status) keep(null); throw err; }
+  } else {
+    await fresh();
+  }
+  return { access_token: session.access_token, expires_at: session.expires_at, user: session.user };
 }
 
 export async function signIn(email, password) {

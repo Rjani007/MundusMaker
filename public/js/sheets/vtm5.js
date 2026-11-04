@@ -15,7 +15,7 @@ export const tagline = 'The V5 sheet: dots, hunger, and the Beast underneath.';
 let cached = null;
 export async function loadData() {
   if (!cached) {
-    const res = await fetch('/systems/vtm5.json');
+    const res = await fetch('systems/vtm5.json');
     if (!res.ok) throw new Error('systems/vtm5.json missing');
     cached = await res.json();
   }
