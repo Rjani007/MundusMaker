@@ -154,9 +154,7 @@ function signInForm(message) {
   });
   show(
     h('p', { class: 'lead' }, 'The worldbuilding wiki for game masters, in your browser.'),
-    form,
-    h('p', { class: 'muted small' }, 'Your worlds are kept in this browser and in your account, so they open on any computer or phone you sign in on. ',
-      'The same account shares player wikis on this website.'));
+    form);
   setTimeout(() => email.focus(), 0);
 }
 
