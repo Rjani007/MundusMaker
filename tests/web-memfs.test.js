@@ -51,7 +51,8 @@ function both() {
         const nl = buf.indexOf(10);
         return { head: JSON.parse(buf.subarray(0, nl).toString('utf8')), rest: buf.subarray(nl + 1).toString('utf8') };
       }
-      if (op === 'stat') return out && { type: out.type, size: out.size };
+      // a folder's size is the file system's own business (Linux says 4096, Windows 0)
+      if (op === 'stat') return out && { type: out.type, size: out.type === 'file' ? out.size : 0 };
       if (op === 'readdir') return out.entries.map((e) => [e.name, e.type, e.type === 'file' ? e.size : 0]);
       return out;
     } catch (err) {
