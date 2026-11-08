@@ -108,7 +108,8 @@ test('drawn Humanity, ticks kept only in /AS, and a shared fifth dot both rows c
 
 test('Progeny’s PDF imports, with Humanity read from the ticks it draws on the page', async () => {
   const set = {
-    Name: 'Viktor Hale', pcDescription: 'Bouncer with a past', 'Predator type': 'Alleycat', Ambition: 'Own the club', Clan: 'Brujah', Sire: 'Mara',
+    Name: 'Viktor Hale', pcDescription: 'Broad, scarred, always in a leather jacket', pcConcept: 'Bouncer with a past', Sect: 'Anarch', Resonance: 'Choleric',
+    'Predator type': 'Alleycat', Ambition: 'Own the club', Clan: 'Brujah', Sire: 'Mara',
     Desire: 'A quiet night', Title: '12', ClanBane: 'Violent temper', ClanCompulsion: 'Rebellion', BloodSurge: '1', Mend: '1 superficial damage',
     specBra: 'Grappling', specStree: 'Gangs, Drugs',
     Disc1: 'Celerity', Disc1_Ability1: 'Cat’s Grace: Keep your balance', Disc1_Ability2: 'Fleetness: Move faster // Dexterity + Athletics // 1 rouse check',
@@ -128,6 +129,9 @@ test('Progeny’s PDF imports, with Humanity read from the ticks it draws on the
   assert.equal(name, 'Viktor Hale');
   assert.equal(report.layout, 'a Progeny PDF (Nerdbert’s sheet)');
   assert.equal(d.concept, 'Bouncer with a past');
+  assert.equal(d.appearance, 'Broad, scarred, always in a leather jacket', 'Progeny writes its description in pcDescription');
+  assert.equal(d.sect, 'Anarch');
+  assert.equal(d.resonance, 'Choleric');
   assert.equal(d.predatorType, 'Alleycat');
   assert.equal(d.generation, 12, 'Progeny writes the generation in the field named Title');
   assert.equal(d.bane, 'Violent temper');
@@ -165,6 +169,13 @@ test('Progeny’s PDF imports, with Humanity read from the ticks it draws on the
   const bare = await importPdf(await layoutPdf('progeny', { Name: 'Ana', 'Str-1': true }));
   assert.equal(bare.data.humanity, 7);
   assert.ok(bare.report.warnings.some((w) => /No Humanity boxes/.test(w)));
+});
+
+test('a Progeny PDF without the fields Progeny leaves empty is still recognised', async () => {
+  const { LAYOUTS, recognizeLayout } = await load('sheets/vtmpdfimport.js');
+  const optional = ['pcConcept', 'Chronicle', 'chronicleTenets', 'Sect', 'Resonance', 'Age', 'Apparent Age', 'Birthday', 'Embrace'];
+  const names = Object.keys(LAYOUTS.find((l) => l.id === 'progeny').fields).filter((n) => !optional.includes(n));
+  assert.equal(recognizeLayout({ fields: names.map((name) => ({ name })) })?.id, 'progeny');
 });
 
 test('empty, flattened and unknown PDFs explain themselves', async () => {

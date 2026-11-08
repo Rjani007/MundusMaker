@@ -13,9 +13,10 @@ import {
 } from '../importers.js';
 import { crFromStat } from '../encounter.js';
 import { api } from '../api.js';
-import { readPdf, readForm, pageImages } from '../sheets/pdfform.js';
+import { readPdf, readForm, pageImages, pageDrawing } from '../sheets/pdfform.js';
 import { characterFromForm } from '../sheets/dndpdfimport.js';
 import { characterFromForm as vtmFromForm, recognizeLayout as vtmLayout } from '../sheets/vtmpdfimport.js';
+import { characterFromDrawing as vtmFromDrawing, powerLevels } from '../sheets/vtmdrawnimport.js';
 import { SHEET_SYSTEMS } from '../sheets/sheetcore.js';
 import { readCharacterFile, portraitParts } from '../sheets/charfile.js';
 
@@ -401,17 +402,17 @@ function dndPdfImporter() {
   };
 }
 
-// ---------- V5 character sheet PDF (the official sheet, or Progeny's PDF) ----------
+// ---------- V5 character sheet PDF (the official sheet, Progeny's PDF, or MundusMaker's own) ----------
 
 function vtmPdfImporter() {
   let staged = null; // { result, nameInput, gmOnly }
   const bullets = (items) => el('ul', { class: 'small', style: 'margin:4px 0 8px;padding-left:20px' }, items.map((t) => el('li', {}, t)));
   return {
     id: 'vtm5-pdf',
-    title: 'V5 character sheet PDF (official sheet or Progeny)',
+    title: 'V5 character sheet PDF (official sheet, Progeny or MundusMaker)',
     desc: () => el('p', { class: 'muted small' },
-      'Pick a filled-in copy of the official fillable V5 character sheet, or the PDF from Progeny’s “Download PDF”. ',
-      'It becomes one character with a playable V5 sheet, filled from the PDF’s form fields. ',
+      'Pick a filled-in copy of the official fillable V5 character sheet, the PDF from Progeny’s “Download PDF”, ',
+      'or a V5 sheet PDF from MundusMaker (Player sheet PDF in the Familiar layout). It becomes one character with a playable V5 sheet. ',
       'You see what comes across before anything is saved. The PDF itself is read here in your browser and not kept.'),
     pick: { kind: 'file', accept: '.pdf,application/pdf' },
     typeDefault: 'character',
@@ -421,8 +422,13 @@ function vtmPdfImporter() {
       try {
         const doc = await readPdf(new Uint8Array(await files[0].arrayBuffer()));
         const form = await readForm(doc);
+        // MundusMaker's own sheet PDF has no form: it is drawn, so it is read from the drawing
+        if (!form.fields.length) {
+          const levels = await SHEET_SYSTEMS.vtm5.loadData().then(powerLevels, () => new Map());
+          result = vtmFromDrawing(await pageDrawing(doc), { levels });
+        }
         // Progeny marks Humanity with pictures drawn on the page rather than in the form
-        result = vtmFromForm(form, vtmLayout(form)?.id === 'progeny' ? await pageImages(doc) : []);
+        result ??= vtmFromForm(form, vtmLayout(form)?.id === 'progeny' ? await pageImages(doc) : []);
       } catch (err) {
         if (/encryption/i.test(err.message)) return { summary: 'This PDF is protected with encryption, so MundusMaker can’t read its fields. Save a copy without a password and pick that one.', ready: false };
         return { summary: err.message, ready: false };

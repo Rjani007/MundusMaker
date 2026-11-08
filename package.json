@@ -19,7 +19,7 @@
     "test:wiki": "node --test tests/wiki.test.js tests/reveal.test.js && node scripts/wiki-check.js",
     "test:safety": "node --test tests/storage.test.js tests/saves.test.js tests/server-safety.test.js tests/request-guard.test.js tests/sheet-markup.test.js tests/sync-copies.test.js tests/folderbackup.test.js",
     "test:tracker": "node --test tests/tracker.test.js",
-    "test:characters": "node --test tests/characters.test.js tests/sheets-familiar.test.js tests/sheet-keys.test.js tests/officialsheets.test.js tests/sheetdownload.test.js tests/dndpdfimport.test.js tests/vtmpdfimport.test.js",
+    "test:characters": "node --test tests/characters.test.js tests/sheets-familiar.test.js tests/sheet-keys.test.js tests/officialsheets.test.js tests/sheetdownload.test.js tests/dndpdfimport.test.js tests/vtmpdfimport.test.js tests/vtmdrawnimport.test.js",
     "test:references": "node --test tests/references.test.js",
     "test:package": "node --test tests/package.test.js tests/unix-launchers.test.js tests/installed-config.test.js tests/macos-launcher.test.js",
     "test:container": "node --test tests/container.test.js",

@@ -12,7 +12,8 @@
 // vtm5-renegade). Progeny's "Download PDF" fills Nerdbert's 2-page sheet; its field
 // names come from Progeny's frontend/src/generator/pdfCreator.ts (AGPL: the names
 // only, never its code). Elysium (../elysium, site/js/officialsheet.js) reads the
-// same two layouts; change both.
+// same two layouts; change both. MundusMaker's own sheet PDF has no form: it is drawn,
+// and vtmdrawnimport.js reads it.
 
 import { TEMPLATES } from './officialsheets.js';
 import { V5_ATTRS, V5_SKILLS } from './familiar.js';
@@ -39,11 +40,19 @@ const PROGENY_SKILLS = {
   Academics: ['Acad', 'specAcad'], Awareness: ['Awar', 'specAwar'], Finance: ['Fina', 'specFina'], Investigation: ['Inve', 'specInve'],
   Medicine: ['Medi', 'specMedi'], Occult: ['Occu', 'specOccu'], Politics: ['Poli', 'specPoli'], Science: ['Scie', 'specScie'], Technology: ['Tech', 'specTech'],
 };
+// Fields Progeny leaves empty but a player may fill in: read when present, but not part of
+// recognising the PDF (a real export, checked November 2026, has them all)
+const PROGENY_MORE = {
+  pcConcept: 'concept', Chronicle: 'chronicle', chronicleTenets: 'tenets', Sect: 'sect', Resonance: 'resonance',
+  Age: 'trueAge', 'Apparent Age': 'apparentAge', Birthday: 'dateOfBirth', Embrace: 'dateOfDeath',
+};
 const PROGENY = (() => {
+  // Progeny writes the character's description, usually how they look, in pcDescription
   const f = {
-    Name: 'name', pcDescription: 'concept', 'Predator type': 'predator', Ambition: 'ambition', Clan: 'clan', ClanBane: 'bane', ClanCompulsion: 'compulsion',
+    Name: 'name', pcDescription: 'appearance', 'Predator type': 'predator', Ambition: 'ambition', Clan: 'clan', ClanBane: 'bane', ClanCompulsion: 'compulsion',
     Sire: 'sire', Desire: 'desire', Title: 'generation', BloodSurge: 'bloodSurge', Mend: 'mendAmount', PowBonus: 'powerBonus', ReRouse: 'rouseReroll',
     FeedPen: 'feedingPenalty', BaneSev: 'baneSeverity', Convictions: 'convictions', touchstoneNotes: 'touchstoneNotes', tEXP: 'xp.total', PC_Notes: 'notes',
+    ...PROGENY_MORE,
   };
   for (const [a, p] of Object.entries(PROGENY_ATTRS)) for (let n = 1; n <= 5; n++) f[`${p}-${n}`] = [`attr.${a}`, n];
   for (const [s, [p, spec]] of Object.entries(PROGENY_SKILLS)) {
@@ -70,7 +79,7 @@ export const LAYOUTS = [
   { id: 'vtm5-renegade', label: 'the official V5 character sheet', fields: TEMPLATES.find((t) => t.id === 'vtm5-renegade').fields },
   // every Progeny PDF has these; merits and the boxes up to a character's maximums vary
   { id: 'progeny', label: 'a Progeny PDF (Nerdbert’s sheet)', fields: PROGENY,
-    core: Object.keys(PROGENY).filter((n) => !/^(Merit\d|Health-|WP-|BloodPotency-)/.test(n)) },
+    core: Object.keys(PROGENY).filter((n) => !/^(Merit\d|Health-|WP-|BloodPotency-)/.test(n) && !(n in PROGENY_MORE)) },
 ];
 
 /** The known layout this form is, if any: 90% of its field names present. */
@@ -171,7 +180,7 @@ export function buildSheet({ layout, values, ticked }) {
     ['chronicle', 'chronicle'], ['resonance', 'resonance'], ['tenets', 'tenets'], ['bane', 'bane'], ['bloodSurge', 'bloodSurge'], ['mendAmount', 'mendAmount'],
     ['powerBonus', 'powerBonus'], ['rouseReroll', 'rouseReroll'], ['feedingPenalty', 'feedingPenalty'], ['baneSeverity', 'baneSeverity'],
     ['trueAge', 'trueAge'], ['apparentAge', 'apparentAge'], ['dateOfBirth', 'dateOfBirth'], ['dateOfDeath', 'dateOfDeath'],
-    ['appearance', 'appearance'], ['features', 'features'], ['history', 'history']]) if (text(k)) d[key] = text(k);
+    ['appearance', 'appearance'], ['features', 'features'], ['history', 'history'], ['sect', 'sect']]) if (text(k)) d[key] = text(k);
   if (d.clan) d.clan = tidy(d.clan);
   const generation = firstNumber(text('generation'));
   d.generation = generation && generation >= 1 && generation <= 16 ? generation : 13;
